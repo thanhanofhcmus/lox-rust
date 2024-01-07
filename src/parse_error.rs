@@ -16,6 +16,9 @@ pub enum ParseError {
     #[error("Unable to parse to number at position {0}")]
     ParseToNumber(Span),
 
+    #[error("Unexpected `return` keyword outside of function")]
+    UnexpectedReturn(Span),
+
     #[error("Unable to parse the next value because of EOF")]
     Eof,
 

@@ -18,6 +18,7 @@ pub enum Expression {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
+    Return(Expression),
     If(IfStmtNode),
     While(WhileNode),
     Declare(String, Expression),

@@ -115,6 +115,7 @@ pub fn interpret_stmt(env: &mut Environment, stmt: &Statement) -> Result<Option<
         Statement::Print(expr) => interpret_print_stmt(env, expr),
         Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
         Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
+        Statement::Return(expr) => interpret_expr(env, expr).map(Some),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
         Statement::While(node) => interpret_while_stmt(env, node),
         Statement::If(node) => interpret_if_stmt(env, node),
@@ -146,15 +147,13 @@ fn interpret_if_stmt(env: &mut Environment, node: &IfStmtNode) -> Result<Option<
 }
 
 fn interpret_stmt_list(env: &mut Environment, stmts: &[Statement]) -> Result<Option<Value>, Error> {
-    if let Some(last) = stmts.last() {
-        stmts
-            .iter()
-            .take(stmts.len() - 1)
-            .try_for_each(|stmt| interpret_stmt(env, stmt).map(|_| ()))?;
-        interpret_stmt(env, last)
-    } else {
-        Ok(None)
+    for stmt in stmts {
+        if let Statement::Return(expr) = stmt {
+            return Ok(Some(interpret_expr(env, expr)?));
+        }
+        interpret_stmt(env, stmt)?;
     }
+    Ok(None)
 }
 
 fn interpret_declare_stmt(

@@ -36,16 +36,24 @@ struct ParseState<'a> {
     input: &'a str,
     items: &'a [LexItem],
     curr_pos: usize,
+    is_in_fn: bool,
+}
+
+impl<'a> ParseState<'a> {
+    fn new(input: &'a str, items: &'a [LexItem]) -> Self {
+        Self {
+            input,
+            items,
+            curr_pos: 0,
+            is_in_fn: false,
+        }
+    }
 }
 
 pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
     trace!("parse");
     let mut stmts = vec![];
-    let mut state = ParseState {
-        input,
-        items,
-        curr_pos: 0,
-    };
+    let mut state = ParseState::new(input, items);
     while state.curr_pos < items.len() {
         let result = parse_stmt(&mut state)?;
         stmts.push(result);
@@ -69,6 +77,7 @@ fn parse_stmt(state: &mut ParseState) -> Result<Statement, ParseError> {
         Token::Var => parse_declaration(state),
         Token::While => parse_while(state),
         Token::If => parse_if(state),
+        Token::Return => parse_return(state),
         Token::LPointParen => parse_block(state),
         _ => parse_expr(state).map(Statement::Expr),
     }
@@ -100,30 +109,21 @@ fn parse_if(state: &mut ParseState) -> Result<Statement, ParseError> {
         else_stmts,
     }))
 }
-fn parse_function(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_identifier");
-    consume_token(state, Token::Fn)?;
-    let arg_names = parse_comma_list(
-        state,
-        Token::LRoundParen,
-        Token::RRoundParen,
-        get_identifier,
-    )?
-    .into_iter()
-    .map(|li| li.span.str_from_source(state.input).to_string())
-    .collect();
-
-    let body = parse_block_statement_list(state)?;
-
-    Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
-}
-
 fn parse_while(state: &mut ParseState) -> Result<Statement, ParseError> {
     trace!("parse_while");
     consume_token(state, Token::While)?;
     let cond = parse_expr(state)?;
     let body = parse_block_statement_list(state)?;
     Ok(Statement::While(WhileNode { cond, body }))
+}
+
+fn parse_return(state: &mut ParseState) -> Result<Statement, ParseError> {
+    consume_token(state, Token::Return)?;
+    if !state.is_in_fn {
+        return Err(ParseError::UnexpectedReturn(Span::one(state.curr_pos)));
+    }
+    let expr = parse_expr(state)?;
+    Ok(Statement::Return(expr))
 }
 
 fn parse_block(state: &mut ParseState) -> Result<Statement, ParseError> {
@@ -360,6 +360,41 @@ fn parse_array(state: &mut ParseState) -> Result<Expression, ParseError> {
     Ok(Expression::Array(exprs))
 }
 
+fn parse_function(state: &mut ParseState) -> Result<Expression, ParseError> {
+    trace!("parse_identifier");
+    consume_token(state, Token::Fn)?;
+    let arg_names = parse_comma_list(
+        state,
+        Token::LRoundParen,
+        Token::RRoundParen,
+        get_identifier,
+    )?
+    .into_iter()
+    .map(|li| li.span.str_from_source(state.input).to_string())
+    .collect();
+
+    state.is_in_fn = true;
+    let body = parse_block_statement_list(state)?;
+    state.is_in_fn = false;
+
+    Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
+}
+
+fn parse_number(state: &mut ParseState) -> Result<Expression, ParseError> {
+    trace!("parse_number");
+    let li = consume_token(state, Token::Number)?;
+    let source = li.span.str_from_source(state.input);
+    match source.parse::<f64>() {
+        Err(_) => Err(ParseError::ParseToNumber(li.span)),
+        Ok(num) => Ok(Expression::Number(num)),
+    }
+}
+
+fn get_identifier(state: &mut ParseState) -> Result<LexItem, ParseError> {
+    let li = consume_token(state, Token::Identifier)?;
+    Ok(li.to_owned())
+}
+
 fn parse_comma_list<F, T>(
     state: &mut ParseState,
     left_paren: Token,
@@ -403,21 +438,6 @@ where
     consume_token(state, right_paren)?;
 
     Ok(result)
-}
-
-fn parse_number(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_number");
-    let li = consume_token(state, Token::Number)?;
-    let source = li.span.str_from_source(state.input);
-    match source.parse::<f64>() {
-        Err(_) => Err(ParseError::ParseToNumber(li.span)),
-        Ok(num) => Ok(Expression::Number(num)),
-    }
-}
-
-fn get_identifier(state: &mut ParseState) -> Result<LexItem, ParseError> {
-    let li = consume_token(state, Token::Identifier)?;
-    Ok(li.to_owned())
 }
 
 fn consume_token(state: &mut ParseState, token: Token) -> Result<LexItem, ParseError> {

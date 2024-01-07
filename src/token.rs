@@ -37,6 +37,7 @@ pub enum Token {
     Else,
     While,
     Fn,
+    Return,
     When,
     Then,
 
