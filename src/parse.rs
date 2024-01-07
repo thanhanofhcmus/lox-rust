@@ -10,11 +10,13 @@ use log::trace;
 /*
 stmt         = (reassignment | declaration | print | expr | if | while )
 print        = "print" expr
-reassignment = IDENTIFIER "=" expr
+if           = "if" expr block ("else" block)?
 declaration  = "var" IDENTIFIER "=" expr
 while        = "while" expr block
 block        = "{" (stmt ";")* "}"
-expr         = logical
+reassignment = IDENTIFIER "=" expr
+expr         = ternary
+ternary      = logical ("?" logical ":" logical)?
 logical      = equality (( "and" | "or" ) equality)*
 equality     = comparison (("==" | "!=") comparison)*
 comparison   = term (("<" | "<" | "<=" | ">=") term)*
@@ -22,11 +24,14 @@ term         = factor (("+" | "-") factor)*
 factor       = unary (("*" | "/") unary)*
 unary        = ("!" | "-")* unary | call
 call         = primary "(" (expr "," ...)* ")"
-primary      = STRING | NUMBER | IDENTIFIER | "true" | "false" | "nil" | group | array | function | if
-if           = "if" expr block ("else" block)?
-function     = "fun" "(" ( FUNC_ARG "," ... )* ")" block
+primary      = STRING | NUMBER | IDENTIFIER | "true" | "false" | "nil" | group | array | function
+function     = "fn" "(" ( FUNC_ARG "," ... )* ")" block
 array        = "[" (expr, ",")* "]"
 group        = "(" expr ")"
+
+
+1 + true ? a : b
+2 - !(a==b)
 */
 
 pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
@@ -61,6 +66,7 @@ fn parse_stmt(
         Token::Identifier => parse_reassignment_or_expr(input, items, curr_pos),
         Token::Var => parse_declaration(input, items, curr_pos),
         Token::While => parse_while(input, items, curr_pos),
+        Token::If => parse_if(input, items, curr_pos),
         Token::LPointParen => parse_block(input, items, curr_pos),
         _ => parse_expr(input, items, curr_pos).map(Statement::Expr),
     }
@@ -75,6 +81,49 @@ fn parse_print(
     consume_token(items, Token::Print, curr_pos)?;
     let expr = parse_expr(input, items, curr_pos)?;
     Ok(Statement::Print(expr))
+}
+
+fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Statement, ParseError> {
+    trace!("parse_if");
+    consume_token(items, Token::If, curr_pos)?;
+
+    let cond = parse_expr(input, items, curr_pos)?;
+    let if_stmts = parse_block_statement_list(input, items, curr_pos)?;
+    let mut else_stmts = None;
+
+    if peek(items, &[Token::Else], *curr_pos) {
+        consume_token(items, Token::Else, curr_pos)?;
+        else_stmts = Some(parse_block_statement_list(input, items, curr_pos)?);
+    }
+
+    Ok(Statement::If(IfNode {
+        cond: Box::new(cond),
+        if_stmts,
+        else_stmts,
+    }))
+}
+fn parse_function(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    trace!("parse_identifier");
+    consume_token(items, Token::Fn, curr_pos)?;
+    let arg_names = parse_comma_list(
+        input,
+        items,
+        curr_pos,
+        Token::LRoundParen,
+        Token::RRoundParen,
+        get_identifier,
+    )?
+    .into_iter()
+    .map(|li| li.span.str_from_source(input).to_string())
+    .collect();
+
+    let body = parse_block_statement_list(input, items, curr_pos)?;
+
+    Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
 }
 
 fn parse_while(
@@ -384,7 +433,6 @@ fn parse_primary(
         Token::Identifier => next(Expression::Identifier(
             li.span.str_from_source(input).to_string(),
         )),
-        Token::If => parse_if(input, items, curr_pos),
         Token::Number => parse_number(input, items, curr_pos),
         Token::LSquareParen => parse_array(input, items, curr_pos),
         Token::LRoundParen => parse_group(input, items, curr_pos),
@@ -486,53 +534,6 @@ fn parse_number(
 fn get_identifier(_: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<LexItem, ParseError> {
     let li = consume_token(items, Token::Identifier, curr_pos)?;
     Ok(li.to_owned())
-}
-
-fn parse_if(
-    input: &str,
-    items: &[LexItem],
-    curr_pos: &mut usize,
-) -> Result<Expression, ParseError> {
-    trace!("parse_if");
-    consume_token(items, Token::If, curr_pos)?;
-
-    let cond = parse_expr(input, items, curr_pos)?;
-    let if_stmts = parse_block_statement_list(input, items, curr_pos)?;
-    let mut else_stmts = None;
-
-    if peek(items, &[Token::Else], *curr_pos) {
-        consume_token(items, Token::Else, curr_pos)?;
-        else_stmts = Some(parse_block_statement_list(input, items, curr_pos)?);
-    }
-
-    Ok(Expression::If(IfNode {
-        cond: Box::new(cond),
-        if_stmts,
-        else_stmts,
-    }))
-}
-fn parse_function(
-    input: &str,
-    items: &[LexItem],
-    curr_pos: &mut usize,
-) -> Result<Expression, ParseError> {
-    trace!("parse_identifier");
-    consume_token(items, Token::Fn, curr_pos)?;
-    let arg_names = parse_comma_list(
-        input,
-        items,
-        curr_pos,
-        Token::LRoundParen,
-        Token::RRoundParen,
-        get_identifier,
-    )?
-    .into_iter()
-    .map(|li| li.span.str_from_source(input).to_string())
-    .collect();
-
-    let body = parse_block_statement_list(input, items, curr_pos)?;
-
-    Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
 }
 
 fn consume_token<'a>(

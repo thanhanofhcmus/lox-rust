@@ -119,6 +119,7 @@ pub fn interpret_stmt(env: &mut Environment, stmt: &Statement) -> Result<Option<
         Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
         Statement::While(node) => interpret_while_stmt(env, node),
+        Statement::If(node) => interpret_if_stmt(env, node),
         Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
         Statement::Global(stmts) => interpret_stmt_list(env, stmts),
     }
@@ -128,6 +129,22 @@ fn interpret_print_stmt(env: &mut Environment, expr: &Expression) -> Result<Opti
     let value = interpret_expr(env, expr)?;
     println!("{}", value);
     Ok(None)
+}
+
+fn interpret_if_stmt(env: &mut Environment, node: &IfNode) -> Result<Option<Value>, Error> {
+    let cond_value = interpret_expr(env, &node.cond)?;
+    let Value::Bool(bin) = cond_value else {
+        return  Err(Error::CondNotBool(cond_value));
+    };
+    if !bin {
+        return node
+            .else_stmts
+            .as_ref()
+            .map(|stmts| interpret_stmt_list(env, stmts))
+            .unwrap_or(Ok(None));
+    }
+
+    interpret_stmt_list(env, &node.if_stmts)
 }
 
 fn interpret_stmt_list(env: &mut Environment, stmts: &[Statement]) -> Result<Option<Value>, Error> {
@@ -190,9 +207,8 @@ fn interpret_while_stmt(
     result
 }
 
-fn interpret_expr(env: &mut Environment, expr: &Expression) -> Result<Value, Error> {
+fn interpret_expr(env: &Environment, expr: &Expression) -> Result<Value, Error> {
     match expr {
-        Expression::If(node) => interpret_if_expr(env, node),
         Expression::FnCall(node) => interpret_function_call(env, node),
         Expression::FnDecl(node) => Ok(Value::Function(
             node.arg_names.to_owned(),
@@ -209,7 +225,7 @@ fn interpret_expr(env: &mut Environment, expr: &Expression) -> Result<Value, Err
     }
 }
 
-fn get_array_value(env: &mut Environment, exprs: &Vec<Expression>) -> Result<Value, Error> {
+fn get_array_value(env: &Environment, exprs: &Vec<Expression>) -> Result<Value, Error> {
     let mut result = vec![];
     for expr in exprs {
         result.push(interpret_expr(env, expr)?);
@@ -217,28 +233,8 @@ fn get_array_value(env: &mut Environment, exprs: &Vec<Expression>) -> Result<Val
     Ok(Value::Array(result))
 }
 
-fn interpret_if_expr(env: &mut Environment, node: &IfNode) -> Result<Value, Error> {
-    let cond_value = interpret_expr(env, &node.cond)?;
-    let Value::Bool(bin) = cond_value else {
-        return  Err(Error::CondNotBool(cond_value));
-    };
-    if !bin {
-        return node
-            .else_stmts
-            .as_ref()
-            .map(|stmts| interpret_stmt_list(env, stmts))
-            .unwrap_or(Ok(None))
-            .map(Value::from_option);
-    }
-
-    Ok(Value::from_option(interpret_stmt_list(
-        env,
-        &node.if_stmts,
-    )?))
-}
-
 fn interpret_function_call(
-    env: &mut Environment,
+    env: &Environment,
     FnCallNode { name, args }: &FnCallNode,
 ) -> Result<Value, Error> {
     let name = name.to_string();
@@ -269,7 +265,7 @@ fn interpret_function_call(
     interpret_stmt_list(&mut local_env, &body).map(Value::from_option)
 }
 
-fn interpret_unary_op(env: &mut Environment, expr: &Expression, op: Token) -> Result<Value, Error> {
+fn interpret_unary_op(env: &Environment, expr: &Expression, op: Token) -> Result<Value, Error> {
     let res = interpret_expr(env, expr)?;
     match op {
         Token::Bang => match res {
@@ -285,7 +281,7 @@ fn interpret_unary_op(env: &mut Environment, expr: &Expression, op: Token) -> Re
 }
 
 fn interpret_binary_op(
-    env: &mut Environment,
+    env: &Environment,
     BinaryOpNode { lhs, op, rhs }: &BinaryOpNode,
 ) -> Result<Value, Error> {
     let lhs = interpret_expr(env, lhs)?;

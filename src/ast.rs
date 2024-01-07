@@ -12,12 +12,12 @@ pub enum Expression {
     Identifier(String),
     FnDecl(FnDeclNode),
     FnCall(FnCallNode),
-    If(IfNode),
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
+    If(IfNode),
     While(WhileNode),
     Declare(String, Expression),
     Reassign(String, Expression),
