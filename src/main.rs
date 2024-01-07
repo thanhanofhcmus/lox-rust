@@ -1,11 +1,12 @@
-mod expression;
+mod expr;
+mod interpreter;
 mod lex;
 mod parse_error;
 mod span;
 mod token;
 
 fn main() {
-    let input = "(123+456)".as_bytes();
+    let input = "1 + 1".as_bytes();
 
     println!("{:?}", std::str::from_utf8(input).unwrap());
 
@@ -20,6 +21,9 @@ fn main() {
         );
     }
 
-    let expr = expression::parse(input, &tokens);
+    let expr = expr::parse(input, &tokens);
     println!("{:?}", expr);
+
+    let calc_result = interpreter::calculate(expr.unwrap());
+    println!("{:?}", calc_result);
 }

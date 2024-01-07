@@ -27,10 +27,29 @@ fn parse_term(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    let mut lhs = parse_primary(input, items, curr_pos)?;
+    let mut lhs = parse_factor(input, items, curr_pos)?;
 
     while let Some(op) = items.get(*curr_pos) {
         if op.token != Token::Plus && op.token != Token::Minus {
+            break;
+        }
+        *curr_pos += 1;
+        let rhs = parse_factor(input, items, curr_pos)?;
+        lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
+    }
+
+    Ok(lhs)
+}
+
+fn parse_factor(
+    input: &[u8],
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    let mut lhs = parse_primary(input, items, curr_pos)?;
+
+    while let Some(op) = items.get(*curr_pos) {
+        if op.token != Token::Star && op.token != Token::Slash {
             break;
         }
         *curr_pos += 1;
