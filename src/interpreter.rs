@@ -98,10 +98,7 @@ impl<'a> Environment<'a> {
         let _ = self.values.insert(key.to_string(), value);
     }
 
-    pub fn change_parent<'b>(&mut self, parent: &'b Environment<'b>)
-    where
-        'b: 'a,
-    {
+    pub fn change_parent<'b: 'a>(&mut self, parent: &'b Environment<'b>) {
         self.parent = Some(parent);
     }
 }
@@ -133,10 +130,10 @@ fn interpret_print_stmt(env: &mut Environment, expr: &Expression) -> Result<Opti
 
 fn interpret_if_stmt(env: &mut Environment, node: &IfNode) -> Result<Option<Value>, Error> {
     let cond_value = interpret_expr(env, &node.cond)?;
-    let Value::Bool(bin) = cond_value else {
+    let Value::Bool(cond_bin) = cond_value else {
         return  Err(Error::CondNotBool(cond_value));
     };
-    if !bin {
+    if !cond_bin {
         return node
             .else_stmts
             .as_ref()
@@ -237,32 +234,29 @@ fn interpret_function_call(
     env: &Environment,
     FnCallNode { name, args }: &FnCallNode,
 ) -> Result<Value, Error> {
-    let name = name.to_string();
-    let Some(fn_value) = env.get_include_parent(&name) else {
-        return Err(Error::NotFoundVariable(name));
+    let Some(fn_value) = env.get_include_parent(name) else {
+        return Err(Error::NotFoundVariable(name.clone()));
     };
-    // TODO: remove clone, make function call don't clone the whole body
-    let fn_value = fn_value.clone();
     let Value::Function(arg_names, body) = fn_value else {
         return Err(Error::ValueNotCallable(fn_value.to_owned()));
     };
 
     if arg_names.len() != args.len() {
         return Err(Error::WrongNumberOfArgument(
-            name,
+            name.clone(),
             arg_names.len(),
             args.len(),
         ));
     }
 
     let mut local_env = Environment::new();
-    for (arg_name, arg_expr) in arg_names.into_iter().zip(args.iter()) {
+    for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
         let value = interpret_expr(env, arg_expr)?;
         local_env.insert(arg_name.to_string(), value);
     }
     local_env.change_parent(env);
 
-    interpret_stmt_list(&mut local_env, &body).map(Value::from_option)
+    interpret_stmt_list(&mut local_env, body).map(Value::from_option)
 }
 
 fn interpret_unary_op(env: &Environment, expr: &Expression, op: Token) -> Result<Value, Error> {
