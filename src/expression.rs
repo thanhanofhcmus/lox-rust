@@ -5,7 +5,6 @@ use std::str::from_utf8;
 
 #[derive(Debug)]
 pub enum Expression {
-    NoOp,
     Number(f64),
     BinaryOp(Box<Expression>, Token, Box<Expression>),
 }
@@ -28,8 +27,16 @@ fn parse_term(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    let lhs = parse_primary(input, items, curr_pos)?;
-    // TODO: check for rhs
+    let mut lhs = parse_primary(input, items, curr_pos)?;
+
+    while let Some(op) = items.get(*curr_pos) {
+        if op.token != Token::Plus && op.token != Token::Minus {
+            break;
+        }
+        *curr_pos += 1;
+        let rhs = parse_primary(input, items, curr_pos)?;
+        lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
+    }
 
     Ok(lhs)
 }
@@ -56,11 +63,17 @@ fn parse_group(
 ) -> Result<Expression, ParseError> {
     *curr_pos += 1; // consume '('
     let expr = parse_expr(input, items, curr_pos)?;
-    *curr_pos += 1;
 
-    if items.get(*curr_pos).is_none() {
+    // now curr_pos must be at token ')'
+    let Some(li) = items.get(*curr_pos) else {
         return Err(ParseError::Eof);
+    };
+
+    if li.token != Token::RightParen {
+        return Err(ParseError::UnexpectedToken(li.token, li.span));
     }
+
+    *curr_pos += 1;
     Ok(expr)
 }
 

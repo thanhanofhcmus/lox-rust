@@ -5,7 +5,9 @@ mod span;
 mod token;
 
 fn main() {
-    let input = "(123+-*/)".as_bytes();
+    let input = "(123+456)".as_bytes();
+
+    println!("{:?}", std::str::from_utf8(input).unwrap());
 
     let tokens = lex::lex(input).unwrap();
 

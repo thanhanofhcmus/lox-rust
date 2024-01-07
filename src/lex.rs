@@ -25,17 +25,17 @@ pub fn lex(input: &[u8]) -> Result<Vec<LexItem>, ParseError> {
 
     while let Some(&c) = input.get(curr_offset) {
         if c == b'(' {
-            result.push(LexItem::new(Token::LeftParen, Span::two(curr_offset)));
+            result.push(LexItem::new(Token::LeftParen, Span::one(curr_offset)));
         } else if c == b')' {
-            result.push(LexItem::new(Token::RightParen, Span::two(curr_offset)));
+            result.push(LexItem::new(Token::RightParen, Span::one(curr_offset)));
         } else if c == b'+' {
-            result.push(LexItem::new(Token::Plus, Span::two(curr_offset)));
+            result.push(LexItem::new(Token::Plus, Span::one(curr_offset)));
         } else if c == b'-' {
-            result.push(LexItem::new(Token::Minus, Span::two(curr_offset)));
+            result.push(LexItem::new(Token::Minus, Span::one(curr_offset)));
         } else if c == b'*' {
-            result.push(LexItem::new(Token::Star, Span::two(curr_offset)));
+            result.push(LexItem::new(Token::Star, Span::one(curr_offset)));
         } else if c == b'/' {
-            result.push(LexItem::new(Token::Slash, Span::two(curr_offset)));
+            result.push(LexItem::new(Token::Slash, Span::one(curr_offset)));
         } else if c == b' ' || c == b'\t' {
             // skip
         } else if is_ascii_number(&c) {
@@ -52,12 +52,12 @@ pub fn lex(input: &[u8]) -> Result<Vec<LexItem>, ParseError> {
 fn lex_number(input: &[u8], offset: &mut usize) -> LexItem {
     let start_offset = *offset;
 
-    while let Some(c) = input.get(*offset) {
+    while let Some(c) = input.get(*offset + 1) {
         if !is_ascii_number(c) {
             break;
         }
         *offset += 1;
     }
 
-    LexItem::new(Token::Number, Span::new(start_offset, *offset))
+    LexItem::new(Token::Number, Span::new(start_offset, *offset + 1))
 }
