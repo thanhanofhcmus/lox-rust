@@ -33,6 +33,7 @@ pub enum Token {
     Nil,
 
     Var,
+    If,
 
     Identifier,
     Number,

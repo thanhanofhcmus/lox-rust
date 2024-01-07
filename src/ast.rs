@@ -15,7 +15,11 @@ pub enum Expression {
 #[derive(Debug)]
 pub enum Statement {
     Expr(Expression),
+    // TODO: add else
+    If(Expression, StatementList),
     Assign(String, Expression),
-    Block(Vec<Statement>),
-    Global(Vec<Statement>),
+    Block(StatementList),
+    Global(StatementList),
 }
+
+pub type StatementList = Vec<Statement>;

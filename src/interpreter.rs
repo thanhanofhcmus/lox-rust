@@ -1,4 +1,4 @@
-use crate::ast::{Expression, Statement};
+use crate::ast::{Expression, Statement, StatementList};
 use crate::token::Token;
 use derive_more::Display;
 use std::collections::HashMap;
@@ -11,6 +11,7 @@ pub enum Error {
     UnknownOperation(Token),
     InvalidOperationOnType(Token, Value),
     MismatchType(Value, Value),
+    IfCondNotBool(Value),
     DivideByZero,
 }
 
@@ -67,18 +68,16 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
     match stmt {
         Statement::Assign(name, expr) => interpret_assign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
-        Statement::Block(stmts) => interpret_list_stmts(&mut Environment::with_parent(env), stmts),
-        Statement::Global(stmts) => interpret_list_stmts(env, stmts),
+        Statement::If(cond, stmts) => interpret_if_stmt(env, cond, stmts),
+        Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
+        Statement::Global(stmts) => interpret_stmt_list(env, stmts),
     }
 }
 
-fn interpret_list_stmts(
+fn interpret_stmt_list(
     env: &mut Environment,
-    mut stmts: Vec<Statement>,
+    mut stmts: StatementList,
 ) -> Result<Option<Value>, Error> {
-    // TODO: add new env
-    // let mut local_env = Environment::with_parent(env);
-
     if let Some(last) = stmts.pop() {
         for s in stmts {
             interpret_stmt(env, s)?;
@@ -100,6 +99,22 @@ fn interpret_assign_stmt(
     let value = interpret_expr(env, expr)?;
     env.insert(name, value);
     Ok(None)
+}
+
+fn interpret_if_stmt(
+    env: &mut Environment,
+    cond: Expression,
+    stmts: StatementList,
+) -> Result<Option<Value>, Error> {
+    let cond_value = interpret_expr(env, cond)?;
+    let Value::Bool(bin) = cond_value else {
+        return  Err(Error::IfCondNotBool(cond_value));
+    };
+    if !bin {
+        return Ok(None);
+    }
+
+    interpret_stmt_list(env, stmts)
 }
 
 fn interpret_expr(env: &Environment, expr: Expression) -> Result<Value, Error> {

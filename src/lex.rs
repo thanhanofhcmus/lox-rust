@@ -12,6 +12,7 @@ static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "nil" => Token::Nil,
 
     "var" => Token::Var,
+    "if" => Token::If,
 );
 
 #[derive(Debug)]

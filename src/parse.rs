@@ -1,4 +1,4 @@
-use crate::ast::{Expression, Statement};
+use crate::ast::{Expression, Statement, StatementList};
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
 use crate::span::Span;
@@ -33,9 +33,19 @@ fn parse_stmt(
     };
     match li.token {
         Token::Var => parse_assignment(input, items, curr_pos),
+        Token::If => parse_if(input, items, curr_pos),
         Token::LPointParen => parse_block(input, items, curr_pos),
         _ => parse_expr(input, items, curr_pos).map(Statement::Expr),
     }
+}
+
+fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Statement, ParseError> {
+    consume_token(items, Token::If, curr_pos)?;
+
+    let cond = parse_expr(input, items, curr_pos)?;
+    let stmts = parse_block_statement_list(input, items, curr_pos)?;
+
+    Ok(Statement::If(cond, stmts))
 }
 
 fn parse_block(
@@ -43,6 +53,16 @@ fn parse_block(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Statement, ParseError> {
+    Ok(Statement::Block(parse_block_statement_list(
+        input, items, curr_pos,
+    )?))
+}
+
+fn parse_block_statement_list(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<StatementList, ParseError> {
     consume_token(items, Token::LPointParen, curr_pos)?;
 
     let mut stmts = vec![];
@@ -62,7 +82,7 @@ fn parse_block(
 
     consume_token(items, Token::RPointParen, curr_pos)?;
 
-    Ok(Statement::Block(stmts))
+    Ok(stmts)
 }
 
 fn parse_assignment(
