@@ -11,6 +11,11 @@ pub enum Token {
     EqualEqual,
     BangEqual,
 
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+
     Plus,
     Minus,
     Star,

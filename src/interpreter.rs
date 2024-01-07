@@ -17,7 +17,7 @@ pub enum CalcResult {
     Bool(bool),
 }
 
-fn compare(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
+fn is_equal(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
     Ok(CalcResult::Bool(match lhs {
         CalcResult::Bool(l) => match rhs {
             CalcResult::Bool(r) => l == r,
@@ -28,6 +28,23 @@ fn compare(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
             _ => false,
         },
     }))
+}
+
+fn compare(lhs: &CalcResult, op: Token, rhs: &CalcResult) -> Result<CalcResult, Error> {
+    let &CalcResult::Number(l) = lhs else {
+        return Err(Error::InvalidOperationOnType(op, lhs.clone()))
+    };
+    let &CalcResult::Number(r) = rhs else {
+        return Err(Error::InvalidOperationOnType(op, rhs.clone()))
+    };
+
+    match op {
+        Token::Less => Ok(CalcResult::Bool(l < r)),
+        Token::LessEqual => Ok(CalcResult::Bool(l <= r)),
+        Token::Greater => Ok(CalcResult::Bool(l > r)),
+        Token::GreaterEqual => Ok(CalcResult::Bool(l >= r)),
+        _ => Err(Error::InvalidOperationOnType(op, lhs.clone())),
+    }
 }
 
 fn and_or(lhs: &CalcResult, op: Token, rhs: &CalcResult) -> Result<CalcResult, Error> {
@@ -123,7 +140,10 @@ fn calculate_binary_op(lhs: Expression, op: Token, rhs: Expression) -> Result<Ca
         Token::Star => times(&lhs, &rhs),
         Token::Slash => divide(&lhs, &rhs),
         Token::And | Token::Or => and_or(&lhs, op, &rhs),
-        Token::EqualEqual | Token::BangEqual => compare(&lhs, &rhs),
+        Token::EqualEqual | Token::BangEqual => is_equal(&lhs, &rhs),
+        Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
+            compare(&lhs, op, &rhs)
+        }
         _ => Err(Error::UnknownOperation(op)),
     }
 }

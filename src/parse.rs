@@ -30,6 +30,20 @@ fn parse_logical(
         items,
         curr_pos,
         &[Token::And, Token::Or],
+        parse_equality,
+    )
+}
+
+fn parse_equality(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    parse_recursive_binary(
+        input,
+        items,
+        curr_pos,
+        &[Token::EqualEqual, Token::BangEqual],
         parse_comparision,
     )
 }
@@ -43,7 +57,12 @@ fn parse_comparision(
         input,
         items,
         curr_pos,
-        &[Token::EqualEqual, Token::BangEqual],
+        &[
+            Token::Less,
+            Token::LessEqual,
+            Token::Greater,
+            Token::GreaterEqual,
+        ],
         parse_term,
     )
 }

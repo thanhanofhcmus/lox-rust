@@ -27,11 +27,28 @@ fn is_identifier_char(c: char) -> bool {
     c == '_' || c.is_ascii_alphanumeric()
 }
 
+fn is_next_equal(input: &str, curr_offset: usize) -> bool {
+    input
+        .chars()
+        .nth(curr_offset + 1)
+        .map(|next| next == '=')
+        .unwrap_or(false)
+}
+
 pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     let mut curr_offset = 0;
     let mut result = vec![];
 
     while let Some(c) = input.chars().nth(curr_offset) {
+        let mut push_with_equal = |token_has_equal, token_no_equal| {
+            if is_next_equal(input, curr_offset) {
+                result.push(LexItem::new(token_has_equal, Span::two(curr_offset)));
+                curr_offset += 1;
+            } else {
+                result.push(LexItem::new(token_no_equal, Span::one(curr_offset)));
+            }
+        };
+
         if c == '(' {
             result.push(LexItem::new(Token::LeftParen, Span::one(curr_offset)));
         } else if c == ')' {
@@ -47,29 +64,13 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
         } else if c == ' ' || c == '\t' {
             // skip
         } else if c == '=' {
-            let is_equal_equal = input
-                .chars()
-                .nth(curr_offset + 1)
-                .map(|next| next == '=')
-                .unwrap_or(false);
-            if is_equal_equal {
-                result.push(LexItem::new(Token::EqualEqual, Span::two(curr_offset)));
-                curr_offset += 1;
-            } else {
-                result.push(LexItem::new(Token::Equal, Span::one(curr_offset)));
-            }
+            push_with_equal(Token::EqualEqual, Token::Equal);
         } else if c == '!' {
-            let is_bang_equal = input
-                .chars()
-                .nth(curr_offset + 1)
-                .map(|next| next == '=')
-                .unwrap_or(false);
-            if is_bang_equal {
-                result.push(LexItem::new(Token::BangEqual, Span::two(curr_offset)));
-                curr_offset += 1;
-            } else {
-                result.push(LexItem::new(Token::Bang, Span::one(curr_offset)));
-            }
+            push_with_equal(Token::BangEqual, Token::Bang);
+        } else if c == '<' {
+            push_with_equal(Token::LessEqual, Token::Less);
+        } else if c == '>' {
+            push_with_equal(Token::GreaterEqual, Token::Greater);
         } else if c.is_ascii_digit() {
             result.push(lex_number(input, &mut curr_offset));
         } else if is_identifier_char(c) {
