@@ -18,6 +18,6 @@ impl Span {
     }
 
     pub fn extract_from_source<'a>(&self, input: &'a [u8]) -> &'a [u8] {
-        &input[self.start..self.end]
+        &input[self.start..=self.end]
     }
 }

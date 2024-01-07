@@ -59,5 +59,5 @@ fn lex_number(input: &[u8], offset: &mut usize) -> LexItem {
         *offset += 1;
     }
 
-    LexItem::new(Token::Number, Span::new(start_offset, *offset + 1))
+    LexItem::new(Token::Number, Span::new(start_offset, *offset))
 }
