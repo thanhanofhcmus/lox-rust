@@ -3,9 +3,9 @@ use crate::token::Token;
 
 #[derive(Debug)]
 pub enum Error {
-    UnknowOperation(Token),
+    UnknownOperation(Token),
     InvalidOperationOnType(Token, CalcResult),
-    MismatchType,
+    MismatchType(CalcResult, CalcResult),
     DivideByZero,
 }
 
@@ -36,7 +36,7 @@ fn and_or(lhs: &CalcResult, op: Token, rhs: &CalcResult) -> Result<CalcResult, E
     match op {
         Token::And => Ok(CalcResult::Bool(l && r)),
         Token::Or => Ok(CalcResult::Bool(l || r)),
-        _ => Err(Error::UnknowOperation(op)),
+        _ => Err(Error::UnknownOperation(op)),
     }
 }
 
@@ -45,7 +45,7 @@ fn add(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
         CalcResult::Bool(_) => Err(Error::InvalidOperationOnType(Token::Plus, lhs.clone())),
         &CalcResult::Number(l) => match rhs {
             &CalcResult::Number(r) => Ok(CalcResult::Number(l + r)),
-            _ => Err(Error::MismatchType),
+            _ => Err(Error::MismatchType(lhs.clone(), rhs.clone())),
         },
     }
 }
@@ -104,7 +104,7 @@ fn calculate_unary_op(expr: Expression, op: Token) -> Result<CalcResult, Error> 
             CalcResult::Number(v) => Ok(CalcResult::Number(-v)),
             _ => Err(Error::InvalidOperationOnType(op, res)),
         },
-        _ => Err(Error::UnknowOperation(op)),
+        _ => Err(Error::UnknownOperation(op)),
     }
 }
 
@@ -113,7 +113,7 @@ fn calculate_binary_op(lhs: Expression, op: Token, rhs: Expression) -> Result<Ca
     let rhs = calculate(rhs)?;
 
     if !lhs.same_type(&rhs) {
-        return Err(Error::MismatchType);
+        return Err(Error::MismatchType(lhs.clone(), rhs.clone()));
     };
 
     match op {
@@ -122,6 +122,6 @@ fn calculate_binary_op(lhs: Expression, op: Token, rhs: Expression) -> Result<Ca
         Token::Star => times(&lhs, &rhs),
         Token::Slash => divide(&lhs, &rhs),
         Token::And | Token::Or => and_or(&lhs, op, &rhs),
-        _ => Err(Error::UnknowOperation(op)),
+        _ => Err(Error::UnknownOperation(op)),
     }
 }
