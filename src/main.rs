@@ -37,6 +37,8 @@ fn main() {
     };
     println!("{:?}", expr);
 
-    let calc_result = interpreter::calculate(expr);
+    let it = interpreter::Interpreter::new();
+
+    let calc_result = it.calculate(expr);
     println!("{:?}", calc_result);
 }
