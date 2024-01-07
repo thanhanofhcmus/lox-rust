@@ -7,6 +7,7 @@ pub enum Expression {
     Number(f64),
     Str(String),
     Array(Vec<Expression>),
+    Ternary(TernaryExprNode),
     UnaryOp(Box<Expression>, Token),
     BinaryOp(BinaryOpNode),
     Identifier(String),
@@ -17,7 +18,7 @@ pub enum Expression {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
-    If(IfNode),
+    If(IfStmtNode),
     While(WhileNode),
     Declare(String, Expression),
     Reassign(String, Expression),
@@ -30,10 +31,17 @@ pub enum Statement {
 pub type StatementList = Vec<Statement>;
 
 #[derive(Debug, Clone)]
-pub struct IfNode {
-    pub cond: Box<Expression>,
+pub struct IfStmtNode {
+    pub cond: Expression,
     pub if_stmts: StatementList,
     pub else_stmts: Option<StatementList>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TernaryExprNode {
+    pub cond: Box<Expression>,
+    pub true_expr: Box<Expression>,
+    pub false_expr: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]

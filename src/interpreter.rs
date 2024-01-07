@@ -1,5 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, Expression, FnCallNode, IfNode, Statement, StatementList, WhileNode,
+    BinaryOpNode, Expression, FnCallNode, IfStmtNode, Statement, StatementList, TernaryExprNode,
+    WhileNode,
 };
 use crate::token::Token;
 use derive_more::Display;
@@ -128,7 +129,7 @@ fn interpret_print_stmt(env: &mut Environment, expr: &Expression) -> Result<Opti
     Ok(None)
 }
 
-fn interpret_if_stmt(env: &mut Environment, node: &IfNode) -> Result<Option<Value>, Error> {
+fn interpret_if_stmt(env: &mut Environment, node: &IfStmtNode) -> Result<Option<Value>, Error> {
     let cond_value = interpret_expr(env, &node.cond)?;
     let Value::Bool(cond_bin) = cond_value else {
         return  Err(Error::CondNotBool(cond_value));
@@ -211,6 +212,7 @@ fn interpret_expr(env: &Environment, expr: &Expression) -> Result<Value, Error> 
             node.arg_names.to_owned(),
             node.body.to_owned(),
         )),
+        Expression::Ternary(node) => interpret_ternary_expr(env, node),
         Expression::Identifier(name) => Ok(get_value_owned(env, name.as_str())),
         Expression::Nil => Ok(Value::Nil),
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
@@ -219,6 +221,19 @@ fn interpret_expr(env: &Environment, expr: &Expression) -> Result<Value, Error> 
         Expression::Array(exprs) => get_array_value(env, exprs),
         Expression::UnaryOp(expr, op) => interpret_unary_op(env, expr, *op),
         Expression::BinaryOp(node) => interpret_binary_op(env, node),
+    }
+}
+
+fn interpret_ternary_expr(env: &Environment, node: &TernaryExprNode) -> Result<Value, Error> {
+    let cond_value = interpret_expr(env, &node.cond)?;
+    let Value::Bool(cond_bin) =  cond_value else {
+        return Err(Error::CondNotBool(cond_value))
+    };
+
+    if cond_bin {
+        interpret_expr(env, &node.true_expr)
+    } else {
+        interpret_expr(env, &node.false_expr)
     }
 }
 

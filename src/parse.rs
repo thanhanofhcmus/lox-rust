@@ -1,5 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, Expression, FnCallNode, FnDeclNode, IfNode, Statement, StatementList, WhileNode,
+    BinaryOpNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, Statement, StatementList,
+    TernaryExprNode, WhileNode,
 };
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
@@ -15,8 +16,8 @@ declaration  = "var" IDENTIFIER "=" expr
 while        = "while" expr block
 block        = "{" (stmt ";")* "}"
 reassignment = IDENTIFIER "=" expr
-expr         = ternary
-ternary      = logical ("?" logical ":" logical)?
+expr         = logical | ternary
+ternary      = "when" logical "then" logical "else" logical
 logical      = equality (( "and" | "or" ) equality)*
 equality     = comparison (("==" | "!=") comparison)*
 comparison   = term (("<" | "<" | "<=" | ">=") term)*
@@ -96,8 +97,8 @@ fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Stat
         else_stmts = Some(parse_block_statement_list(input, items, curr_pos)?);
     }
 
-    Ok(Statement::If(IfNode {
-        cond: Box::new(cond),
+    Ok(Statement::If(IfStmtNode {
+        cond,
         if_stmts,
         else_stmts,
     }))
@@ -208,15 +209,6 @@ fn parse_reassignment(
     Ok(Statement::Reassign(name.to_string(), expr))
 }
 
-fn parse_expr(
-    input: &str,
-    items: &[LexItem],
-    curr_pos: &mut usize,
-) -> Result<Expression, ParseError> {
-    trace!("parse_expr");
-    parse_logical(input, items, curr_pos)
-}
-
 fn parse_reassignment_or_expr(
     input: &str,
     items: &[LexItem],
@@ -228,6 +220,37 @@ fn parse_reassignment_or_expr(
     } else {
         parse_expr(input, items, curr_pos).map(Statement::Expr)
     }
+}
+
+fn parse_expr(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    trace!("parse_expr");
+    if peek(items, &[Token::When], *curr_pos) {
+        parse_ternary(input, items, curr_pos)
+    } else {
+        parse_logical(input, items, curr_pos)
+    }
+}
+
+fn parse_ternary(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    consume_token(items, Token::When, curr_pos)?;
+    let cond = parse_logical(input, items, curr_pos)?;
+    consume_token(items, Token::Then, curr_pos)?;
+    let true_expr = parse_logical(input, items, curr_pos)?;
+    consume_token(items, Token::Else, curr_pos)?;
+    let false_expr = parse_logical(input, items, curr_pos)?;
+    Ok(Expression::Ternary(TernaryExprNode {
+        cond: Box::new(cond),
+        true_expr: Box::new(true_expr),
+        false_expr: Box::new(false_expr),
+    }))
 }
 
 fn parse_logical(
