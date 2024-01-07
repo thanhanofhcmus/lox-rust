@@ -18,7 +18,7 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
         }
     }
     match items.get(curr_pos) {
-        None => Ok(Statement::Block(stmts)),
+        None => Ok(Statement::Global(stmts)),
         Some(li) => Err(ParseError::Unfinished(li.token, li.span)),
     }
 }

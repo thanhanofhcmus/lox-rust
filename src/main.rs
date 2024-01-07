@@ -15,7 +15,7 @@ fn main() {
     let input = args.get(1).expect("must have one argument");
     debug!("{:?}", input);
 
-    let mut it = interpreter::Interpreter::new();
+    let mut it = interpreter::Environment::new();
 
     if input != "-i" {
         run_one_stmt(input, &mut it);
@@ -32,11 +32,11 @@ fn main() {
             break;
         }
 
-        run_one_stmt(line.trim_end(), &mut it)
+        run_one_stmt(line.trim_end(), &mut it);
     }
 }
 
-fn run_one_stmt(input: &str, it: &mut interpreter::Interpreter) {
+fn run_one_stmt(input: &str, it: &mut interpreter::Environment) {
     let tokens = match lex::lex(input) {
         Ok(list) => list,
         Err(err) => {
@@ -61,9 +61,9 @@ fn run_one_stmt(input: &str, it: &mut interpreter::Interpreter) {
             return;
         }
     };
-    debug!("{:?}", expr);
+    debug!("EXPR: {:?}", expr);
 
-    let calc_result = it.interpret_stmt(expr);
+    let calc_result = interpreter::interpret_stmt(it, expr);
 
     match calc_result {
         Ok(value) => info!(

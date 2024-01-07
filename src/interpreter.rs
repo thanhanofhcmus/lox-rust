@@ -23,102 +23,137 @@ pub enum Value {
     Array(Vec<Value>),
 }
 
-pub struct Interpreter {
+pub struct Environment<'a> {
     values: HashMap<String, Value>,
+    parent: Option<&'a Environment<'a>>,
 }
 
-impl Interpreter {
+impl<'a> Environment<'a> {
     pub fn new() -> Self {
-        Interpreter {
+        Self {
             values: HashMap::new(),
+            parent: None,
         }
     }
 
-    pub fn interpret_stmt(&mut self, stmt: Statement) -> Result<Option<Value>, Error> {
-        match stmt {
-            Statement::Assign(name, expr) => {
-                let value = self.interpret_expr(expr)?;
-                self.values.insert(name, value);
-                Ok(None)
-            }
-            Statement::Expr(expr) => self.interpret_expr(expr).map(Some),
-            Statement::Block(mut stmts) => {
-                if let Some(last) = stmts.pop() {
-                    for s in stmts {
-                        self.interpret_stmt(s)?;
-                    }
-                    self.interpret_stmt(last)
-                } else {
-                    Ok(None)
-                }
-            }
+    pub fn with_parent<'b>(parent: &'b Environment<'b>) -> Self
+    where
+        'b: 'a,
+    {
+        Self {
+            values: HashMap::new(),
+            parent: Some(parent),
         }
     }
 
-    fn interpret_expr(&self, expr: Expression) -> Result<Value, Error> {
-        match expr {
-            Expression::Identifier(name) => Ok(self.get_value(name.as_str())),
-            Expression::Nil => Ok(Value::Nil),
-            Expression::Str(v) => Ok(Value::Str(v.to_string())),
-            Expression::Bool(v) => Ok(Value::Bool(v)),
-            Expression::Number(v) => Ok(Value::Number(v)),
-            Expression::Array(exprs) => self.get_array_value(exprs),
-            Expression::UnaryOp(expr, op) => self.interpret_unary_op(*expr, op),
-            Expression::BinaryOp(lhs, op, rhs) => self.interpret_binary_op(*lhs, op, *rhs),
+    pub fn get(&self, key: &'_ str) -> Option<&Value> {
+        if let Some(value) = self.values.get(key) {
+            return Some(value);
         }
+        self.parent.and_then(|p| p.get(key))
     }
 
-    fn get_value(&self, name: &str) -> Value {
-        self.values
-            .get(name)
-            .map(|v| v.to_owned())
-            .unwrap_or(Value::Nil)
+    pub fn insert(&mut self, key: String, value: Value) {
+        let _ = self.values.insert(key.to_string(), value);
     }
+}
 
-    fn get_array_value(&self, exprs: Vec<Expression>) -> Result<Value, Error> {
-        let mut result = vec![];
-        for expr in exprs {
-            result.push(self.interpret_expr(expr)?);
-        }
-        Ok(Value::Array(result))
+fn get_value(env: &Environment, name: &str) -> Value {
+    env.get(name).map(|v| v.to_owned()).unwrap_or(Value::Nil)
+}
+
+pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<Value>, Error> {
+    match stmt {
+        Statement::Assign(name, expr) => interpret_assign_stmt(env, name, expr),
+        Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
+        Statement::Block(stmts) => interpret_list_stmts(&mut Environment::with_parent(env), stmts),
+        Statement::Global(stmts) => interpret_list_stmts(env, stmts),
     }
+}
 
-    fn interpret_unary_op(&self, expr: Expression, op: Token) -> Result<Value, Error> {
-        let res = self.interpret_expr(expr)?;
-        match op {
-            Token::Bang => match res {
-                Value::Bool(v) => Ok(Value::Bool(!v)),
-                _ => Err(Error::InvalidOperationOnType(op, res)),
-            },
-            Token::Minus => match res {
-                Value::Number(v) => Ok(Value::Number(-v)),
-                _ => Err(Error::InvalidOperationOnType(op, res)),
-            },
-            _ => Err(Error::UnknownOperation(op)),
+fn interpret_list_stmts(
+    env: &mut Environment,
+    mut stmts: Vec<Statement>,
+) -> Result<Option<Value>, Error> {
+    // TODO: add new env
+    // let mut local_env = Environment::with_parent(env);
+
+    if let Some(last) = stmts.pop() {
+        for s in stmts {
+            interpret_stmt(env, s)?;
         }
+        interpret_stmt(env, last)
+    } else {
+        Ok(None)
     }
+}
 
-    fn interpret_binary_op(
-        &self,
-        lhs: Expression,
-        op: Token,
-        rhs: Expression,
-    ) -> Result<Value, Error> {
-        let lhs = self.interpret_expr(lhs)?;
-        let rhs = self.interpret_expr(rhs)?;
+fn interpret_assign_stmt(
+    env: &mut Environment,
+    name: String,
+    expr: Expression,
+) -> Result<Option<Value>, Error> {
+    let value = interpret_expr(env, expr)?;
+    (*env).insert(name, value);
+    Ok(None)
+}
 
-        match op {
-            Token::Plus => add(&lhs, &rhs),
-            Token::Minus => subtract(&lhs, &rhs),
-            Token::Star => times(&lhs, &rhs),
-            Token::Slash => divide(&lhs, &rhs),
-            Token::And | Token::Or => and_or(&lhs, op, &rhs),
-            Token::EqualEqual | Token::BangEqual => is_equal(&lhs, &rhs),
-            Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
-                compare(&lhs, op, &rhs)
-            }
-            _ => Err(Error::UnknownOperation(op)),
+fn interpret_expr(env: &Environment, expr: Expression) -> Result<Value, Error> {
+    match expr {
+        Expression::Identifier(name) => Ok(get_value(env, name.as_str())),
+        Expression::Nil => Ok(Value::Nil),
+        Expression::Str(v) => Ok(Value::Str(v.to_string())),
+        Expression::Bool(v) => Ok(Value::Bool(v)),
+        Expression::Number(v) => Ok(Value::Number(v)),
+        Expression::Array(exprs) => get_array_value(env, exprs),
+        Expression::UnaryOp(expr, op) => interpret_unary_op(env, *expr, op),
+        Expression::BinaryOp(lhs, op, rhs) => interpret_binary_op(env, *lhs, op, *rhs),
+    }
+}
+
+fn get_array_value(env: &Environment, exprs: Vec<Expression>) -> Result<Value, Error> {
+    let mut result = vec![];
+    for expr in exprs {
+        result.push(interpret_expr(env, expr)?);
+    }
+    Ok(Value::Array(result))
+}
+
+fn interpret_unary_op(env: &Environment, expr: Expression, op: Token) -> Result<Value, Error> {
+    let res = interpret_expr(env, expr)?;
+    match op {
+        Token::Bang => match res {
+            Value::Bool(v) => Ok(Value::Bool(!v)),
+            _ => Err(Error::InvalidOperationOnType(op, res)),
+        },
+        Token::Minus => match res {
+            Value::Number(v) => Ok(Value::Number(-v)),
+            _ => Err(Error::InvalidOperationOnType(op, res)),
+        },
+        _ => Err(Error::UnknownOperation(op)),
+    }
+}
+
+fn interpret_binary_op(
+    env: &Environment,
+    lhs: Expression,
+    op: Token,
+    rhs: Expression,
+) -> Result<Value, Error> {
+    let lhs = interpret_expr(env, lhs)?;
+    let rhs = interpret_expr(env, rhs)?;
+
+    match op {
+        Token::Plus => add(&lhs, &rhs),
+        Token::Minus => subtract(&lhs, &rhs),
+        Token::Star => times(&lhs, &rhs),
+        Token::Slash => divide(&lhs, &rhs),
+        Token::And | Token::Or => and_or(&lhs, op, &rhs),
+        Token::EqualEqual | Token::BangEqual => is_equal(&lhs, &rhs),
+        Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
+            compare(&lhs, op, &rhs)
         }
+        _ => Err(Error::UnknownOperation(op)),
     }
 }
 

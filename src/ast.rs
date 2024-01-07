@@ -17,4 +17,5 @@ pub enum Statement {
     Expr(Expression),
     Assign(String, Expression),
     Block(Vec<Statement>),
+    Global(Vec<Statement>),
 }
