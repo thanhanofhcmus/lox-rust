@@ -32,7 +32,8 @@ fn parse_stmt(
         return Err(ParseError::Eof);
     };
     match li.token {
-        Token::Var => parse_assignment(input, items, curr_pos),
+        Token::Identifier => parse_reassignment(input, items, curr_pos),
+        Token::Var => parse_declaration(input, items, curr_pos),
         Token::If => parse_if(input, items, curr_pos),
         Token::While => parse_while(input, items, curr_pos),
         Token::LPointParen => parse_block(input, items, curr_pos),
@@ -103,7 +104,7 @@ fn parse_block_statement_list(
     Ok(stmts)
 }
 
-fn parse_assignment(
+fn parse_declaration(
     input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
@@ -117,7 +118,19 @@ fn parse_assignment(
     let expr = parse_expr(input, items, curr_pos)?;
 
     let name = id_item.span.extract_from_source(input);
-    Ok(Statement::Assign(name.to_string(), expr))
+    Ok(Statement::Declare(name.to_string(), expr))
+}
+
+fn parse_reassignment(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Statement, ParseError> {
+    let id_item = consume_token(items, Token::Identifier, curr_pos)?;
+    consume_token(items, Token::Equal, curr_pos)?;
+    let expr = parse_expr(input, items, curr_pos)?;
+    let name = id_item.span.extract_from_source(input);
+    Ok(Statement::Reassign(name.to_string(), expr))
 }
 
 fn parse_expr(

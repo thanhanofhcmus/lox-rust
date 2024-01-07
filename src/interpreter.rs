@@ -8,8 +8,11 @@ const NUMBER_DELTA: f64 = 1e-10;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Value of name `{0}` has been declared before")]
-    ReDeclareValue(String),
+    #[error("Variable of name `{0}` has been declared before")]
+    ReDeclareVariable(String),
+
+    #[error("Variable of name `{0} has not been declared but get re-assigned")]
+    NotFoundVariable(String),
 
     #[error("Unknown operator `{0}`")]
     UnknownOperation(Token),
@@ -78,7 +81,8 @@ fn get_value(env: &Environment, name: &str) -> Value {
 
 pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<Value>, Error> {
     match stmt {
-        Statement::Assign(name, expr) => interpret_assign_stmt(env, name, expr),
+        Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
+        Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
         Statement::If(cond, if_stmts, else_stmts) => {
             interpret_if_stmt(env, cond, if_stmts, else_stmts)
@@ -103,17 +107,30 @@ fn interpret_stmt_list(
     }
 }
 
-fn interpret_assign_stmt(
+fn interpret_declare_stmt(
     env: &mut Environment,
     name: String,
     expr: Expression,
 ) -> Result<Option<Value>, Error> {
     if env.get(&name).is_some() {
-        return Err(Error::ReDeclareValue(name));
+        return Err(Error::ReDeclareVariable(name));
     }
     let value = interpret_expr(env, expr)?;
     env.insert(name, value);
     Ok(None)
+}
+
+fn interpret_reassign_stmt(
+    env: &mut Environment,
+    name: String,
+    expr: Expression,
+) -> Result<Option<Value>, Error> {
+    if env.get(&name).is_none() {
+        return Err(Error::NotFoundVariable(name));
+    }
+    let value = interpret_expr(env, expr)?;
+    env.insert(name, value.clone());
+    Ok(Some(value))
 }
 
 fn interpret_if_stmt(

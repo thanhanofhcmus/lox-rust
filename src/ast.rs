@@ -17,7 +17,8 @@ pub enum Statement {
     Expr(Expression),
     If(Expression, StatementList, Option<StatementList>),
     While(Expression, StatementList),
-    Assign(String, Expression),
+    Declare(String, Expression),
+    Reassign(String, Expression),
     Block(StatementList),
     Global(StatementList),
 }
