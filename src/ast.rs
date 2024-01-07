@@ -1,6 +1,6 @@
 use crate::token::Token;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Nil,
     Bool(bool),
@@ -12,10 +12,11 @@ pub enum Expression {
     Identifier(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
     If(Expression, StatementList, Option<StatementList>),
+    While(Expression, StatementList),
     Assign(String, Expression),
     Block(StatementList),
     Global(StatementList),

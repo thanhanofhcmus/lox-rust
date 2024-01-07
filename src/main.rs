@@ -37,7 +37,7 @@ fn repl() -> DynResult {
             return Ok(());
         }
 
-        run_stmt(line.trim_end(), &mut env)?;
+        run_stmt(line.trim_end(), &mut env).unwrap_or_else(|e| error!("{}", e));
     }
 }
 

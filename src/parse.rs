@@ -34,6 +34,7 @@ fn parse_stmt(
     match li.token {
         Token::Var => parse_assignment(input, items, curr_pos),
         Token::If => parse_if(input, items, curr_pos),
+        Token::While => parse_while(input, items, curr_pos),
         Token::LPointParen => parse_block(input, items, curr_pos),
         _ => parse_expr(input, items, curr_pos).map(Statement::Expr),
     }
@@ -52,6 +53,17 @@ fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Stat
     }
 
     Ok(Statement::If(cond, if_stmts, else_stmt))
+}
+
+fn parse_while(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Statement, ParseError> {
+    consume_token(items, Token::While, curr_pos)?;
+    let cond = parse_expr(input, items, curr_pos)?;
+    let stmts = parse_block_statement_list(input, items, curr_pos)?;
+    Ok(Statement::While(cond, stmts))
 }
 
 fn parse_block(

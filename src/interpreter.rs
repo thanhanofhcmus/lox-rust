@@ -20,8 +20,8 @@ pub enum Error {
     #[error("`{0}` and `{1} do not share the same type")]
     MismatchType(Value, Value),
 
-    #[error("Condition in if block evaluated to `{0}` which is not a boolean value")]
-    IfCondNotBool(Value),
+    #[error("Condition evaluated to `{0}` which is not a boolean value")]
+    CondNotBool(Value),
 
     #[error("Divide by 0")]
     DivideByZero,
@@ -83,6 +83,7 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
         Statement::If(cond, if_stmts, else_stmts) => {
             interpret_if_stmt(env, cond, if_stmts, else_stmts)
         }
+        Statement::While(cond, stmts) => interpret_while_stmt(env, cond, stmts),
         Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
         Statement::Global(stmts) => interpret_stmt_list(env, stmts),
     }
@@ -123,7 +124,7 @@ fn interpret_if_stmt(
 ) -> Result<Option<Value>, Error> {
     let cond_value = interpret_expr(env, cond)?;
     let Value::Bool(bin) = cond_value else {
-        return  Err(Error::IfCondNotBool(cond_value));
+        return  Err(Error::CondNotBool(cond_value));
     };
     if !bin {
         return else_stmts
@@ -132,6 +133,27 @@ fn interpret_if_stmt(
     }
 
     interpret_stmt_list(env, if_stmts)
+}
+
+fn interpret_while_stmt(
+    env: &mut Environment,
+    cond: Expression,
+    stmts: StatementList,
+) -> Result<Option<Value>, Error> {
+    let mut result = Ok(None);
+
+    loop {
+        let cond_value = interpret_expr(env, cond.clone())?;
+        let Value::Bool(bin) = cond_value else {
+            return Err(Error::CondNotBool(cond_value));
+        };
+        if !bin {
+            break;
+        }
+        result = interpret_stmt_list(env, stmts.to_vec());
+    }
+
+    result
 }
 
 fn interpret_expr(env: &Environment, expr: Expression) -> Result<Value, Error> {

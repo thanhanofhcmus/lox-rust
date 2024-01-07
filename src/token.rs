@@ -35,6 +35,7 @@ pub enum Token {
     Var,
     If,
     Else,
+    While,
 
     Identifier,
     Number,
