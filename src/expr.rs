@@ -4,5 +4,6 @@ use crate::token::Token;
 pub enum Expression {
     Bool(bool),
     Number(f64),
+    UnaryOp(Box<Expression>, Token),
     BinaryOp(Box<Expression>, Token, Box<Expression>),
 }

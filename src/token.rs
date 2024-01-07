@@ -5,7 +5,7 @@ pub enum Token {
     LeftParen,
     RightParen,
 
-    Number,
+    Bang,
 
     Plus,
     Minus,
@@ -19,4 +19,5 @@ pub enum Token {
     False,
 
     Identifier,
+    Number,
 }

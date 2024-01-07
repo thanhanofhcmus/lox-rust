@@ -63,18 +63,53 @@ fn parse_factor(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    let mut lhs = parse_primary(input, items, curr_pos)?;
+    let mut lhs = parse_unary(input, items, curr_pos)?;
 
     while let Some(op) = items.get(*curr_pos) {
         if op.token != Token::Star && op.token != Token::Slash {
             break;
         }
         *curr_pos += 1;
-        let rhs = parse_primary(input, items, curr_pos)?;
+        let rhs = parse_unary(input, items, curr_pos)?;
         lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
     }
 
     Ok(lhs)
+}
+
+fn parse_unary(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    let Some(li) = items.get(*curr_pos) else {
+            return Err(ParseError::Eof);
+    };
+    match li.token {
+        Token::Bang => parse_unary_bang(input, items, curr_pos),
+        // Token::Minus
+        _ => parse_primary(input, items, curr_pos),
+    }
+}
+
+fn parse_unary_bang(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    let Some(li) = items.get(*curr_pos) else {
+            return Err(ParseError::Eof);
+    };
+
+    if li.token == Token::Bang {
+        *curr_pos += 1;
+        Ok(Expression::UnaryOp(
+            Box::new(parse_unary_bang(input, items, curr_pos)?),
+            Token::Bang,
+        ))
+    } else {
+        parse_primary(input, items, curr_pos)
+    }
 }
 
 fn parse_primary(

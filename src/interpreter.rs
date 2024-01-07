@@ -88,7 +88,20 @@ pub fn calculate(expr: Expression) -> Result<CalcResult, Error> {
     match expr {
         Expression::Bool(v) => Ok(CalcResult::Bool(v)),
         Expression::Number(v) => Ok(CalcResult::Number(v)),
+        Expression::UnaryOp(expr, op) => calculate_unary_op(*expr, op),
         Expression::BinaryOp(lhs, op, rhs) => calculate_binary_op(*lhs, op, *rhs),
+    }
+}
+
+fn calculate_unary_op(expr: Expression, op: Token) -> Result<CalcResult, Error> {
+    let res = calculate(expr)?;
+    match op {
+        Token::Bang => match res {
+            CalcResult::Bool(v) => Ok(CalcResult::Bool(!v)),
+            // TODO:
+            _ => Err(Error::InvalidOperationOnType(op, res)),
+        },
+        _ => Err(Error::UnknowOperation(op)),
     }
 }
 
