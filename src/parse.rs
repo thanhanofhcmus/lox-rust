@@ -17,7 +17,26 @@ fn parse_expr(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    parse_term(input, items, curr_pos)
+    parse_logical(input, items, curr_pos)
+}
+
+fn parse_logical(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    let mut lhs = parse_term(input, items, curr_pos)?;
+
+    while let Some(op) = items.get(*curr_pos) {
+        if op.token != Token::And && op.token != Token::Or {
+            break;
+        }
+        *curr_pos += 1;
+        let rhs = parse_term(input, items, curr_pos)?;
+        lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
+    }
+
+    Ok(lhs)
 }
 
 fn parse_term(
@@ -67,6 +86,14 @@ fn parse_primary(
             return Err(ParseError::Eof);
     };
     match li.token {
+        Token::True => {
+            *curr_pos += 1;
+            Ok(Expression::Bool(true))
+        }
+        Token::False => {
+            *curr_pos += 1;
+            Ok(Expression::Bool(false))
+        }
         Token::Number => parse_number(input, items, curr_pos),
         Token::LeftParen => parse_group(input, items, curr_pos),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span)),
