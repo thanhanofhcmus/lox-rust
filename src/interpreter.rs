@@ -72,11 +72,15 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn get(&self, key: &'_ str) -> Option<&Value> {
-        if let Some(value) = self.values.get(key) {
+    pub fn get_local_only(&self, key: &'_ str) -> Option<&Value> {
+        self.values.get(key)
+    }
+
+    pub fn get_include_parent(&self, key: &'_ str) -> Option<&Value> {
+        if let Some(value) = self.get_local_only(key) {
             return Some(value);
         }
-        self.parent.and_then(|p| p.get(key))
+        self.parent.and_then(|p| p.get_include_parent(key))
     }
 
     pub fn insert(&mut self, key: String, value: Value) {
@@ -92,7 +96,9 @@ impl<'a> Environment<'a> {
 }
 
 fn get_value(env: &Environment, name: &str) -> Value {
-    env.get(name).map(|v| v.to_owned()).unwrap_or(Value::Nil)
+    env.get_include_parent(name)
+        .map(|v| v.to_owned())
+        .unwrap_or(Value::Nil)
 }
 
 pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<Value>, Error> {
@@ -135,7 +141,7 @@ fn interpret_declare_stmt(
     name: String,
     expr: Expression,
 ) -> Result<Option<Value>, Error> {
-    if env.get(&name).is_some() {
+    if env.get_local_only(&name).is_some() {
         return Err(Error::ReDeclareVariable(name));
     }
     let value = interpret_expr(env, expr)?;
@@ -148,7 +154,7 @@ fn interpret_reassign_stmt(
     name: String,
     expr: Expression,
 ) -> Result<Option<Value>, Error> {
-    if env.get(&name).is_none() {
+    if env.get_include_parent(&name).is_none() {
         return Err(Error::NotFoundVariable(name));
     }
     let value = interpret_expr(env, expr)?;
@@ -224,7 +230,7 @@ fn interpret_function_call(
     name: String,
     args: Vec<Expression>,
 ) -> Result<Value, Error> {
-    let Some(fn_value) = env.get(&name) else {
+    let Some(fn_value) = env.get_include_parent(&name) else {
         return Err(Error::NotFoundVariable(name));
     };
     let fn_value = fn_value.to_owned();
