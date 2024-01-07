@@ -326,7 +326,6 @@ fn parse_number(
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
     let li = consume_token(items, Token::Number, curr_pos)?;
-
     let source = li.span.extract_from_source(input);
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
@@ -342,12 +341,9 @@ fn consume_token<'a>(
     let Some(li) = items.get(*curr_pos) else {
         return Err(ParseError::Eof);
     };
-
     if li.token != token {
         return Err(ParseError::UnexpectedToken(li.token, li.span, Some(token)));
     }
-
-    *curr_pos += 1; // consume ')'
-
+    *curr_pos += 1;
     Ok(li)
 }

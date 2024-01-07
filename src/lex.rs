@@ -76,8 +76,6 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             result.push(LexItem::new(Token::Minus, Span::one(curr_offset)));
         } else if c == '*' {
             result.push(LexItem::new(Token::Star, Span::one(curr_offset)));
-        } else if c == '"' {
-            result.push(lex_string(input, &mut curr_offset)?);
         } else if c == '/' {
             result.push(LexItem::new(Token::Slash, Span::one(curr_offset)));
         } else if c == '=' {
@@ -88,8 +86,10 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             push_with_equal(Token::LessEqual, Token::Less);
         } else if c == '>' {
             push_with_equal(Token::GreaterEqual, Token::Greater);
+        } else if c == '"' {
+            result.push(lex_string(input, &mut curr_offset)?);
         } else if c.is_ascii_digit() {
-            result.push(lex_number(input, &mut curr_offset));
+            result.push(lex_number(input, &mut curr_offset)?);
         } else if is_keyword_or_identifier_char(c) {
             result.push(lex_keyword_or_identifier(input, &mut curr_offset))
         } else {
@@ -101,17 +101,27 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     Ok(result)
 }
 
-fn lex_number(input: &str, offset: &mut usize) -> LexItem {
+fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
     let start_offset = *offset;
+    let mut has_parsed_dot = false;
 
     while let Some(c) = input.chars().nth(*offset + 1) {
-        if !c.is_ascii_digit() {
+        if !(c.is_ascii_digit() || c == '.') {
             break;
+        }
+        if c == '.' {
+            if has_parsed_dot {
+                return Err(ParseError::UnexpectedCharacter(Span::one(*offset)));
+            }
+            has_parsed_dot = true
         }
         *offset += 1;
     }
 
-    LexItem::new(Token::Number, Span::new(start_offset, *offset))
+    Ok(LexItem::new(
+        Token::Number,
+        Span::new(start_offset, *offset),
+    ))
 }
 
 fn lex_string(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
