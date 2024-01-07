@@ -36,6 +36,7 @@ pub enum Token {
     If,
     Else,
     While,
+    Fun,
 
     Identifier,
     Number,

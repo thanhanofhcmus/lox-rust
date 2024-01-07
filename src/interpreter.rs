@@ -38,6 +38,9 @@ pub enum Value {
     Bool(bool),
     #[display(fmt = "{:?}", _0)]
     Array(Vec<Value>),
+
+    #[display(fmt = "function")]
+    Function(Vec<String>, StatementList),
 }
 
 pub struct Environment<'a> {
@@ -81,7 +84,7 @@ fn get_value(env: &Environment, name: &str) -> Value {
 
 pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<Value>, Error> {
     match stmt {
-        Statement::Pritnt(expr) => interpret_print_stmt(env, expr),
+        Statement::Print(expr) => interpret_print_stmt(env, expr),
         Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
         Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
@@ -182,6 +185,7 @@ fn interpret_while_stmt(
 
 fn interpret_expr(env: &Environment, expr: Expression) -> Result<Value, Error> {
     match expr {
+        Expression::FunctionDeclaration(args, stmts) => Ok(Value::Function(args, stmts)),
         Expression::Identifier(name) => Ok(get_value(env, name.as_str())),
         Expression::Nil => Ok(Value::Nil),
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
@@ -241,6 +245,8 @@ fn interpret_binary_op(
 
 fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Bool(match lhs {
+        // TODO: conpare function pointer
+        Value::Function(_, _) => false,
         Value::Nil => false,
         Value::Array(_) => false,
         Value::Bool(l) => match rhs {

@@ -15,11 +15,12 @@ static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "if" => Token::If,
     "else" => Token::Else,
     "while" => Token::While,
+    "func" => Token::Fun,
 
     "print" => Token::Print,
 );
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct LexItem {
     pub span: Span,
     pub token: Token,

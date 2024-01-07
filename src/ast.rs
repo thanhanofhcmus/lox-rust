@@ -10,6 +10,7 @@ pub enum Expression {
     UnaryOp(Box<Expression>, Token),
     BinaryOp(Box<Expression>, Token, Box<Expression>),
     Identifier(String),
+    FunctionDeclaration(Vec<String> /*args*/, StatementList),
 }
 
 #[derive(Debug, Clone)]
@@ -22,7 +23,7 @@ pub enum Statement {
     Block(StatementList),
     Global(StatementList),
 
-    Pritnt(Expression),
+    Print(Expression),
 }
 
 pub type StatementList = Vec<Statement>;

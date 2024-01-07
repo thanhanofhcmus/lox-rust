@@ -4,6 +4,27 @@ use crate::parse_error::ParseError;
 use crate::span::Span;
 use crate::token::Token;
 
+/*
+stmt         = (reassignment | declaration | print | expr | if | while )
+print        = "print" expr
+reassignment = IDENTIFIER "=" expr
+declaration  = "var" IDENTIFIER "=" expr
+if           = "if" expr block ("else" block)?
+while        = "while" expr block
+block        = "{" (stmt ";")* "}"
+expr         = logical
+logical      = equality (( "and" | "or" ) equality)*
+equality     = comparison (("==" | "!=") comparison)*
+comparison   = term (("<" | "<" | "<=" | ">=") term)*
+term         = factor (("+" | "-") factor)*
+factor       = unary (("*" | "/") unary)*
+unary        = ("!" | "-")* unary | primary
+primary      = STRING | NUMBER | IDENTIFIER | "true" | "false" | "nil" | group | array | function
+function     = "fun" "(" (FUNC_ARG, ",")* ")" block
+array        = "[" (expr, ",")* "]"
+group        = "(" expr ")"
+*/
+
 pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
     let mut curr_pos = 0;
     let mut stmts = vec![];
@@ -47,7 +68,7 @@ fn parse_print(
 ) -> Result<Statement, ParseError> {
     consume_token(items, Token::Print, curr_pos)?;
     let expr = parse_expr(input, items, curr_pos)?;
-    Ok(Statement::Pritnt(expr))
+    Ok(Statement::Print(expr))
 }
 
 fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Statement, ParseError> {
@@ -55,14 +76,14 @@ fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Stat
 
     let cond = parse_expr(input, items, curr_pos)?;
     let if_stmts = parse_block_statement_list(input, items, curr_pos)?;
-    let mut else_stmt = None;
+    let mut else_stmts = None;
 
     if peek(items, &[Token::Else], *curr_pos) {
         consume_token(items, Token::Else, curr_pos)?;
-        else_stmt = Some(parse_block_statement_list(input, items, curr_pos)?);
+        else_stmts = Some(parse_block_statement_list(input, items, curr_pos)?);
     }
 
-    Ok(Statement::If(cond, if_stmts, else_stmt))
+    Ok(Statement::If(cond, if_stmts, else_stmts))
 }
 
 fn parse_while(
@@ -317,6 +338,7 @@ fn parse_primary(
         Token::Number => parse_number(input, items, curr_pos),
         Token::LSquareParen => parse_array(input, items, curr_pos),
         Token::LRoundParen => parse_group(input, items, curr_pos),
+        Token::Fun => parse_function(input, items, curr_pos),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
@@ -337,13 +359,35 @@ fn parse_array(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    consume_token(items, Token::LSquareParen, curr_pos)?;
+    let exprs = parse_comma_list(
+        input,
+        items,
+        curr_pos,
+        Token::LSquareParen,
+        Token::RSquareParen,
+        parse_expr,
+    )?;
+    Ok(Expression::Array(exprs))
+}
 
-    let mut exprs = vec![];
+fn parse_comma_list<F, T>(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+    left_paren: Token,
+    right_paren: Token,
+    lower_fn: F,
+) -> Result<Vec<T>, ParseError>
+where
+    F: Fn(&str, &[LexItem], &mut usize) -> Result<T, ParseError>,
+{
+    consume_token(items, left_paren, curr_pos)?;
+
+    let mut result = Vec::new();
     let mut has_consumed_comma = true;
 
     while let Some(li) = items.get(*curr_pos) {
-        if li.token == Token::RSquareParen {
+        if li.token == right_paren {
             break;
         }
 
@@ -355,8 +399,8 @@ fn parse_array(
             ));
         }
 
-        let expr = parse_expr(input, items, curr_pos)?;
-        exprs.push(expr);
+        let expr = lower_fn(input, items, curr_pos)?;
+        result.push(expr);
         has_consumed_comma = false;
 
         if let Some(next) = items.get(*curr_pos) {
@@ -367,9 +411,9 @@ fn parse_array(
         };
     }
 
-    consume_token(items, Token::RSquareParen, curr_pos)?;
+    consume_token(items, right_paren, curr_pos)?;
 
-    Ok(Expression::Array(exprs))
+    Ok(result)
 }
 
 fn parse_number(
@@ -383,6 +427,34 @@ fn parse_number(
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
         Ok(num) => Ok(Expression::Number(num)),
     }
+}
+
+fn get_identifier(_: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<LexItem, ParseError> {
+    let li = consume_token(items, Token::Identifier, curr_pos)?;
+    Ok(li.to_owned())
+}
+
+fn parse_function(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    consume_token(items, Token::Fun, curr_pos)?;
+    let args = parse_comma_list(
+        input,
+        items,
+        curr_pos,
+        Token::LRoundParen,
+        Token::RRoundParen,
+        get_identifier,
+    )?
+    .into_iter()
+    .map(|li| li.span.str_from_source(input).to_string())
+    .collect();
+
+    let stmts = parse_block_statement_list(input, items, curr_pos)?;
+
+    Ok(Expression::FunctionDeclaration(args, stmts))
 }
 
 fn consume_token<'a>(
