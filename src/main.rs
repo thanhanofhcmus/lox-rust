@@ -8,40 +8,51 @@ mod token;
 
 use log::{debug, error, info};
 
-fn main() {
+type DynResult = Result<(), Box<dyn std::error::Error>>;
+
+fn main() -> DynResult {
     env_logger::init();
 
     let args = std::env::args().collect::<Vec<String>>();
     let input = args.get(1).expect("must have one argument");
     debug!("{:?}", input);
 
-    let mut it = interpreter::Environment::new();
-
-    if input != "-i" {
-        run_one_stmt(input, &mut it);
-        return;
-    }
-
-    loop {
-        let mut line = String::new();
-        std::io::stdin()
-            .read_line(&mut line)
-            .expect("read from stdin failed");
-
-        if line == "quit" {
-            break;
-        }
-
-        run_one_stmt(line.trim_end(), &mut it);
+    match input.as_str() {
+        "-i" => repl(),
+        "-f" => read_from_file(args.get(2).expect("must provide file name")),
+        _ => run_stmt(input, &mut interpreter::Environment::new()),
     }
 }
 
-fn run_one_stmt(input: &str, it: &mut interpreter::Environment) {
+fn repl() -> DynResult {
+    info!("Running in REPL mode");
+
+    let mut env = interpreter::Environment::new();
+
+    loop {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+
+        if line == "quit" {
+            return Ok(());
+        }
+
+        run_stmt(line.trim_end(), &mut env)?;
+    }
+}
+
+fn read_from_file(file_path: &str) -> DynResult {
+    info!("Read from file");
+    let contents = std::fs::read_to_string(file_path)?;
+    run_stmt(&contents, &mut interpreter::Environment::new())
+}
+
+fn run_stmt(input: &str, it: &mut interpreter::Environment) -> DynResult {
     let tokens = match lex::lex(input) {
         Ok(list) => list,
         Err(err) => {
             error!("Lex error: {}", err);
-            return;
+            return Err(Box::new(err));
         }
     };
 
@@ -58,7 +69,7 @@ fn run_one_stmt(input: &str, it: &mut interpreter::Environment) {
         Ok(list) => list,
         Err(err) => {
             error!("Parse error: {}", err);
-            return;
+            return Err(Box::new(err));
         }
     };
 
@@ -71,6 +82,11 @@ fn run_one_stmt(input: &str, it: &mut interpreter::Environment) {
                 .map(|v| format!("{}", v))
                 .unwrap_or("None".to_string())
         ),
-        Err(err) => error!("Interpreter error: {}", err),
+        Err(err) => {
+            error!("Interpreter error: {}", err);
+            return Err(Box::new(err));
+        }
     }
+
+    Ok(())
 }

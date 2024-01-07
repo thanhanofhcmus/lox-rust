@@ -54,7 +54,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             }
         };
 
-        if c == ' ' || c == '\t' {
+        if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
             // skip
         } else if c == '(' {
             result.push(LexItem::new(Token::LRoundParen, Span::one(curr_offset)));
