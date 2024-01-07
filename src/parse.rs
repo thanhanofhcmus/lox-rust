@@ -379,7 +379,7 @@ fn parse_primary(
         Token::Number => parse_number(input, items, curr_pos),
         Token::LSquareParen => parse_array(input, items, curr_pos),
         Token::LRoundParen => parse_group(input, items, curr_pos),
-        Token::Fun => parse_function(input, items, curr_pos),
+        Token::Fn => parse_function(input, items, curr_pos),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
@@ -504,7 +504,7 @@ fn parse_function(
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
     trace!("parse_identifier");
-    consume_token(items, Token::Fun, curr_pos)?;
+    consume_token(items, Token::Fn, curr_pos)?;
     let args = parse_comma_list(
         input,
         items,
