@@ -5,7 +5,11 @@ use crate::token::Token;
 
 pub fn parse(input: &[u8], items: &[LexItem]) -> Result<Expression, ParseError> {
     let mut curr_pos = 0;
-    parse_expr(input, items, &mut curr_pos)
+    let result = parse_expr(input, items, &mut curr_pos)?;
+    match items.get(curr_pos) {
+        None => Ok(result),
+        Some(_) => Err(ParseError::Unfinished),
+    }
 }
 
 fn parse_expr(

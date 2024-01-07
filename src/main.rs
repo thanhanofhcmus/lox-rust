@@ -7,11 +7,18 @@ mod span;
 mod token;
 
 fn main() {
-    let input = "1 + 1 * 2".as_bytes();
+    let args = std::env::args().collect::<Vec<String>>();
+    let input = args.get(1).expect("must have one argument");
+    println!("{:?}", input);
+    let input = input.as_bytes();
 
-    println!("{:?}", std::str::from_utf8(input).unwrap());
-
-    let tokens = lex::lex(input).unwrap();
+    let tokens = match lex::lex(input) {
+        Ok(list) => list,
+        Err(err) => {
+            println!("Lex error: {}", err);
+            return;
+        }
+    };
 
     for token in &tokens {
         println!(
@@ -22,9 +29,15 @@ fn main() {
         );
     }
 
-    let expr = parse::parse(input, &tokens);
+    let expr = match parse::parse(input, &tokens) {
+        Ok(list) => list,
+        Err(err) => {
+            println!("Parse error: {}", err);
+            return;
+        }
+    };
     println!("{:?}", expr);
 
-    let calc_result = interpreter::calculate(expr.unwrap());
+    let calc_result = interpreter::calculate(expr);
     println!("{:?}", calc_result);
 }
