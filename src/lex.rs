@@ -154,15 +154,10 @@ fn lex_keyword_or_identifier(input: &str, offset: &mut usize) -> LexItem {
         *offset += 1;
     }
 
-    let id = input
-        .chars()
-        .skip(start_offset)
-        .take(*offset - start_offset + 1)
-        .collect::<String>();
-
+    let id = &input[start_offset..(*offset + 1)];
     let span = Span::new(start_offset, *offset);
 
-    match KEYWORDS.get(id.as_str()) {
+    match KEYWORDS.get(id) {
         Some(&token) => LexItem::new(token, span),
         None => LexItem::new(Token::Identifier, span),
     }
