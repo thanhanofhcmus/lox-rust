@@ -1,12 +1,13 @@
 mod expr;
 mod interpreter;
 mod lex;
+mod parse;
 mod parse_error;
 mod span;
 mod token;
 
 fn main() {
-    let input = "1 + 1".as_bytes();
+    let input = "1 + 1 * 2".as_bytes();
 
     println!("{:?}", std::str::from_utf8(input).unwrap());
 
@@ -21,7 +22,7 @@ fn main() {
         );
     }
 
-    let expr = expr::parse(input, &tokens);
+    let expr = parse::parse(input, &tokens);
     println!("{:?}", expr);
 
     let calc_result = interpreter::calculate(expr.unwrap());
