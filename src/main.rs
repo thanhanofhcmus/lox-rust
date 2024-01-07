@@ -6,21 +6,47 @@ mod parse_error;
 mod span;
 mod token;
 
+use log::{debug, error, info};
+
 fn main() {
+    env_logger::init();
+
     let args = std::env::args().collect::<Vec<String>>();
     let input = args.get(1).expect("must have one argument");
-    println!("{:?}", input);
+    debug!("{:?}", input);
 
+    let mut it = interpreter::Interpreter::new();
+
+    if input != "-i" {
+        run_one_stmt(input, &mut it);
+        return;
+    }
+
+    loop {
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .expect("read from stdin failed");
+
+        if line == "quit" {
+            break;
+        }
+
+        run_one_stmt(line.trim_end(), &mut it)
+    }
+}
+
+fn run_one_stmt(input: &str, it: &mut interpreter::Interpreter) {
     let tokens = match lex::lex(input) {
         Ok(list) => list,
         Err(err) => {
-            println!("Lex error: {}", err);
+            error!("Lex error: {}", err);
             return;
         }
     };
 
     for token in &tokens {
-        println!(
+        debug!(
             "{} - {:?}: {:?}",
             token.span,
             token.token,
@@ -31,14 +57,16 @@ fn main() {
     let expr = match parse::parse(input, &tokens) {
         Ok(list) => list,
         Err(err) => {
-            println!("Parse error: {}", err);
+            error!("Parse error: {}", err);
             return;
         }
     };
-    println!("{:?}", expr);
-
-    let mut it = interpreter::Interpreter::new();
+    debug!("{:?}", expr);
 
     let calc_result = it.interpret_stmt(expr);
-    println!("{:?}", calc_result);
+
+    match calc_result {
+        Ok(value) => info!("{:?}", value),
+        Err(err) => error!("{:?}", err),
+    }
 }
