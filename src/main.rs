@@ -71,6 +71,6 @@ fn run_one_stmt(input: &str, it: &mut interpreter::Environment) {
                 .map(|v| format!("{}", v))
                 .unwrap_or("None".to_string())
         ),
-        Err(err) => error!("{:?}", err),
+        Err(err) => error!("Interpreter error: {}", err),
     }
 }

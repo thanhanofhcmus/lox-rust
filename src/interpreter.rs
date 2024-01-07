@@ -2,16 +2,28 @@ use crate::ast::{Expression, Statement, StatementList};
 use crate::token::Token;
 use derive_more::Display;
 use std::collections::HashMap;
+use thiserror::Error;
 
 const NUMBER_DELTA: f64 = 1e-10;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
-    ReAssignValue(String),
+    #[error("Value of name `{0}` has been declared before")]
+    ReDeclareValue(String),
+
+    #[error("Unknown operator `{0}`")]
     UnknownOperation(Token),
+
+    #[error("Value `{1}` does not accept operator `{0}`")]
     InvalidOperationOnType(Token, Value),
+
+    #[error("`{0}` and `{1} do not share the same type")]
     MismatchType(Value, Value),
+
+    #[error("Condition in if block evaluated to `{0}` which is not a boolean value")]
     IfCondNotBool(Value),
+
+    #[error("Divide by 0")]
     DivideByZero,
 }
 
@@ -94,7 +106,7 @@ fn interpret_assign_stmt(
     expr: Expression,
 ) -> Result<Option<Value>, Error> {
     if env.get(&name).is_some() {
-        return Err(Error::ReAssignValue(name));
+        return Err(Error::ReDeclareValue(name));
     }
     let value = interpret_expr(env, expr)?;
     env.insert(name, value);
