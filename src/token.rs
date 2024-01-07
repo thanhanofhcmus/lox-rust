@@ -14,4 +14,9 @@ pub enum Token {
 
     And,
     Or,
+
+    True,
+    False,
+
+    Identifier,
 }

@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 thiserror = { version = "1.0.51" }
 derive_more = { version = "0.99.17" }
+phf = { version = "0.11", features = ["macros"] }

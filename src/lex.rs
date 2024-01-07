@@ -3,6 +3,14 @@ use crate::parse_error::ParseError;
 use crate::span::Span;
 use crate::token::Token;
 
+static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
+    "and" => Token::And,
+    "or" => Token::Or,
+
+    "true" => Token::True,
+    "false" => Token::False,
+);
+
 #[derive(Debug)]
 pub struct LexItem {
     pub span: Span,
@@ -40,6 +48,8 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             // skip
         } else if c.is_ascii_digit() {
             result.push(lex_number(input, &mut curr_offset));
+        } else if is_identifier_char(c) {
+            result.push(lex_keyword_or_identifier(input, &mut curr_offset))
         } else {
             return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
         }
@@ -72,5 +82,16 @@ fn lex_keyword_or_identifier(input: &str, offset: &mut usize) -> LexItem {
         *offset += 1;
     }
 
-    todo!()
+    let id = input
+        .chars()
+        .skip(start_offset)
+        .take(*offset - start_offset + 1)
+        .collect::<String>();
+
+    let span = Span::new(start_offset, *offset);
+
+    match KEYWORDS.get(id.as_str()) {
+        Some(&token) => LexItem::new(token, span),
+        None => LexItem::new(Token::Identifier, span),
+    }
 }
