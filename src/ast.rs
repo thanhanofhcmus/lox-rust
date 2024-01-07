@@ -15,8 +15,7 @@ pub enum Expression {
 #[derive(Debug)]
 pub enum Statement {
     Expr(Expression),
-    // TODO: add else
-    If(Expression, StatementList),
+    If(Expression, StatementList, Option<StatementList>),
     Assign(String, Expression),
     Block(StatementList),
     Global(StatementList),

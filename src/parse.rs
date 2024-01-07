@@ -43,9 +43,15 @@ fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Stat
     consume_token(items, Token::If, curr_pos)?;
 
     let cond = parse_expr(input, items, curr_pos)?;
-    let stmts = parse_block_statement_list(input, items, curr_pos)?;
+    let if_stmts = parse_block_statement_list(input, items, curr_pos)?;
+    let mut else_stmt = None;
 
-    Ok(Statement::If(cond, stmts))
+    if peek(items, &[Token::Else], *curr_pos) {
+        consume_token(items, Token::Else, curr_pos)?;
+        else_stmt = Some(parse_block_statement_list(input, items, curr_pos)?);
+    }
+
+    Ok(Statement::If(cond, if_stmts, else_stmt))
 }
 
 fn parse_block(
@@ -366,4 +372,11 @@ fn consume_token<'a>(
     }
     *curr_pos += 1;
     Ok(li)
+}
+
+fn peek(items: &[LexItem], match_tokens: &'static [Token], curr_poss: usize) -> bool {
+    items
+        .get(curr_poss)
+        .map(|li| match_tokens.contains(&li.token))
+        .unwrap_or(false)
 }

@@ -80,7 +80,9 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
     match stmt {
         Statement::Assign(name, expr) => interpret_assign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
-        Statement::If(cond, stmts) => interpret_if_stmt(env, cond, stmts),
+        Statement::If(cond, if_stmts, else_stmts) => {
+            interpret_if_stmt(env, cond, if_stmts, else_stmts)
+        }
         Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
         Statement::Global(stmts) => interpret_stmt_list(env, stmts),
     }
@@ -116,17 +118,20 @@ fn interpret_assign_stmt(
 fn interpret_if_stmt(
     env: &mut Environment,
     cond: Expression,
-    stmts: StatementList,
+    if_stmts: StatementList,
+    else_stmts: Option<StatementList>,
 ) -> Result<Option<Value>, Error> {
     let cond_value = interpret_expr(env, cond)?;
     let Value::Bool(bin) = cond_value else {
         return  Err(Error::IfCondNotBool(cond_value));
     };
     if !bin {
-        return Ok(None);
+        return else_stmts
+            .map(|stmts| interpret_stmt_list(env, stmts))
+            .unwrap_or(Ok(None));
     }
 
-    interpret_stmt_list(env, stmts)
+    interpret_stmt_list(env, if_stmts)
 }
 
 fn interpret_expr(env: &Environment, expr: Expression) -> Result<Value, Error> {

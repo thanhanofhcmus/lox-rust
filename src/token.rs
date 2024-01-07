@@ -34,6 +34,7 @@ pub enum Token {
 
     Var,
     If,
+    Else,
 
     Identifier,
     Number,
