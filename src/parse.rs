@@ -87,7 +87,7 @@ fn parse_unary(
     };
     match li.token {
         Token::Bang => parse_unary_bang(input, items, curr_pos),
-        // Token::Minus
+        Token::Minus => parse_unary_minus(input, items, curr_pos),
         _ => parse_primary(input, items, curr_pos),
     }
 }
@@ -106,6 +106,26 @@ fn parse_unary_bang(
         Ok(Expression::UnaryOp(
             Box::new(parse_unary_bang(input, items, curr_pos)?),
             Token::Bang,
+        ))
+    } else {
+        parse_primary(input, items, curr_pos)
+    }
+}
+
+fn parse_unary_minus(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    let Some(li) = items.get(*curr_pos) else {
+            return Err(ParseError::Eof);
+    };
+
+    if li.token == Token::Minus {
+        *curr_pos += 1;
+        Ok(Expression::UnaryOp(
+            Box::new(parse_unary_bang(input, items, curr_pos)?),
+            Token::Minus,
         ))
     } else {
         parse_primary(input, items, curr_pos)

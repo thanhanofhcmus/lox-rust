@@ -98,7 +98,10 @@ fn calculate_unary_op(expr: Expression, op: Token) -> Result<CalcResult, Error> 
     match op {
         Token::Bang => match res {
             CalcResult::Bool(v) => Ok(CalcResult::Bool(!v)),
-            // TODO:
+            _ => Err(Error::InvalidOperationOnType(op, res)),
+        },
+        Token::Minus => match res {
+            CalcResult::Number(v) => Ok(CalcResult::Number(-v)),
             _ => Err(Error::InvalidOperationOnType(op, res)),
         },
         _ => Err(Error::UnknowOperation(op)),
