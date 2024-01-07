@@ -163,7 +163,12 @@ fn parse_primary(
     let Some(li) = items.get(*curr_pos) else {
             return Err(ParseError::Eof);
     };
+
     match li.token {
+        Token::Nil => {
+            *curr_pos += 1;
+            Ok(Expression::Nil)
+        }
         Token::True => {
             *curr_pos += 1;
             Ok(Expression::Bool(true))

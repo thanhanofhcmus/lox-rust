@@ -13,12 +13,14 @@ pub enum Error {
 
 #[derive(Debug, Clone)]
 pub enum CalcResult {
+    Nil,
     Number(f64),
     Bool(bool),
 }
 
 fn is_equal(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
     Ok(CalcResult::Bool(match lhs {
+        CalcResult::Nil => false,
         CalcResult::Bool(l) => match rhs {
             CalcResult::Bool(r) => l == r,
             _ => false,
@@ -64,11 +66,11 @@ fn and_or(lhs: &CalcResult, op: Token, rhs: &CalcResult) -> Result<CalcResult, E
 
 fn add(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
     match lhs {
-        CalcResult::Bool(_) => Err(Error::InvalidOperationOnType(Token::Plus, lhs.clone())),
         &CalcResult::Number(l) => match rhs {
             &CalcResult::Number(r) => Ok(CalcResult::Number(l + r)),
             _ => Err(Error::MismatchType(lhs.clone(), rhs.clone())),
         },
+        _ => Err(Error::InvalidOperationOnType(Token::Plus, lhs.clone())),
     }
 }
 
@@ -108,6 +110,7 @@ fn divide(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
 
 pub fn calculate(expr: Expression) -> Result<CalcResult, Error> {
     match expr {
+        Expression::Nil => Ok(CalcResult::Nil),
         Expression::Bool(v) => Ok(CalcResult::Bool(v)),
         Expression::Number(v) => Ok(CalcResult::Number(v)),
         Expression::UnaryOp(expr, op) => calculate_unary_op(*expr, op),

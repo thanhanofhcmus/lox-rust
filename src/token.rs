@@ -26,6 +26,7 @@ pub enum Token {
 
     True,
     False,
+    Nil,
 
     Identifier,
     Number,
