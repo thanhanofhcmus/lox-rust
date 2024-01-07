@@ -39,6 +39,16 @@ impl Interpreter {
                 Ok(None)
             }
             Statement::Expr(expr) => self.interpret_expr(expr).map(Some),
+            Statement::MultiStmts(mut stmts) => {
+                if let Some(last) = stmts.pop() {
+                    for s in stmts {
+                        self.interpret_stmt(s)?;
+                    }
+                    self.interpret_stmt(last)
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 

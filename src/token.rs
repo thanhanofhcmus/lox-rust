@@ -33,4 +33,6 @@ pub enum Token {
     Identifier,
     Number,
     String,
+
+    Semicolon,
 }

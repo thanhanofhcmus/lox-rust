@@ -56,6 +56,8 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             result.push(LexItem::new(Token::LeftParen, Span::one(curr_offset)));
         } else if c == ')' {
             result.push(LexItem::new(Token::RightParen, Span::one(curr_offset)));
+        } else if c == ';' {
+            result.push(LexItem::new(Token::Semicolon, Span::one(curr_offset)));
         } else if c == '+' {
             result.push(LexItem::new(Token::Plus, Span::one(curr_offset)));
         } else if c == '-' {

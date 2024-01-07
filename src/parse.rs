@@ -6,9 +6,19 @@ use crate::token::Token;
 
 pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
     let mut curr_pos = 0;
-    let result = parse_stmt(input, items, &mut curr_pos)?;
+    let mut stmts = vec![];
+    while curr_pos < items.len() {
+        let result = parse_stmt(input, items, &mut curr_pos)?;
+        stmts.push(result);
+        // try to consume ';'
+        if let Some(li) = items.get(curr_pos) {
+            if li.token == Token::Semicolon {
+                curr_pos += 1;
+            }
+        }
+    }
     match items.get(curr_pos) {
-        None => Ok(result),
+        None => Ok(Statement::MultiStmts(stmts)),
         Some(li) => Err(ParseError::Unfinished(li.token, li.span)),
     }
 }
