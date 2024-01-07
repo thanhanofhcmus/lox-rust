@@ -8,10 +8,10 @@ const NUMBER_DELTA: f64 = 1e-10;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Variable of name `{0}` has been declared before")]
+    #[error("Variable or function of name `{0}` has been declared before")]
     ReDeclareVariable(String),
 
-    #[error("Variable of name `{0} has not been declared but get re-assigned")]
+    #[error("Variable or function of name `{0} has not been declared but get re-assigned")]
     NotFoundVariable(String),
 
     #[error("Unknown operator `{0}`")]
@@ -28,6 +28,12 @@ pub enum Error {
 
     #[error("Divide by 0")]
     DivideByZero,
+
+    #[error("Value `{0}` is not a callable")]
+    ValueNotCallable(Value),
+
+    #[error("Callable `{0}` accept {1} number of arguments but receive {2}")]
+    WrongNumberOfArgument(String, usize, usize),
 }
 
 #[derive(Display, Debug, Clone)]
@@ -76,6 +82,13 @@ impl<'a> Environment<'a> {
     pub fn insert(&mut self, key: String, value: Value) {
         let _ = self.values.insert(key.to_string(), value);
     }
+
+    pub fn change_parent<'b>(&mut self, parent: &'b Environment<'b>)
+    where
+        'b: 'a,
+    {
+        self.parent = Some(parent);
+    }
 }
 
 fn get_value(env: &Environment, name: &str) -> Value {
@@ -97,7 +110,7 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
     }
 }
 
-fn interpret_print_stmt(env: &Environment, expr: Expression) -> Result<Option<Value>, Error> {
+fn interpret_print_stmt(env: &mut Environment, expr: Expression) -> Result<Option<Value>, Error> {
     let value = interpret_expr(env, expr)?;
     println!("{}", value);
     Ok(None)
@@ -183,8 +196,9 @@ fn interpret_while_stmt(
     result
 }
 
-fn interpret_expr(env: &Environment, expr: Expression) -> Result<Value, Error> {
+fn interpret_expr(env: &mut Environment, expr: Expression) -> Result<Value, Error> {
     match expr {
+        Expression::FunctionCall(name, args) => interpret_function_call(env, name, args),
         Expression::FunctionDeclaration(args, stmts) => Ok(Value::Function(args, stmts)),
         Expression::Identifier(name) => Ok(get_value(env, name.as_str())),
         Expression::Nil => Ok(Value::Nil),
@@ -197,7 +211,7 @@ fn interpret_expr(env: &Environment, expr: Expression) -> Result<Value, Error> {
     }
 }
 
-fn get_array_value(env: &Environment, exprs: Vec<Expression>) -> Result<Value, Error> {
+fn get_array_value(env: &mut Environment, exprs: Vec<Expression>) -> Result<Value, Error> {
     let mut result = vec![];
     for expr in exprs {
         result.push(interpret_expr(env, expr)?);
@@ -205,7 +219,41 @@ fn get_array_value(env: &Environment, exprs: Vec<Expression>) -> Result<Value, E
     Ok(Value::Array(result))
 }
 
-fn interpret_unary_op(env: &Environment, expr: Expression, op: Token) -> Result<Value, Error> {
+fn interpret_function_call(
+    env: &mut Environment,
+    name: String,
+    args: Vec<Expression>,
+) -> Result<Value, Error> {
+    let Some(fn_value) = env.get(&name) else {
+        return Err(Error::NotFoundVariable(name));
+    };
+    let fn_value = fn_value.to_owned();
+    let Value::Function(arg_names, body) = fn_value else {
+        return Err(Error::ValueNotCallable(fn_value));
+    };
+
+    if arg_names.len() != args.len() {
+        return Err(Error::WrongNumberOfArgument(
+            name,
+            arg_names.len(),
+            args.len(),
+        ));
+    }
+
+    let mut local_env = Environment::new();
+    for (arg_name, arg_expr) in arg_names.into_iter().zip(args.into_iter()) {
+        let value = interpret_expr(env, arg_expr)?;
+        local_env.insert(arg_name, value);
+    }
+    local_env.change_parent(env);
+
+    interpret_stmt_list(&mut local_env, body).map(|o| match o {
+        None => Value::Nil,
+        Some(v) => v,
+    })
+}
+
+fn interpret_unary_op(env: &mut Environment, expr: Expression, op: Token) -> Result<Value, Error> {
     let res = interpret_expr(env, expr)?;
     match op {
         Token::Bang => match res {
@@ -221,7 +269,7 @@ fn interpret_unary_op(env: &Environment, expr: Expression, op: Token) -> Result<
 }
 
 fn interpret_binary_op(
-    env: &Environment,
+    env: &mut Environment,
     lhs: Expression,
     op: Token,
     rhs: Expression,

@@ -11,6 +11,7 @@ pub enum Expression {
     BinaryOp(Box<Expression>, Token, Box<Expression>),
     Identifier(String),
     FunctionDeclaration(Vec<String> /*args*/, StatementList),
+    FunctionCall(String /* name */, Vec<Expression> /* args */),
 }
 
 #[derive(Debug, Clone)]
