@@ -24,7 +24,7 @@ impl LexItem {
     }
 }
 
-fn is_identifier_char(c: char) -> bool {
+fn is_keyword_or_identifier_char(c: char) -> bool {
     c == '_' || c.is_ascii_alphanumeric()
 }
 
@@ -60,6 +60,8 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             result.push(LexItem::new(Token::Minus, Span::one(curr_offset)));
         } else if c == '*' {
             result.push(LexItem::new(Token::Star, Span::one(curr_offset)));
+        } else if c == '"' {
+            result.push(lex_string(input, &mut curr_offset)?);
         } else if c == '/' {
             result.push(LexItem::new(Token::Slash, Span::one(curr_offset)));
         } else if c == ' ' || c == '\t' {
@@ -74,7 +76,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             push_with_equal(Token::GreaterEqual, Token::Greater);
         } else if c.is_ascii_digit() {
             result.push(lex_number(input, &mut curr_offset));
-        } else if is_identifier_char(c) {
+        } else if is_keyword_or_identifier_char(c) {
             result.push(lex_keyword_or_identifier(input, &mut curr_offset))
         } else {
             return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
@@ -98,11 +100,31 @@ fn lex_number(input: &str, offset: &mut usize) -> LexItem {
     LexItem::new(Token::Number, Span::new(start_offset, *offset))
 }
 
+fn lex_string(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
+    let start_offset = *offset;
+    *offset += 1; // consume '"'
+    while let Some(c) = input.chars().nth(*offset) {
+        if c == '"' {
+            break;
+        }
+        *offset += 1;
+    }
+
+    if input.chars().nth(*offset).is_none() {
+        return Err(ParseError::UnclosedString(start_offset));
+    }
+
+    Ok(LexItem::new(
+        Token::String,
+        Span::new(start_offset, *offset),
+    ))
+}
+
 fn lex_keyword_or_identifier(input: &str, offset: &mut usize) -> LexItem {
     let start_offset = *offset;
 
     while let Some(c) = input.chars().nth(*offset + 1) {
-        if !is_identifier_char(c) {
+        if !is_keyword_or_identifier_char(c) {
             break;
         }
         *offset += 1;

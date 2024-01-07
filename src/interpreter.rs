@@ -14,6 +14,7 @@ pub enum Error {
 #[derive(Debug, Clone)]
 pub enum CalcResult {
     Nil,
+    Str(String),
     Number(f64),
     Bool(bool),
 }
@@ -27,6 +28,10 @@ fn is_equal(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
         },
         CalcResult::Number(l) => match rhs {
             CalcResult::Number(r) => f64::abs(*l - *r) < NUMBER_DELTA,
+            _ => false,
+        },
+        CalcResult::Str(l) => match rhs {
+            CalcResult::Str(r) => l == r,
             _ => false,
         },
     }))
@@ -66,8 +71,12 @@ fn and_or(lhs: &CalcResult, op: Token, rhs: &CalcResult) -> Result<CalcResult, E
 
 fn add(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
     match lhs {
-        &CalcResult::Number(l) => match rhs {
-            &CalcResult::Number(r) => Ok(CalcResult::Number(l + r)),
+        CalcResult::Number(l) => match rhs {
+            CalcResult::Number(r) => Ok(CalcResult::Number(l + r)),
+            _ => Err(Error::MismatchType(lhs.clone(), rhs.clone())),
+        },
+        CalcResult::Str(l) => match rhs {
+            CalcResult::Str(r) => Ok(CalcResult::Str(l.to_owned() + r)),
             _ => Err(Error::MismatchType(lhs.clone(), rhs.clone())),
         },
         _ => Err(Error::InvalidOperationOnType(Token::Plus, lhs.clone())),
@@ -111,6 +120,7 @@ fn divide(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
 pub fn calculate(expr: Expression) -> Result<CalcResult, Error> {
     match expr {
         Expression::Nil => Ok(CalcResult::Nil),
+        Expression::Str(v) => Ok(CalcResult::Str(v.to_string())),
         Expression::Bool(v) => Ok(CalcResult::Bool(v)),
         Expression::Number(v) => Ok(CalcResult::Number(v)),
         Expression::UnaryOp(expr, op) => calculate_unary_op(*expr, op),

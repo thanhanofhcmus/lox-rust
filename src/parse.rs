@@ -1,6 +1,7 @@
 use crate::expr::Expression;
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
+use crate::span::Span;
 use crate::token::Token;
 
 pub fn parse(input: &str, items: &[LexItem]) -> Result<Expression, ParseError> {
@@ -176,6 +177,15 @@ fn parse_primary(
         Token::False => {
             *curr_pos += 1;
             Ok(Expression::Bool(false))
+        }
+        Token::String => {
+            *curr_pos += 1;
+            Ok(Expression::Str(
+                // remove start '"' and end '"'
+                Span::new(li.span.start + 1, li.span.end - 1)
+                    .extract_from_source(input)
+                    .to_string(),
+            ))
         }
         Token::Number => parse_number(input, items, curr_pos),
         Token::LeftParen => parse_group(input, items, curr_pos),

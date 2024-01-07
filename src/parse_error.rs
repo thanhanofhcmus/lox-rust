@@ -10,12 +10,15 @@ pub enum ParseError {
     #[error("Unexpected token `{0}` at position {1}")]
     UnexpectedToken(Token, Span),
 
-    #[error("unable to parse to number at position {0}")]
+    #[error("String starts at {0} is not closed")]
+    UnclosedString(usize),
+
+    #[error("Unable to parse to number at position {0}")]
     ParseToNumber(Span),
 
-    #[error("unable to parse the next value")]
+    #[error("Unable to parse the next value")]
     Eof,
 
-    #[error("parse have leftover tokens start with {0} at {1}")]
+    #[error("Parse have leftover tokens start with {0} at {1}")]
     Unfinished(Token, Span),
 }
