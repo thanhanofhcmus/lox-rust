@@ -21,6 +21,8 @@ pub enum Statement {
     Reassign(String, Expression),
     Block(StatementList),
     Global(StatementList),
+
+    Pritnt(Expression),
 }
 
 pub type StatementList = Vec<Statement>;

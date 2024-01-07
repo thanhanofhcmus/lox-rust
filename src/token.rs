@@ -43,4 +43,7 @@ pub enum Token {
 
     Comma,
     Semicolon,
+
+    // TODO: remove when implement function
+    Print,
 }

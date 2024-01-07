@@ -32,6 +32,7 @@ fn parse_stmt(
         return Err(ParseError::Eof);
     };
     match li.token {
+        Token::Print => parse_print(input, items, curr_pos),
         Token::Identifier => parse_reassignment(input, items, curr_pos),
         Token::Var => parse_declaration(input, items, curr_pos),
         Token::If => parse_if(input, items, curr_pos),
@@ -39,6 +40,16 @@ fn parse_stmt(
         Token::LPointParen => parse_block(input, items, curr_pos),
         _ => parse_expr(input, items, curr_pos).map(Statement::Expr),
     }
+}
+
+fn parse_print(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Statement, ParseError> {
+    consume_token(items, Token::Print, curr_pos)?;
+    let expr = parse_expr(input, items, curr_pos)?;
+    Ok(Statement::Pritnt(expr))
 }
 
 fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Statement, ParseError> {
