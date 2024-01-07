@@ -106,13 +106,13 @@ impl<'a> Environment<'a> {
     }
 }
 
-fn get_value(env: &Environment, name: &str) -> Value {
+fn get_value_owned(env: &Environment, name: &str) -> Value {
     env.get_include_parent(name)
         .map(|v| v.to_owned())
         .unwrap_or(Value::Nil)
 }
 
-pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<Value>, Error> {
+pub fn interpret_stmt(env: &mut Environment, stmt: &Statement) -> Result<Option<Value>, Error> {
     match stmt {
         Statement::Print(expr) => interpret_print_stmt(env, expr),
         Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
@@ -124,20 +124,18 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
     }
 }
 
-fn interpret_print_stmt(env: &mut Environment, expr: Expression) -> Result<Option<Value>, Error> {
+fn interpret_print_stmt(env: &mut Environment, expr: &Expression) -> Result<Option<Value>, Error> {
     let value = interpret_expr(env, expr)?;
     println!("{}", value);
     Ok(None)
 }
 
-fn interpret_stmt_list(
-    env: &mut Environment,
-    mut stmts: StatementList,
-) -> Result<Option<Value>, Error> {
-    if let Some(last) = stmts.pop() {
-        for s in stmts {
-            interpret_stmt(env, s)?;
-        }
+fn interpret_stmt_list(env: &mut Environment, stmts: &[Statement]) -> Result<Option<Value>, Error> {
+    if let Some(last) = stmts.last() {
+        stmts
+            .iter()
+            .take(stmts.len() - 1)
+            .try_for_each(|stmt| interpret_stmt(env, stmt).map(|_| ()))?;
         interpret_stmt(env, last)
     } else {
         Ok(None)
@@ -146,9 +144,10 @@ fn interpret_stmt_list(
 
 fn interpret_declare_stmt(
     env: &mut Environment,
-    name: String,
-    expr: Expression,
+    name: &str,
+    expr: &Expression,
 ) -> Result<Option<Value>, Error> {
+    let name = name.to_string();
     if env.get_local_only(&name).is_some() {
         return Err(Error::ReDeclareVariable(name));
     }
@@ -159,9 +158,10 @@ fn interpret_declare_stmt(
 
 fn interpret_reassign_stmt(
     env: &mut Environment,
-    name: String,
-    expr: Expression,
+    name: &str,
+    expr: &Expression,
 ) -> Result<Option<Value>, Error> {
+    let name = name.to_string();
     if env.get_include_parent(&name).is_none() {
         return Err(Error::NotFoundVariable(name));
     }
@@ -172,41 +172,44 @@ fn interpret_reassign_stmt(
 
 fn interpret_while_stmt(
     env: &mut Environment,
-    WhileNode { cond, body }: WhileNode,
+    WhileNode { cond, body }: &WhileNode,
 ) -> Result<Option<Value>, Error> {
     let mut result = Ok(None);
 
     loop {
-        let cond_value = interpret_expr(env, cond.clone())?;
+        let cond_value = interpret_expr(env, cond)?;
         let Value::Bool(bin) = cond_value else {
             return Err(Error::CondNotBool(cond_value));
         };
         if !bin {
             break;
         }
-        result = interpret_stmt_list(env, body.to_vec());
+        result = interpret_stmt_list(env, body);
     }
 
     result
 }
 
-fn interpret_expr(env: &mut Environment, expr: Expression) -> Result<Value, Error> {
+fn interpret_expr(env: &mut Environment, expr: &Expression) -> Result<Value, Error> {
     match expr {
         Expression::If(node) => interpret_if_expr(env, node),
         Expression::FnCall(node) => interpret_function_call(env, node),
-        Expression::FnDecl(node) => Ok(Value::Function(node.arg_names, node.body)),
-        Expression::Identifier(name) => Ok(get_value(env, name.as_str())),
+        Expression::FnDecl(node) => Ok(Value::Function(
+            node.arg_names.to_owned(),
+            node.body.to_owned(),
+        )),
+        Expression::Identifier(name) => Ok(get_value_owned(env, name.as_str())),
         Expression::Nil => Ok(Value::Nil),
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
-        Expression::Bool(v) => Ok(Value::Bool(v)),
-        Expression::Number(v) => Ok(Value::Number(v)),
+        Expression::Bool(v) => Ok(Value::Bool(*v)),
+        Expression::Number(v) => Ok(Value::Number(*v)),
         Expression::Array(exprs) => get_array_value(env, exprs),
-        Expression::UnaryOp(expr, op) => interpret_unary_op(env, *expr, op),
+        Expression::UnaryOp(expr, op) => interpret_unary_op(env, expr, *op),
         Expression::BinaryOp(node) => interpret_binary_op(env, node),
     }
 }
 
-fn get_array_value(env: &mut Environment, exprs: Vec<Expression>) -> Result<Value, Error> {
+fn get_array_value(env: &mut Environment, exprs: &Vec<Expression>) -> Result<Value, Error> {
     let mut result = vec![];
     for expr in exprs {
         result.push(interpret_expr(env, expr)?);
@@ -214,32 +217,38 @@ fn get_array_value(env: &mut Environment, exprs: Vec<Expression>) -> Result<Valu
     Ok(Value::Array(result))
 }
 
-fn interpret_if_expr(env: &mut Environment, node: IfNode) -> Result<Value, Error> {
-    let cond_value = interpret_expr(env, *node.cond)?;
+fn interpret_if_expr(env: &mut Environment, node: &IfNode) -> Result<Value, Error> {
+    let cond_value = interpret_expr(env, &node.cond)?;
     let Value::Bool(bin) = cond_value else {
         return  Err(Error::CondNotBool(cond_value));
     };
     if !bin {
         return node
             .else_stmts
+            .as_ref()
             .map(|stmts| interpret_stmt_list(env, stmts))
             .unwrap_or(Ok(None))
             .map(Value::from_option);
     }
 
-    Ok(Value::from_option(interpret_stmt_list(env, node.if_stmts)?))
+    Ok(Value::from_option(interpret_stmt_list(
+        env,
+        &node.if_stmts,
+    )?))
 }
 
 fn interpret_function_call(
     env: &mut Environment,
-    FnCallNode { name, args }: FnCallNode,
+    FnCallNode { name, args }: &FnCallNode,
 ) -> Result<Value, Error> {
+    let name = name.to_string();
     let Some(fn_value) = env.get_include_parent(&name) else {
         return Err(Error::NotFoundVariable(name));
     };
-    let fn_value = fn_value.to_owned();
+    // TODO: remove clone, make function call don't clone the whole body
+    let fn_value = fn_value.clone();
     let Value::Function(arg_names, body) = fn_value else {
-        return Err(Error::ValueNotCallable(fn_value));
+        return Err(Error::ValueNotCallable(fn_value.to_owned()));
     };
 
     if arg_names.len() != args.len() {
@@ -251,16 +260,16 @@ fn interpret_function_call(
     }
 
     let mut local_env = Environment::new();
-    for (arg_name, arg_expr) in arg_names.into_iter().zip(args.into_iter()) {
+    for (arg_name, arg_expr) in arg_names.into_iter().zip(args.iter()) {
         let value = interpret_expr(env, arg_expr)?;
-        local_env.insert(arg_name, value);
+        local_env.insert(arg_name.to_string(), value);
     }
     local_env.change_parent(env);
 
-    interpret_stmt_list(&mut local_env, body).map(Value::from_option)
+    interpret_stmt_list(&mut local_env, &body).map(Value::from_option)
 }
 
-fn interpret_unary_op(env: &mut Environment, expr: Expression, op: Token) -> Result<Value, Error> {
+fn interpret_unary_op(env: &mut Environment, expr: &Expression, op: Token) -> Result<Value, Error> {
     let res = interpret_expr(env, expr)?;
     match op {
         Token::Bang => match res {
@@ -277,10 +286,11 @@ fn interpret_unary_op(env: &mut Environment, expr: Expression, op: Token) -> Res
 
 fn interpret_binary_op(
     env: &mut Environment,
-    BinaryOpNode { lhs, op, rhs }: BinaryOpNode,
+    BinaryOpNode { lhs, op, rhs }: &BinaryOpNode,
 ) -> Result<Value, Error> {
-    let lhs = interpret_expr(env, *lhs)?;
-    let rhs = interpret_expr(env, *rhs)?;
+    let lhs = interpret_expr(env, lhs)?;
+    let rhs = interpret_expr(env, rhs)?;
+    let op = *op;
 
     match op {
         Token::Plus => add(&lhs, &rhs),

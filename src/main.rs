@@ -73,7 +73,7 @@ fn run_stmt(input: &str, env: &mut interpreter::Environment, print_result: bool)
         }
     };
 
-    let calc_result = interpreter::interpret_stmt(env, expr);
+    let calc_result = interpreter::interpret_stmt(env, &expr);
 
     match calc_result {
         Ok(value) => {
