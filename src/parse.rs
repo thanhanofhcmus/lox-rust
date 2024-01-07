@@ -11,10 +11,8 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
         let result = parse_stmt(input, items, &mut curr_pos)?;
         stmts.push(result);
         // try to consume ';'
-        if let Some(li) = items.get(curr_pos) {
-            if li.token == Token::Semicolon {
-                curr_pos += 1;
-            }
+        if peek(items, &[Token::Semicolon], curr_pos) {
+            curr_pos += 1;
         }
     }
     match items.get(curr_pos) {
@@ -128,7 +126,7 @@ fn parse_declaration(
 
     let expr = parse_expr(input, items, curr_pos)?;
 
-    let name = id_item.span.extract_from_source(input);
+    let name = id_item.span.str_from_source(input);
     Ok(Statement::Declare(name.to_string(), expr))
 }
 
@@ -140,7 +138,7 @@ fn parse_reassignment(
     let id_item = consume_token(items, Token::Identifier, curr_pos)?;
     consume_token(items, Token::Equal, curr_pos)?;
     let expr = parse_expr(input, items, curr_pos)?;
-    let name = id_item.span.extract_from_source(input);
+    let name = id_item.span.str_from_source(input);
     Ok(Statement::Reassign(name.to_string(), expr))
 }
 
@@ -296,34 +294,26 @@ fn parse_primary(
             return Err(ParseError::Eof);
     };
 
+    let mut next = |expr| {
+        *curr_pos += 1;
+        Ok(expr)
+    };
+
     match li.token {
-        Token::Nil => {
-            *curr_pos += 1;
-            Ok(Expression::Nil)
-        }
-        Token::True => {
-            *curr_pos += 1;
-            Ok(Expression::Bool(true))
-        }
-        Token::False => {
-            *curr_pos += 1;
-            Ok(Expression::Bool(false))
-        }
+        Token::Nil => next(Expression::Nil),
+        Token::True => next(Expression::Bool(true)),
+        Token::False => next(Expression::Bool(false)),
         Token::String => {
-            *curr_pos += 1;
-            Ok(Expression::Str(
+            next(Expression::Str(
                 // remove start '"' and end '"'
                 Span::new(li.span.start + 1, li.span.end - 1)
-                    .extract_from_source(input)
+                    .str_from_source(input)
                     .to_string(),
             ))
         }
-        Token::Identifier => {
-            *curr_pos += 1;
-            Ok(Expression::Identifier(
-                li.span.extract_from_source(input).to_string(),
-            ))
-        }
+        Token::Identifier => next(Expression::Identifier(
+            li.span.str_from_source(input).to_string(),
+        )),
         Token::Number => parse_number(input, items, curr_pos),
         Token::LSquareParen => parse_array(input, items, curr_pos),
         Token::LRoundParen => parse_group(input, items, curr_pos),
@@ -388,7 +378,7 @@ fn parse_number(
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
     let li = consume_token(items, Token::Number, curr_pos)?;
-    let source = li.span.extract_from_source(input);
+    let source = li.span.str_from_source(input);
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
         Ok(num) => Ok(Expression::Number(num)),

@@ -61,7 +61,7 @@ fn run_stmt(input: &str, env: &mut interpreter::Environment, print_result: bool)
             "{} - {:?}: {:?}",
             token.span,
             token.token,
-            token.span.extract_from_source(input),
+            token.span.str_from_source(input),
         );
     }
 
