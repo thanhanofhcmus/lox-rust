@@ -10,7 +10,6 @@ fn main() {
     let args = std::env::args().collect::<Vec<String>>();
     let input = args.get(1).expect("must have one argument");
     println!("{:?}", input);
-    let input = input.as_bytes();
 
     let tokens = match lex::lex(input) {
         Ok(list) => list,
@@ -25,7 +24,7 @@ fn main() {
             "{} - {:?}: {:?}",
             token.span,
             token.token,
-            std::str::from_utf8(token.span.extract_from_source(input)).unwrap(),
+            token.span.extract_from_source(input),
         );
     }
 

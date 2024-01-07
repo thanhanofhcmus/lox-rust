@@ -17,7 +17,7 @@ impl Span {
         Span { start, end: start }
     }
 
-    pub fn extract_from_source<'a>(&self, input: &'a [u8]) -> &'a [u8] {
+    pub fn extract_from_source<'a>(&self, input: &'a str) -> &'a str {
         &input[self.start..=self.end]
     }
 }

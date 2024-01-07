@@ -10,9 +10,6 @@ pub enum ParseError {
     #[error("Unexpected token {0} at position {1}")]
     UnexpectedToken(Token, Span),
 
-    #[error("unable to convert to utf8")]
-    ConvertFromUtf8(Span),
-
     #[error("unable to parse to number")]
     ParseToNumber(Span),
 

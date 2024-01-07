@@ -3,7 +3,7 @@ use crate::lex::LexItem;
 use crate::parse_error::ParseError;
 use crate::token::Token;
 
-pub fn parse(input: &[u8], items: &[LexItem]) -> Result<Expression, ParseError> {
+pub fn parse(input: &str, items: &[LexItem]) -> Result<Expression, ParseError> {
     let mut curr_pos = 0;
     let result = parse_expr(input, items, &mut curr_pos)?;
     match items.get(curr_pos) {
@@ -13,7 +13,7 @@ pub fn parse(input: &[u8], items: &[LexItem]) -> Result<Expression, ParseError> 
 }
 
 fn parse_expr(
-    input: &[u8],
+    input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
@@ -21,7 +21,7 @@ fn parse_expr(
 }
 
 fn parse_term(
-    input: &[u8],
+    input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
@@ -40,7 +40,7 @@ fn parse_term(
 }
 
 fn parse_factor(
-    input: &[u8],
+    input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
@@ -59,7 +59,7 @@ fn parse_factor(
 }
 
 fn parse_primary(
-    input: &[u8],
+    input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
@@ -74,7 +74,7 @@ fn parse_primary(
 }
 
 fn parse_group(
-    input: &[u8],
+    input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
@@ -95,7 +95,7 @@ fn parse_group(
 }
 
 fn parse_number(
-    input: &[u8],
+    input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
@@ -110,10 +110,7 @@ fn parse_number(
     }
 
     let source = li.span.extract_from_source(input);
-    let Ok(s) = std::str::from_utf8(source) else {
-        return Err(ParseError::ConvertFromUtf8(li.span))
-    };
-    match s.parse::<f64>() {
+    match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
         Ok(num) => Ok(Expression::Number(num)),
     }
