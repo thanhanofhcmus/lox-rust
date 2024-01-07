@@ -8,7 +8,7 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Expression, ParseError> {
     let result = parse_expr(input, items, &mut curr_pos)?;
     match items.get(curr_pos) {
         None => Ok(result),
-        Some(_) => Err(ParseError::Unfinished),
+        Some(li) => Err(ParseError::Unfinished(li.token, li.span)),
     }
 }
 
@@ -25,7 +25,27 @@ fn parse_logical(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    parse_recursive_binary(input, items, curr_pos, &[Token::And, Token::Or], parse_term)
+    parse_recursive_binary(
+        input,
+        items,
+        curr_pos,
+        &[Token::And, Token::Or],
+        parse_comparision,
+    )
+}
+
+fn parse_comparision(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    parse_recursive_binary(
+        input,
+        items,
+        curr_pos,
+        &[Token::EqualEqual, Token::BangEqual],
+        parse_term,
+    )
 }
 
 fn parse_term(
@@ -168,7 +188,6 @@ fn parse_number(
     let Some(li) = items.get(*curr_pos) else {
             return Err(ParseError::Eof);
     };
-    // TODO: consider where to increase curr_pos
     *curr_pos += 1;
 
     if li.token != Token::Number {

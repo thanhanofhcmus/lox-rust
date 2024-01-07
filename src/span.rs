@@ -17,6 +17,13 @@ impl Span {
         Span { start, end: start }
     }
 
+    pub fn two(start: usize) -> Self {
+        Span {
+            start,
+            end: start + 1,
+        }
+    }
+
     pub fn extract_from_source<'a>(&self, input: &'a str) -> &'a str {
         &input[self.start..=self.end]
     }

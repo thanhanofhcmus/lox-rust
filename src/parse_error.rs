@@ -16,6 +16,6 @@ pub enum ParseError {
     #[error("unable to parse the next value")]
     Eof,
 
-    #[error("parse have leftover tokens")]
-    Unfinished,
+    #[error("parse have leftover tokens start with {0} at {1}")]
+    Unfinished(Token, Span),
 }

@@ -1,6 +1,8 @@
 use crate::expr::Expression;
 use crate::token::Token;
 
+const NUMBER_DELTA: f64 = 1e-10;
+
 #[derive(Debug)]
 pub enum Error {
     UnknownOperation(Token),
@@ -15,14 +17,17 @@ pub enum CalcResult {
     Bool(bool),
 }
 
-impl CalcResult {
-    fn same_type(&self, other: &CalcResult) -> bool {
-        use CalcResult::*;
-        match *self {
-            Bool(_) => matches!(other, Bool(_)),
-            Number(_) => matches!(other, Number(_)),
-        }
-    }
+fn compare(lhs: &CalcResult, rhs: &CalcResult) -> Result<CalcResult, Error> {
+    Ok(CalcResult::Bool(match lhs {
+        CalcResult::Bool(l) => match rhs {
+            CalcResult::Bool(r) => l == r,
+            _ => false,
+        },
+        CalcResult::Number(l) => match rhs {
+            CalcResult::Number(r) => f64::abs(*l - *r) < NUMBER_DELTA,
+            _ => false,
+        },
+    }))
 }
 
 fn and_or(lhs: &CalcResult, op: Token, rhs: &CalcResult) -> Result<CalcResult, Error> {
@@ -112,16 +117,13 @@ fn calculate_binary_op(lhs: Expression, op: Token, rhs: Expression) -> Result<Ca
     let lhs = calculate(lhs)?;
     let rhs = calculate(rhs)?;
 
-    if !lhs.same_type(&rhs) {
-        return Err(Error::MismatchType(lhs.clone(), rhs.clone()));
-    };
-
     match op {
         Token::Plus => add(&lhs, &rhs),
         Token::Minus => subtract(&lhs, &rhs),
         Token::Star => times(&lhs, &rhs),
         Token::Slash => divide(&lhs, &rhs),
         Token::And | Token::Or => and_or(&lhs, op, &rhs),
+        Token::EqualEqual | Token::BangEqual => compare(&lhs, &rhs),
         _ => Err(Error::UnknownOperation(op)),
     }
 }

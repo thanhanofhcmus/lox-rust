@@ -5,7 +5,11 @@ pub enum Token {
     LeftParen,
     RightParen,
 
+    Equal,
     Bang,
+
+    EqualEqual,
+    BangEqual,
 
     Plus,
     Minus,

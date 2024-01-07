@@ -46,8 +46,30 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             result.push(LexItem::new(Token::Slash, Span::one(curr_offset)));
         } else if c == ' ' || c == '\t' {
             // skip
+        } else if c == '=' {
+            let is_equal_equal = input
+                .chars()
+                .nth(curr_offset + 1)
+                .map(|next| next == '=')
+                .unwrap_or(false);
+            if is_equal_equal {
+                result.push(LexItem::new(Token::EqualEqual, Span::two(curr_offset)));
+                curr_offset += 1;
+            } else {
+                result.push(LexItem::new(Token::Equal, Span::one(curr_offset)));
+            }
         } else if c == '!' {
-            result.push(LexItem::new(Token::Bang, Span::one(curr_offset)));
+            let is_bang_equal = input
+                .chars()
+                .nth(curr_offset + 1)
+                .map(|next| next == '=')
+                .unwrap_or(false);
+            if is_bang_equal {
+                result.push(LexItem::new(Token::BangEqual, Span::two(curr_offset)));
+                curr_offset += 1;
+            } else {
+                result.push(LexItem::new(Token::Bang, Span::one(curr_offset)));
+            }
         } else if c.is_ascii_digit() {
             result.push(lex_number(input, &mut curr_offset));
         } else if is_identifier_char(c) {
