@@ -26,6 +26,6 @@ pub enum ParseError {
 fn diag_expect_token(o: &Option<Token>) -> String {
     match o {
         None => "".to_string(),
-        Some(t) => format!(", expected token {:?}", t),
+        Some(t) => format!(", expected token `{:?}`", t),
     }
 }

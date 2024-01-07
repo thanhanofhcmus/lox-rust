@@ -18,7 +18,7 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
         }
     }
     match items.get(curr_pos) {
-        None => Ok(Statement::MultiStmts(stmts)),
+        None => Ok(Statement::Block(stmts)),
         Some(li) => Err(ParseError::Unfinished(li.token, li.span)),
     }
 }
@@ -33,8 +33,36 @@ fn parse_stmt(
     };
     match li.token {
         Token::Var => parse_assignment(input, items, curr_pos),
+        Token::LPointParen => parse_block(input, items, curr_pos),
         _ => parse_expr(input, items, curr_pos).map(Statement::Expr),
     }
+}
+
+fn parse_block(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Statement, ParseError> {
+    consume_token(items, Token::LPointParen, curr_pos)?;
+
+    let mut stmts = vec![];
+
+    while let Some(li) = items.get(*curr_pos) {
+        if li.token == Token::RPointParen {
+            break;
+        }
+
+        let stmt = parse_stmt(input, items, curr_pos)?;
+
+        // TODO: maybe allow optional ';' at the last stmt
+        consume_token(items, Token::Semicolon, curr_pos)?;
+
+        stmts.push(stmt);
+    }
+
+    consume_token(items, Token::RPointParen, curr_pos)?;
+
+    Ok(Statement::Block(stmts))
 }
 
 fn parse_assignment(
@@ -42,37 +70,15 @@ fn parse_assignment(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Statement, ParseError> {
-    *curr_pos += 1; // consume 'var'
+    consume_token(items, Token::Var, curr_pos)?;
 
-    let Some(id_item) = items.get(*curr_pos) else {
-        return  Err(ParseError::Eof);
-    };
-    if id_item.token != Token::Identifier {
-        return Err(ParseError::UnexpectedToken(
-            id_item.token,
-            id_item.span,
-            Some(Token::Identifier),
-        ));
-    }
-    let name = id_item.span.extract_from_source(input);
+    let id_item = consume_token(items, Token::Identifier, curr_pos)?;
 
-    *curr_pos += 1; // consume identifier token
-
-    let Some(equal_item) = items.get(*curr_pos) else {
-        return  Err(ParseError::Eof);
-    };
-    if equal_item.token != Token::Equal {
-        return Err(ParseError::UnexpectedToken(
-            id_item.token,
-            id_item.span,
-            Some(Token::Equal),
-        ));
-    }
-
-    *curr_pos += 1; // consume '=' token
+    consume_token(items, Token::Equal, curr_pos)?;
 
     let expr = parse_expr(input, items, curr_pos)?;
 
+    let name = id_item.span.extract_from_source(input);
     Ok(Statement::Assign(name.to_string(), expr))
 }
 
@@ -257,8 +263,8 @@ fn parse_primary(
             ))
         }
         Token::Number => parse_number(input, items, curr_pos),
-        Token::LeftBracket => parse_array(input, items, curr_pos),
-        Token::LeftParen => parse_group(input, items, curr_pos),
+        Token::LSquareParen => parse_array(input, items, curr_pos),
+        Token::LRoundParen => parse_group(input, items, curr_pos),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
@@ -268,23 +274,9 @@ fn parse_group(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    *curr_pos += 1; // consume '('
+    consume_token(items, Token::LRoundParen, curr_pos)?;
     let expr = parse_expr(input, items, curr_pos)?;
-
-    // now curr_pos must be at token ')'
-    let Some(li) = items.get(*curr_pos) else {
-        return Err(ParseError::Eof);
-    };
-
-    if li.token != Token::RightParen {
-        return Err(ParseError::UnexpectedToken(
-            li.token,
-            li.span,
-            Some(Token::RightParen),
-        ));
-    }
-
-    *curr_pos += 1; // consume ')'
+    consume_token(items, Token::RRoundParen, curr_pos)?;
     Ok(expr)
 }
 
@@ -293,12 +285,13 @@ fn parse_array(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    *curr_pos += 1; // consume '['
+    consume_token(items, Token::LSquareParen, curr_pos)?;
+
     let mut exprs = vec![];
     let mut has_consumed_comma = true;
 
     while let Some(li) = items.get(*curr_pos) {
-        if li.token == Token::RightBracket {
+        if li.token == Token::RSquareParen {
             break;
         }
 
@@ -322,18 +315,7 @@ fn parse_array(
         };
     }
 
-    let Some(li) = items.get(*curr_pos) else {
-        return Err(ParseError::Eof);
-    };
-    if li.token != Token::RightBracket {
-        return Err(ParseError::UnexpectedToken(
-            li.token,
-            li.span,
-            Some(Token::RightBracket),
-        ));
-    }
-
-    *curr_pos += 1; // consume ']'
+    consume_token(items, Token::RSquareParen, curr_pos)?;
 
     Ok(Expression::Array(exprs))
 }
@@ -343,22 +325,29 @@ fn parse_number(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    let Some(li) = items.get(*curr_pos) else {
-            return Err(ParseError::Eof);
-    };
-    *curr_pos += 1;
-
-    if li.token != Token::Number {
-        return Err(ParseError::UnexpectedToken(
-            li.token,
-            li.span,
-            Some(Token::Number),
-        ));
-    }
+    let li = consume_token(items, Token::Number, curr_pos)?;
 
     let source = li.span.extract_from_source(input);
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
         Ok(num) => Ok(Expression::Number(num)),
     }
+}
+
+fn consume_token<'a>(
+    items: &'a [LexItem],
+    token: Token,
+    curr_pos: &mut usize,
+) -> Result<&'a LexItem, ParseError> {
+    let Some(li) = items.get(*curr_pos) else {
+        return Err(ParseError::Eof);
+    };
+
+    if li.token != token {
+        return Err(ParseError::UnexpectedToken(li.token, li.span, Some(token)));
+    }
+
+    *curr_pos += 1; // consume ')'
+
+    Ok(li)
 }

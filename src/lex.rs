@@ -52,14 +52,20 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             }
         };
 
-        if c == '(' {
-            result.push(LexItem::new(Token::LeftParen, Span::one(curr_offset)));
+        if c == ' ' || c == '\t' {
+            // skip
+        } else if c == '(' {
+            result.push(LexItem::new(Token::LRoundParen, Span::one(curr_offset)));
         } else if c == ')' {
-            result.push(LexItem::new(Token::RightParen, Span::one(curr_offset)));
+            result.push(LexItem::new(Token::RRoundParen, Span::one(curr_offset)));
         } else if c == '[' {
-            result.push(LexItem::new(Token::LeftBracket, Span::one(curr_offset)));
+            result.push(LexItem::new(Token::LSquareParen, Span::one(curr_offset)));
         } else if c == ']' {
-            result.push(LexItem::new(Token::RightBracket, Span::one(curr_offset)));
+            result.push(LexItem::new(Token::RSquareParen, Span::one(curr_offset)));
+        } else if c == '{' {
+            result.push(LexItem::new(Token::LPointParen, Span::one(curr_offset)));
+        } else if c == '}' {
+            result.push(LexItem::new(Token::RPointParen, Span::one(curr_offset)));
         } else if c == ',' {
             result.push(LexItem::new(Token::Comma, Span::one(curr_offset)));
         } else if c == ';' {
@@ -74,8 +80,6 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             result.push(lex_string(input, &mut curr_offset)?);
         } else if c == '/' {
             result.push(LexItem::new(Token::Slash, Span::one(curr_offset)));
-        } else if c == ' ' || c == '\t' {
-            // skip
         } else if c == '=' {
             push_with_equal(Token::EqualEqual, Token::Equal);
         } else if c == '!' {

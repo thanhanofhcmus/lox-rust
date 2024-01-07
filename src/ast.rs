@@ -16,5 +16,5 @@ pub enum Expression {
 pub enum Statement {
     Expr(Expression),
     Assign(String, Expression),
-    MultiStmts(Vec<Statement>),
+    Block(Vec<Statement>),
 }

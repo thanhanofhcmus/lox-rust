@@ -2,10 +2,12 @@ use derive_more::Display;
 
 #[derive(Clone, Copy, Debug, Display, PartialEq)]
 pub enum Token {
-    LeftParen,
-    RightParen,
-    LeftBracket,
-    RightBracket,
+    LRoundParen,
+    RRoundParen,
+    LSquareParen,
+    RSquareParen,
+    LPointParen,
+    RPointParen,
 
     Equal,
     Bang,

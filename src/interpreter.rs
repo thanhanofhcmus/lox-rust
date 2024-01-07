@@ -42,7 +42,7 @@ impl Interpreter {
                 Ok(None)
             }
             Statement::Expr(expr) => self.interpret_expr(expr).map(Some),
-            Statement::MultiStmts(mut stmts) => {
+            Statement::Block(mut stmts) => {
                 if let Some(last) = stmts.pop() {
                     for s in stmts {
                         self.interpret_stmt(s)?;
@@ -55,7 +55,7 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret_expr(&self, expr: Expression) -> Result<Value, Error> {
+    fn interpret_expr(&self, expr: Expression) -> Result<Value, Error> {
         match expr {
             Expression::Identifier(name) => Ok(self.get_value(name.as_str())),
             Expression::Nil => Ok(Value::Nil),
