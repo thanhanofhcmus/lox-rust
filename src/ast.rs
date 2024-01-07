@@ -8,4 +8,11 @@ pub enum Expression {
     Str(String),
     UnaryOp(Box<Expression>, Token),
     BinaryOp(Box<Expression>, Token, Box<Expression>),
+    Identifier(String),
+}
+
+#[derive(Debug)]
+pub enum Statement {
+    Expr(Expression),
+    Assign(String, Expression),
 }

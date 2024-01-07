@@ -1,16 +1,61 @@
-use crate::expr::Expression;
+use crate::ast::{Expression, Statement};
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
 use crate::span::Span;
 use crate::token::Token;
 
-pub fn parse(input: &str, items: &[LexItem]) -> Result<Expression, ParseError> {
+pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
     let mut curr_pos = 0;
-    let result = parse_expr(input, items, &mut curr_pos)?;
+    let result = parse_stmt(input, items, &mut curr_pos)?;
     match items.get(curr_pos) {
         None => Ok(result),
         Some(li) => Err(ParseError::Unfinished(li.token, li.span)),
     }
+}
+
+fn parse_stmt(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Statement, ParseError> {
+    let Some(li) = items.get(*curr_pos) else {
+        return Err(ParseError::Eof);
+    };
+    match li.token {
+        Token::Var => parse_assignment(input, items, curr_pos),
+        _ => parse_expr(input, items, curr_pos).map(Statement::Expr),
+    }
+}
+
+fn parse_assignment(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Statement, ParseError> {
+    *curr_pos += 1; // consume 'var'
+
+    let Some(id_item) = items.get(*curr_pos) else {
+        return  Err(ParseError::Eof);
+    };
+    if id_item.token != Token::Identifier {
+        return Err(ParseError::UnexpectedToken(id_item.token, id_item.span));
+    }
+    let name = id_item.span.extract_from_source(input);
+
+    *curr_pos += 1; // consume identifier token
+
+    let Some(equal_item) = items.get(*curr_pos) else {
+        return  Err(ParseError::Eof);
+    };
+    if equal_item.token != Token::Equal {
+        return Err(ParseError::UnexpectedToken(id_item.token, id_item.span));
+    }
+
+    *curr_pos += 1; // consume '=' token
+
+    let expr = parse_expr(input, items, curr_pos)?;
+
+    Ok(Statement::Assign(name.to_string(), expr))
 }
 
 fn parse_expr(
@@ -185,6 +230,12 @@ fn parse_primary(
                 Span::new(li.span.start + 1, li.span.end - 1)
                     .extract_from_source(input)
                     .to_string(),
+            ))
+        }
+        Token::Identifier => {
+            *curr_pos += 1;
+            Ok(Expression::Identifier(
+                li.span.extract_from_source(input).to_string(),
             ))
         }
         Token::Number => parse_number(input, items, curr_pos),

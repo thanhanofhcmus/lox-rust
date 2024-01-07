@@ -1,4 +1,4 @@
-mod expr;
+mod ast;
 mod interpreter;
 mod lex;
 mod parse;
@@ -37,8 +37,8 @@ fn main() {
     };
     println!("{:?}", expr);
 
-    let it = interpreter::Interpreter::new();
+    let mut it = interpreter::Interpreter::new();
 
-    let calc_result = it.calculate(expr);
+    let calc_result = it.interpret_stmt(expr);
     println!("{:?}", calc_result);
 }

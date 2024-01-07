@@ -1,4 +1,4 @@
-use crate::expr::Expression;
+use crate::ast::{Expression, Statement};
 use crate::token::Token;
 use std::collections::HashMap;
 
@@ -31,19 +31,38 @@ impl Interpreter {
         }
     }
 
-    pub fn calculate(&self, expr: Expression) -> Result<Value, Error> {
+    pub fn interpret_stmt(&mut self, stmt: Statement) -> Result<Option<Value>, Error> {
+        match stmt {
+            Statement::Assign(name, expr) => {
+                let value = self.interpret_expr(expr)?;
+                self.values.insert(name, value);
+                Ok(None)
+            }
+            Statement::Expr(expr) => self.interpret_expr(expr).map(Some),
+        }
+    }
+
+    pub fn interpret_expr(&self, expr: Expression) -> Result<Value, Error> {
         match expr {
+            Expression::Identifier(name) => Ok(self.get_value(name.as_str())),
             Expression::Nil => Ok(Value::Nil),
             Expression::Str(v) => Ok(Value::Str(v.to_string())),
             Expression::Bool(v) => Ok(Value::Bool(v)),
             Expression::Number(v) => Ok(Value::Number(v)),
-            Expression::UnaryOp(expr, op) => self.calculate_unary_op(*expr, op),
-            Expression::BinaryOp(lhs, op, rhs) => self.calculate_binary_op(*lhs, op, *rhs),
+            Expression::UnaryOp(expr, op) => self.interpret_unary_op(*expr, op),
+            Expression::BinaryOp(lhs, op, rhs) => self.interpret_binary_op(*lhs, op, *rhs),
         }
     }
 
-    fn calculate_unary_op(&self, expr: Expression, op: Token) -> Result<Value, Error> {
-        let res = self.calculate(expr)?;
+    fn get_value(&self, name: &str) -> Value {
+        self.values
+            .get(name)
+            .map(|v| v.to_owned())
+            .unwrap_or(Value::Nil)
+    }
+
+    fn interpret_unary_op(&self, expr: Expression, op: Token) -> Result<Value, Error> {
+        let res = self.interpret_expr(expr)?;
         match op {
             Token::Bang => match res {
                 Value::Bool(v) => Ok(Value::Bool(!v)),
@@ -57,14 +76,14 @@ impl Interpreter {
         }
     }
 
-    fn calculate_binary_op(
+    fn interpret_binary_op(
         &self,
         lhs: Expression,
         op: Token,
         rhs: Expression,
     ) -> Result<Value, Error> {
-        let lhs = self.calculate(lhs)?;
-        let rhs = self.calculate(rhs)?;
+        let lhs = self.interpret_expr(lhs)?;
+        let rhs = self.interpret_expr(rhs)?;
 
         match op {
             Token::Plus => add(&lhs, &rhs),

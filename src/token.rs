@@ -28,6 +28,8 @@ pub enum Token {
     False,
     Nil,
 
+    Var,
+
     Identifier,
     Number,
     String,
