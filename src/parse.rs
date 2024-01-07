@@ -25,18 +25,7 @@ fn parse_logical(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    let mut lhs = parse_term(input, items, curr_pos)?;
-
-    while let Some(op) = items.get(*curr_pos) {
-        if op.token != Token::And && op.token != Token::Or {
-            break;
-        }
-        *curr_pos += 1;
-        let rhs = parse_term(input, items, curr_pos)?;
-        lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
-    }
-
-    Ok(lhs)
+    parse_recursive_binary(input, items, curr_pos, &[Token::And, Token::Or], parse_term)
 }
 
 fn parse_term(
@@ -44,18 +33,13 @@ fn parse_term(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    let mut lhs = parse_factor(input, items, curr_pos)?;
-
-    while let Some(op) = items.get(*curr_pos) {
-        if op.token != Token::Plus && op.token != Token::Minus {
-            break;
-        }
-        *curr_pos += 1;
-        let rhs = parse_factor(input, items, curr_pos)?;
-        lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
-    }
-
-    Ok(lhs)
+    parse_recursive_binary(
+        input,
+        items,
+        curr_pos,
+        &[Token::Plus, Token::Minus],
+        parse_factor,
+    )
 }
 
 fn parse_factor(
@@ -63,14 +47,33 @@ fn parse_factor(
     items: &[LexItem],
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
-    let mut lhs = parse_unary(input, items, curr_pos)?;
+    parse_recursive_binary(
+        input,
+        items,
+        curr_pos,
+        &[Token::Star, Token::Slash],
+        parse_unary,
+    )
+}
+
+fn parse_recursive_binary<F>(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+    match_tokens: &'static [Token],
+    lower_fn: F,
+) -> Result<Expression, ParseError>
+where
+    F: Fn(&str, &[LexItem], &mut usize) -> Result<Expression, ParseError>,
+{
+    let mut lhs = lower_fn(input, items, curr_pos)?;
 
     while let Some(op) = items.get(*curr_pos) {
-        if op.token != Token::Star && op.token != Token::Slash {
+        if !match_tokens.contains(&op.token) {
             break;
         }
         *curr_pos += 1;
-        let rhs = parse_unary(input, items, curr_pos)?;
+        let rhs = lower_fn(input, items, curr_pos)?;
         lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
     }
 
@@ -86,46 +89,27 @@ fn parse_unary(
             return Err(ParseError::Eof);
     };
     match li.token {
-        Token::Bang => parse_unary_bang(input, items, curr_pos),
-        Token::Minus => parse_unary_minus(input, items, curr_pos),
+        Token::Bang => parse_recursive_unary(input, items, Token::Bang, curr_pos),
+        Token::Minus => parse_recursive_unary(input, items, Token::Minus, curr_pos),
         _ => parse_primary(input, items, curr_pos),
     }
 }
 
-fn parse_unary_bang(
+fn parse_recursive_unary(
     input: &str,
     items: &[LexItem],
+    match_token: Token,
     curr_pos: &mut usize,
 ) -> Result<Expression, ParseError> {
     let Some(li) = items.get(*curr_pos) else {
             return Err(ParseError::Eof);
     };
 
-    if li.token == Token::Bang {
+    if li.token == match_token {
         *curr_pos += 1;
         Ok(Expression::UnaryOp(
-            Box::new(parse_unary_bang(input, items, curr_pos)?),
-            Token::Bang,
-        ))
-    } else {
-        parse_primary(input, items, curr_pos)
-    }
-}
-
-fn parse_unary_minus(
-    input: &str,
-    items: &[LexItem],
-    curr_pos: &mut usize,
-) -> Result<Expression, ParseError> {
-    let Some(li) = items.get(*curr_pos) else {
-            return Err(ParseError::Eof);
-    };
-
-    if li.token == Token::Minus {
-        *curr_pos += 1;
-        Ok(Expression::UnaryOp(
-            Box::new(parse_unary_bang(input, items, curr_pos)?),
-            Token::Minus,
+            Box::new(parse_recursive_unary(input, items, match_token, curr_pos)?),
+            match_token,
         ))
     } else {
         parse_primary(input, items, curr_pos)
