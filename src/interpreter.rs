@@ -129,20 +129,20 @@ fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
 }
 
 fn compare(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
-    let &Value::Number(l) = lhs else {
-        return Err(Error::InvalidOperationOnType(op, lhs.clone()))
+    let from_ord = |o: std::cmp::Ordering| match op {
+        Token::Less => Ok(Value::Bool(o.is_lt())),
+        Token::LessEqual => Ok(Value::Bool(o.is_le())),
+        Token::Greater => Ok(Value::Bool(o.is_gt())),
+        Token::GreaterEqual => Ok(Value::Bool(o.is_ge())),
+        _ => Err(Error::UnknownOperation(op)),
     };
-    let &Value::Number(r) = rhs else {
-        return Err(Error::InvalidOperationOnType(op, rhs.clone()))
-    };
-
-    match op {
-        Token::Less => Ok(Value::Bool(l < r)),
-        Token::LessEqual => Ok(Value::Bool(l <= r)),
-        Token::Greater => Ok(Value::Bool(l > r)),
-        Token::GreaterEqual => Ok(Value::Bool(l >= r)),
-        _ => Err(Error::InvalidOperationOnType(op, lhs.clone())),
+    if let (Value::Number(l), Value::Number(r)) = (lhs, rhs) {
+        return from_ord(l.total_cmp(r));
     }
+    if let (Value::Str(l), Value::Str(r)) = (lhs, rhs) {
+        return from_ord(l.cmp(r));
+    }
+    Err(Error::InvalidOperationOnType(op, lhs.clone()))
 }
 
 fn and_or(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
