@@ -168,7 +168,9 @@ fn parse_block_statement_list(
         let stmt = parse_stmt(input, items, curr_pos)?;
 
         // TODO: maybe allow optional ';' at the last stmt
-        consume_token(items, Token::Semicolon, curr_pos)?;
+        if !peek(items, &[Token::RPointParen], *curr_pos) {
+            consume_token(items, Token::Semicolon, curr_pos)?;
+        }
 
         stmts.push(stmt);
     }
