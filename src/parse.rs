@@ -10,7 +10,6 @@ stmt         = (reassignment | declaration | print | expr | if | while )
 print        = "print" expr
 reassignment = IDENTIFIER "=" expr
 declaration  = "var" IDENTIFIER "=" expr
-if           = "if" expr block ("else" block)?
 while        = "while" expr block
 block        = "{" (stmt ";")* "}"
 expr         = logical
@@ -21,7 +20,8 @@ term         = factor (("+" | "-") factor)*
 factor       = unary (("*" | "/") unary)*
 unary        = ("!" | "-")* unary | call
 call         = primary "(" (expr "," ...)* ")"
-primary      = STRING | NUMBER | IDENTIFIER | "true" | "false" | "nil" | group | array | function
+primary      = STRING | NUMBER | IDENTIFIER | "true" | "false" | "nil" | group | array | function | if
+if           = "if" expr block ("else" block)?
 function     = "fun" "(" ( FUNC_ARG "," ... )* ")" block
 array        = "[" (expr, ",")* "]"
 group        = "(" expr ")"
@@ -58,7 +58,6 @@ fn parse_stmt(
         Token::Print => parse_print(input, items, curr_pos),
         Token::Identifier => parse_reassignment_or_expr(input, items, curr_pos),
         Token::Var => parse_declaration(input, items, curr_pos),
-        Token::If => parse_if(input, items, curr_pos),
         Token::While => parse_while(input, items, curr_pos),
         Token::LPointParen => parse_block(input, items, curr_pos),
         _ => parse_expr(input, items, curr_pos).map(Statement::Expr),
@@ -74,22 +73,6 @@ fn parse_print(
     consume_token(items, Token::Print, curr_pos)?;
     let expr = parse_expr(input, items, curr_pos)?;
     Ok(Statement::Print(expr))
-}
-
-fn parse_if(input: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Statement, ParseError> {
-    trace!("parse_if");
-    consume_token(items, Token::If, curr_pos)?;
-
-    let cond = parse_expr(input, items, curr_pos)?;
-    let if_stmts = parse_block_statement_list(input, items, curr_pos)?;
-    let mut else_stmts = None;
-
-    if peek(items, &[Token::Else], *curr_pos) {
-        consume_token(items, Token::Else, curr_pos)?;
-        else_stmts = Some(parse_block_statement_list(input, items, curr_pos)?);
-    }
-
-    Ok(Statement::If(cond, if_stmts, else_stmts))
 }
 
 fn parse_while(
@@ -392,6 +375,7 @@ fn parse_primary(
         Token::Identifier => next(Expression::Identifier(
             li.span.str_from_source(input).to_string(),
         )),
+        Token::If => parse_if(input, items, curr_pos),
         Token::Number => parse_number(input, items, curr_pos),
         Token::LSquareParen => parse_array(input, items, curr_pos),
         Token::LRoundParen => parse_group(input, items, curr_pos),
@@ -495,6 +479,25 @@ fn get_identifier(_: &str, items: &[LexItem], curr_pos: &mut usize) -> Result<Le
     Ok(li.to_owned())
 }
 
+fn parse_if(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    trace!("parse_if");
+    consume_token(items, Token::If, curr_pos)?;
+
+    let cond = parse_expr(input, items, curr_pos)?;
+    let if_stmts = parse_block_statement_list(input, items, curr_pos)?;
+    let mut else_stmts = None;
+
+    if peek(items, &[Token::Else], *curr_pos) {
+        consume_token(items, Token::Else, curr_pos)?;
+        else_stmts = Some(parse_block_statement_list(input, items, curr_pos)?);
+    }
+
+    Ok(Expression::If(Box::new(cond), if_stmts, else_stmts))
+}
 fn parse_function(
     input: &str,
     items: &[LexItem],

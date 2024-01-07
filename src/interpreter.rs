@@ -49,6 +49,15 @@ pub enum Value {
     Function(Vec<String>, StatementList),
 }
 
+impl Value {
+    pub fn from_option(o: Option<Value>) -> Self {
+        match o {
+            Some(v) => v,
+            None => Value::Nil,
+        }
+    }
+}
+
 pub struct Environment<'a> {
     values: HashMap<String, Value>,
     parent: Option<&'a Environment<'a>>,
@@ -107,9 +116,6 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
         Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
         Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
-        Statement::If(cond, if_stmts, else_stmts) => {
-            interpret_if_stmt(env, cond, if_stmts, else_stmts)
-        }
         Statement::While(cond, stmts) => interpret_while_stmt(env, cond, stmts),
         Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
         Statement::Global(stmts) => interpret_stmt_list(env, stmts),
@@ -162,25 +168,6 @@ fn interpret_reassign_stmt(
     Ok(Some(value))
 }
 
-fn interpret_if_stmt(
-    env: &mut Environment,
-    cond: Expression,
-    if_stmts: StatementList,
-    else_stmts: Option<StatementList>,
-) -> Result<Option<Value>, Error> {
-    let cond_value = interpret_expr(env, cond)?;
-    let Value::Bool(bin) = cond_value else {
-        return  Err(Error::CondNotBool(cond_value));
-    };
-    if !bin {
-        return else_stmts
-            .map(|stmts| interpret_stmt_list(env, stmts))
-            .unwrap_or(Ok(None));
-    }
-
-    interpret_stmt_list(env, if_stmts)
-}
-
 fn interpret_while_stmt(
     env: &mut Environment,
     cond: Expression,
@@ -204,6 +191,9 @@ fn interpret_while_stmt(
 
 fn interpret_expr(env: &mut Environment, expr: Expression) -> Result<Value, Error> {
     match expr {
+        Expression::If(cond, if_stmts, else_stmts) => {
+            interpret_if_expr(env, *cond, if_stmts, else_stmts)
+        }
         Expression::FunctionCall(name, args) => interpret_function_call(env, name, args),
         Expression::FunctionDeclaration(args, stmts) => Ok(Value::Function(args, stmts)),
         Expression::Identifier(name) => Ok(get_value(env, name.as_str())),
@@ -223,6 +213,26 @@ fn get_array_value(env: &mut Environment, exprs: Vec<Expression>) -> Result<Valu
         result.push(interpret_expr(env, expr)?);
     }
     Ok(Value::Array(result))
+}
+
+fn interpret_if_expr(
+    env: &mut Environment,
+    cond: Expression,
+    if_stmts: StatementList,
+    else_stmts: Option<StatementList>,
+) -> Result<Value, Error> {
+    let cond_value = interpret_expr(env, cond)?;
+    let Value::Bool(bin) = cond_value else {
+        return  Err(Error::CondNotBool(cond_value));
+    };
+    if !bin {
+        return else_stmts
+            .map(|stmts| interpret_stmt_list(env, stmts))
+            .unwrap_or(Ok(None))
+            .map(Value::from_option);
+    }
+
+    Ok(Value::from_option(interpret_stmt_list(env, if_stmts)?))
 }
 
 fn interpret_function_call(
@@ -253,10 +263,7 @@ fn interpret_function_call(
     }
     local_env.change_parent(env);
 
-    interpret_stmt_list(&mut local_env, body).map(|o| match o {
-        None => Value::Nil,
-        Some(v) => v,
-    })
+    interpret_stmt_list(&mut local_env, body).map(Value::from_option)
 }
 
 fn interpret_unary_op(env: &mut Environment, expr: Expression, op: Token) -> Result<Value, Error> {

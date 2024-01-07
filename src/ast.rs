@@ -12,12 +12,12 @@ pub enum Expression {
     Identifier(String),
     FunctionDeclaration(Vec<String> /*args*/, StatementList),
     FunctionCall(String /* name */, Vec<Expression> /* args */),
+    If(Box<Expression>, StatementList, Option<StatementList>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
-    If(Expression, StatementList, Option<StatementList>),
     While(Expression, StatementList),
     Declare(String, Expression),
     Reassign(String, Expression),
