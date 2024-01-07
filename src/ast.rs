@@ -6,6 +6,7 @@ pub enum Expression {
     Bool(bool),
     Number(f64),
     Str(String),
+    Array(Vec<Expression>),
     UnaryOp(Box<Expression>, Token),
     BinaryOp(Box<Expression>, Token, Box<Expression>),
     Identifier(String),

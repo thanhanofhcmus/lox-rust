@@ -4,6 +4,8 @@ use derive_more::Display;
 pub enum Token {
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
 
     Equal,
     Bang,
@@ -34,5 +36,6 @@ pub enum Token {
     Number,
     String,
 
+    Comma,
     Semicolon,
 }

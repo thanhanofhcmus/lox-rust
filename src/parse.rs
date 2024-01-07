@@ -48,7 +48,11 @@ fn parse_assignment(
         return  Err(ParseError::Eof);
     };
     if id_item.token != Token::Identifier {
-        return Err(ParseError::UnexpectedToken(id_item.token, id_item.span));
+        return Err(ParseError::UnexpectedToken(
+            id_item.token,
+            id_item.span,
+            Some(Token::Identifier),
+        ));
     }
     let name = id_item.span.extract_from_source(input);
 
@@ -58,7 +62,11 @@ fn parse_assignment(
         return  Err(ParseError::Eof);
     };
     if equal_item.token != Token::Equal {
-        return Err(ParseError::UnexpectedToken(id_item.token, id_item.span));
+        return Err(ParseError::UnexpectedToken(
+            id_item.token,
+            id_item.span,
+            Some(Token::Equal),
+        ));
     }
 
     *curr_pos += 1; // consume '=' token
@@ -100,11 +108,11 @@ fn parse_equality(
         items,
         curr_pos,
         &[Token::EqualEqual, Token::BangEqual],
-        parse_comparision,
+        parse_comparison,
     )
 }
 
-fn parse_comparision(
+fn parse_comparison(
     input: &str,
     items: &[LexItem],
     curr_pos: &mut usize,
@@ -249,8 +257,9 @@ fn parse_primary(
             ))
         }
         Token::Number => parse_number(input, items, curr_pos),
+        Token::LeftBracket => parse_array(input, items, curr_pos),
         Token::LeftParen => parse_group(input, items, curr_pos),
-        _ => Err(ParseError::UnexpectedToken(li.token, li.span)),
+        _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
 
@@ -268,11 +277,65 @@ fn parse_group(
     };
 
     if li.token != Token::RightParen {
-        return Err(ParseError::UnexpectedToken(li.token, li.span));
+        return Err(ParseError::UnexpectedToken(
+            li.token,
+            li.span,
+            Some(Token::RightParen),
+        ));
     }
 
-    *curr_pos += 1;
+    *curr_pos += 1; // consume ')'
     Ok(expr)
+}
+
+fn parse_array(
+    input: &str,
+    items: &[LexItem],
+    curr_pos: &mut usize,
+) -> Result<Expression, ParseError> {
+    *curr_pos += 1; // consume '['
+    let mut exprs = vec![];
+    let mut has_consumed_comma = true;
+
+    while let Some(li) = items.get(*curr_pos) {
+        if li.token == Token::RightBracket {
+            break;
+        }
+
+        if !has_consumed_comma {
+            return Err(ParseError::UnexpectedToken(
+                li.token,
+                li.span,
+                Some(Token::Comma),
+            ));
+        }
+
+        let expr = parse_expr(input, items, curr_pos)?;
+        exprs.push(expr);
+        has_consumed_comma = false;
+
+        if let Some(next) = items.get(*curr_pos) {
+            if next.token == Token::Comma {
+                *curr_pos += 1;
+                has_consumed_comma = true;
+            }
+        };
+    }
+
+    let Some(li) = items.get(*curr_pos) else {
+        return Err(ParseError::Eof);
+    };
+    if li.token != Token::RightBracket {
+        return Err(ParseError::UnexpectedToken(
+            li.token,
+            li.span,
+            Some(Token::RightBracket),
+        ));
+    }
+
+    *curr_pos += 1; // consume ']'
+
+    Ok(Expression::Array(exprs))
 }
 
 fn parse_number(
@@ -286,7 +349,11 @@ fn parse_number(
     *curr_pos += 1;
 
     if li.token != Token::Number {
-        return Err(ParseError::UnexpectedToken(li.token, li.span));
+        return Err(ParseError::UnexpectedToken(
+            li.token,
+            li.span,
+            Some(Token::Number),
+        ));
     }
 
     let source = li.span.extract_from_source(input);

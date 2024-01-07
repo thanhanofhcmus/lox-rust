@@ -18,6 +18,7 @@ pub enum Value {
     Str(String),
     Number(f64),
     Bool(bool),
+    Array(Vec<Value>),
 }
 
 pub struct Interpreter {
@@ -59,6 +60,7 @@ impl Interpreter {
             Expression::Str(v) => Ok(Value::Str(v.to_string())),
             Expression::Bool(v) => Ok(Value::Bool(v)),
             Expression::Number(v) => Ok(Value::Number(v)),
+            Expression::Array(exprs) => self.get_array_value(exprs),
             Expression::UnaryOp(expr, op) => self.interpret_unary_op(*expr, op),
             Expression::BinaryOp(lhs, op, rhs) => self.interpret_binary_op(*lhs, op, *rhs),
         }
@@ -69,6 +71,14 @@ impl Interpreter {
             .get(name)
             .map(|v| v.to_owned())
             .unwrap_or(Value::Nil)
+    }
+
+    fn get_array_value(&self, exprs: Vec<Expression>) -> Result<Value, Error> {
+        let mut result = vec![];
+        for expr in exprs {
+            result.push(self.interpret_expr(expr)?);
+        }
+        Ok(Value::Array(result))
     }
 
     fn interpret_unary_op(&self, expr: Expression, op: Token) -> Result<Value, Error> {
@@ -113,6 +123,7 @@ impl Interpreter {
 fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Bool(match lhs {
         Value::Nil => false,
+        Value::Array(_) => false,
         Value::Bool(l) => match rhs {
             Value::Bool(r) => l == r,
             _ => false,
