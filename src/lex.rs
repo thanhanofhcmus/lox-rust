@@ -49,6 +49,9 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     let mut result = vec![];
 
     while let Some(c) = input.chars().nth(curr_offset) {
+        let const_offset = curr_offset; // we don't want to borrow mutate of curr_offset
+        let tok_one = |t| LexItem::new(t, Span::one(const_offset));
+
         let mut push_with_equal = |token_has_equal, token_no_equal| {
             if is_next_equal(input, curr_offset) {
                 result.push(LexItem::new(token_has_equal, Span::two(curr_offset)));
@@ -58,48 +61,34 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             }
         };
 
-        if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
-            // skip
-        } else if c == '(' {
-            result.push(LexItem::new(Token::LRoundParen, Span::one(curr_offset)));
-        } else if c == ')' {
-            result.push(LexItem::new(Token::RRoundParen, Span::one(curr_offset)));
-        } else if c == '[' {
-            result.push(LexItem::new(Token::LSquareParen, Span::one(curr_offset)));
-        } else if c == ']' {
-            result.push(LexItem::new(Token::RSquareParen, Span::one(curr_offset)));
-        } else if c == '{' {
-            result.push(LexItem::new(Token::LPointParen, Span::one(curr_offset)));
-        } else if c == '}' {
-            result.push(LexItem::new(Token::RPointParen, Span::one(curr_offset)));
-        } else if c == ',' {
-            result.push(LexItem::new(Token::Comma, Span::one(curr_offset)));
-        } else if c == ';' {
-            result.push(LexItem::new(Token::Semicolon, Span::one(curr_offset)));
-        } else if c == '+' {
-            result.push(LexItem::new(Token::Plus, Span::one(curr_offset)));
-        } else if c == '-' {
-            result.push(LexItem::new(Token::Minus, Span::one(curr_offset)));
-        } else if c == '*' {
-            result.push(LexItem::new(Token::Star, Span::one(curr_offset)));
-        } else if c == '/' {
-            result.push(LexItem::new(Token::Slash, Span::one(curr_offset)));
-        } else if c == '=' {
-            push_with_equal(Token::EqualEqual, Token::Equal);
-        } else if c == '!' {
-            push_with_equal(Token::BangEqual, Token::Bang);
-        } else if c == '<' {
-            push_with_equal(Token::LessEqual, Token::Less);
-        } else if c == '>' {
-            push_with_equal(Token::GreaterEqual, Token::Greater);
-        } else if c == '"' {
-            result.push(lex_string(input, &mut curr_offset)?);
-        } else if c.is_ascii_digit() {
-            result.push(lex_number(input, &mut curr_offset)?);
-        } else if is_keyword_or_identifier_char(c) {
-            result.push(lex_keyword_or_identifier(input, &mut curr_offset))
-        } else {
-            return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
+        match c {
+            ' ' | '\t' | '\r' | '\n' => { /* skip */ }
+            '(' => result.push(tok_one(Token::LRoundParen)),
+            ')' => result.push(tok_one(Token::RRoundParen)),
+            '[' => result.push(tok_one(Token::LSquareParen)),
+            ']' => result.push(tok_one(Token::RSquareParen)),
+            '{' => result.push(tok_one(Token::LPointParen)),
+            '}' => result.push(tok_one(Token::RPointParen)),
+            ',' => result.push(tok_one(Token::Comma)),
+            ';' => result.push(tok_one(Token::Semicolon)),
+            '+' => result.push(tok_one(Token::Plus)),
+            '-' => result.push(tok_one(Token::Minus)),
+            '*' => result.push(tok_one(Token::Star)),
+            '/' => result.push(tok_one(Token::Slash)),
+
+            '=' => push_with_equal(Token::EqualEqual, Token::Equal),
+            '!' => push_with_equal(Token::BangEqual, Token::Bang),
+            '<' => push_with_equal(Token::LessEqual, Token::Less),
+            '>' => push_with_equal(Token::GreaterEqual, Token::Greater),
+            '"' => result.push(lex_string(input, &mut curr_offset)?),
+
+            v if v.is_ascii_digit() => result.push(lex_number(input, &mut curr_offset)?),
+            v if is_keyword_or_identifier_char(v) => {
+                result.push(lex_keyword_or_identifier(input, &mut curr_offset))
+            }
+            _ => {
+                return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
+            }
         }
         curr_offset += 1;
     }
