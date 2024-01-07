@@ -1,4 +1,6 @@
-#[derive(Debug)]
+use derive_more::Display;
+
+#[derive(Clone, Copy, Debug, Display, PartialEq)]
 pub enum Token {
     LeftParen,
     RightParen,

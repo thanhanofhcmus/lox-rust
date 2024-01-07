@@ -1,4 +1,4 @@
-use thiserror::Error;
+use crate::parse_error::ParseError;
 
 use crate::span::Span;
 use crate::token::Token;
@@ -13,12 +13,6 @@ impl LexItem {
     pub fn new(token: Token, span: Span) -> Self {
         LexItem { token, span }
     }
-}
-
-#[derive(Debug, Error)]
-pub enum ParseError {
-    #[error("Unexpected token in position {0}")]
-    UnexpectedToken(Span),
 }
 
 fn is_ascii_number(c: &u8) -> bool {
@@ -47,7 +41,7 @@ pub fn lex(input: &[u8]) -> Result<Vec<LexItem>, ParseError> {
         } else if is_ascii_number(&c) {
             result.push(lex_number(input, &mut curr_offset));
         } else {
-            return Err(ParseError::UnexpectedToken(Span::one(curr_offset)));
+            return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
         }
         curr_offset += 1;
     }
