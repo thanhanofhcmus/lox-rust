@@ -66,7 +66,12 @@ fn run_one_stmt(input: &str, it: &mut interpreter::Interpreter) {
     let calc_result = it.interpret_stmt(expr);
 
     match calc_result {
-        Ok(value) => info!("{:?}", value),
+        Ok(value) => info!(
+            "{:?}",
+            value
+                .map(|v| format!("{}", v))
+                .unwrap_or("None".to_string())
+        ),
         Err(err) => error!("{:?}", err),
     }
 }

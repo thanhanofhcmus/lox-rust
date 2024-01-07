@@ -1,5 +1,6 @@
 use crate::ast::{Expression, Statement};
 use crate::token::Token;
+use derive_more::Display;
 use std::collections::HashMap;
 
 const NUMBER_DELTA: f64 = 1e-10;
@@ -12,12 +13,13 @@ pub enum Error {
     DivideByZero,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Display, Debug, Clone)]
 pub enum Value {
     Nil,
     Str(String),
     Number(f64),
     Bool(bool),
+    #[display(fmt = "{:?}", _0)]
     Array(Vec<Value>),
 }
 
