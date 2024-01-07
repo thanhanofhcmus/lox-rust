@@ -8,17 +8,17 @@ pub enum Expression {
     Str(String),
     Array(Vec<Expression>),
     UnaryOp(Box<Expression>, Token),
-    BinaryOp(Box<Expression>, Token, Box<Expression>),
+    BinaryOp(BinaryOpNode),
     Identifier(String),
-    FunctionDeclaration(Vec<String> /*args*/, StatementList),
-    FunctionCall(String /* name */, Vec<Expression> /* args */),
-    If(Box<Expression>, StatementList, Option<StatementList>),
+    FnDecl(FnDeclNode),
+    FnCall(FnCallNode),
+    If(IfNode),
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Expression),
-    While(Expression, StatementList),
+    While(WhileNode),
     Declare(String, Expression),
     Reassign(String, Expression),
     Block(StatementList),
@@ -28,3 +28,35 @@ pub enum Statement {
 }
 
 pub type StatementList = Vec<Statement>;
+
+#[derive(Debug, Clone)]
+pub struct IfNode {
+    pub cond: Box<Expression>,
+    pub if_stmts: StatementList,
+    pub else_stmts: Option<StatementList>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnDeclNode {
+    pub arg_names: Vec<String>,
+    pub body: StatementList,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnCallNode {
+    pub name: String,
+    pub args: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryOpNode {
+    pub lhs: Box<Expression>,
+    pub op: Token,
+    pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhileNode {
+    pub cond: Expression,
+    pub body: StatementList,
+}

@@ -1,4 +1,6 @@
-use crate::ast::{Expression, Statement, StatementList};
+use crate::ast::{
+    BinaryOpNode, Expression, FnCallNode, FnDeclNode, IfNode, Statement, StatementList, WhileNode,
+};
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
 use crate::span::Span;
@@ -83,8 +85,8 @@ fn parse_while(
     trace!("parse_while");
     consume_token(items, Token::While, curr_pos)?;
     let cond = parse_expr(input, items, curr_pos)?;
-    let stmts = parse_block_statement_list(input, items, curr_pos)?;
-    Ok(Statement::While(cond, stmts))
+    let body = parse_block_statement_list(input, items, curr_pos)?;
+    Ok(Statement::While(WhileNode { cond, body }))
 }
 
 fn parse_block(
@@ -278,7 +280,11 @@ where
         }
         *curr_pos += 1;
         let rhs = lower_fn(input, items, curr_pos)?;
-        lhs = Expression::BinaryOp(Box::new(lhs), op.token, Box::new(rhs));
+        lhs = Expression::BinaryOp(BinaryOpNode {
+            lhs: Box::new(lhs),
+            op: op.token,
+            rhs: Box::new(rhs),
+        });
     }
 
     Ok(lhs)
@@ -331,7 +337,7 @@ fn parse_call(
     let prim = parse_primary(input, items, curr_pos)?;
     if let Expression::Identifier(name) = &prim {
         if peek(items, &[Token::LRoundParen], *curr_pos) {
-            let body = parse_comma_list(
+            let args = parse_comma_list(
                 input,
                 items,
                 curr_pos,
@@ -339,7 +345,10 @@ fn parse_call(
                 Token::RRoundParen,
                 parse_expr,
             )?;
-            return Ok(Expression::FunctionCall(name.to_string(), body));
+            return Ok(Expression::FnCall(FnCallNode {
+                name: name.to_string(),
+                args,
+            }));
         }
     }
     Ok(prim)
@@ -496,7 +505,11 @@ fn parse_if(
         else_stmts = Some(parse_block_statement_list(input, items, curr_pos)?);
     }
 
-    Ok(Expression::If(Box::new(cond), if_stmts, else_stmts))
+    Ok(Expression::If(IfNode {
+        cond: Box::new(cond),
+        if_stmts,
+        else_stmts,
+    }))
 }
 fn parse_function(
     input: &str,
@@ -505,7 +518,7 @@ fn parse_function(
 ) -> Result<Expression, ParseError> {
     trace!("parse_identifier");
     consume_token(items, Token::Fn, curr_pos)?;
-    let args = parse_comma_list(
+    let arg_names = parse_comma_list(
         input,
         items,
         curr_pos,
@@ -517,9 +530,9 @@ fn parse_function(
     .map(|li| li.span.str_from_source(input).to_string())
     .collect();
 
-    let stmts = parse_block_statement_list(input, items, curr_pos)?;
+    let body = parse_block_statement_list(input, items, curr_pos)?;
 
-    Ok(Expression::FunctionDeclaration(args, stmts))
+    Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
 }
 
 fn consume_token<'a>(

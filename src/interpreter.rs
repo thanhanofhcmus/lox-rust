@@ -1,4 +1,6 @@
-use crate::ast::{Expression, Statement, StatementList};
+use crate::ast::{
+    BinaryOpNode, Expression, FnCallNode, IfNode, Statement, StatementList, WhileNode,
+};
 use crate::token::Token;
 use derive_more::Display;
 use std::collections::HashMap;
@@ -116,7 +118,7 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
         Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
         Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
-        Statement::While(cond, stmts) => interpret_while_stmt(env, cond, stmts),
+        Statement::While(node) => interpret_while_stmt(env, node),
         Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
         Statement::Global(stmts) => interpret_stmt_list(env, stmts),
     }
@@ -170,8 +172,7 @@ fn interpret_reassign_stmt(
 
 fn interpret_while_stmt(
     env: &mut Environment,
-    cond: Expression,
-    stmts: StatementList,
+    WhileNode { cond, body }: WhileNode,
 ) -> Result<Option<Value>, Error> {
     let mut result = Ok(None);
 
@@ -183,7 +184,7 @@ fn interpret_while_stmt(
         if !bin {
             break;
         }
-        result = interpret_stmt_list(env, stmts.to_vec());
+        result = interpret_stmt_list(env, body.to_vec());
     }
 
     result
@@ -191,11 +192,9 @@ fn interpret_while_stmt(
 
 fn interpret_expr(env: &mut Environment, expr: Expression) -> Result<Value, Error> {
     match expr {
-        Expression::If(cond, if_stmts, else_stmts) => {
-            interpret_if_expr(env, *cond, if_stmts, else_stmts)
-        }
-        Expression::FunctionCall(name, args) => interpret_function_call(env, name, args),
-        Expression::FunctionDeclaration(args, stmts) => Ok(Value::Function(args, stmts)),
+        Expression::If(node) => interpret_if_expr(env, node),
+        Expression::FnCall(node) => interpret_function_call(env, node),
+        Expression::FnDecl(node) => Ok(Value::Function(node.arg_names, node.body)),
         Expression::Identifier(name) => Ok(get_value(env, name.as_str())),
         Expression::Nil => Ok(Value::Nil),
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
@@ -203,7 +202,7 @@ fn interpret_expr(env: &mut Environment, expr: Expression) -> Result<Value, Erro
         Expression::Number(v) => Ok(Value::Number(v)),
         Expression::Array(exprs) => get_array_value(env, exprs),
         Expression::UnaryOp(expr, op) => interpret_unary_op(env, *expr, op),
-        Expression::BinaryOp(lhs, op, rhs) => interpret_binary_op(env, *lhs, op, *rhs),
+        Expression::BinaryOp(node) => interpret_binary_op(env, node),
     }
 }
 
@@ -215,30 +214,25 @@ fn get_array_value(env: &mut Environment, exprs: Vec<Expression>) -> Result<Valu
     Ok(Value::Array(result))
 }
 
-fn interpret_if_expr(
-    env: &mut Environment,
-    cond: Expression,
-    if_stmts: StatementList,
-    else_stmts: Option<StatementList>,
-) -> Result<Value, Error> {
-    let cond_value = interpret_expr(env, cond)?;
+fn interpret_if_expr(env: &mut Environment, node: IfNode) -> Result<Value, Error> {
+    let cond_value = interpret_expr(env, *node.cond)?;
     let Value::Bool(bin) = cond_value else {
         return  Err(Error::CondNotBool(cond_value));
     };
     if !bin {
-        return else_stmts
+        return node
+            .else_stmts
             .map(|stmts| interpret_stmt_list(env, stmts))
             .unwrap_or(Ok(None))
             .map(Value::from_option);
     }
 
-    Ok(Value::from_option(interpret_stmt_list(env, if_stmts)?))
+    Ok(Value::from_option(interpret_stmt_list(env, node.if_stmts)?))
 }
 
 fn interpret_function_call(
     env: &mut Environment,
-    name: String,
-    args: Vec<Expression>,
+    FnCallNode { name, args }: FnCallNode,
 ) -> Result<Value, Error> {
     let Some(fn_value) = env.get_include_parent(&name) else {
         return Err(Error::NotFoundVariable(name));
@@ -283,12 +277,10 @@ fn interpret_unary_op(env: &mut Environment, expr: Expression, op: Token) -> Res
 
 fn interpret_binary_op(
     env: &mut Environment,
-    lhs: Expression,
-    op: Token,
-    rhs: Expression,
+    BinaryOpNode { lhs, op, rhs }: BinaryOpNode,
 ) -> Result<Value, Error> {
-    let lhs = interpret_expr(env, lhs)?;
-    let rhs = interpret_expr(env, rhs)?;
+    let lhs = interpret_expr(env, *lhs)?;
+    let rhs = interpret_expr(env, *rhs)?;
 
     match op {
         Token::Plus => add(&lhs, &rhs),
