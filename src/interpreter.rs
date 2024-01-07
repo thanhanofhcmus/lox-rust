@@ -7,6 +7,7 @@ const NUMBER_DELTA: f64 = 1e-10;
 
 #[derive(Debug)]
 pub enum Error {
+    ReAssignValue(String),
     UnknownOperation(Token),
     InvalidOperationOnType(Token, Value),
     MismatchType(Value, Value),
@@ -93,8 +94,11 @@ fn interpret_assign_stmt(
     name: String,
     expr: Expression,
 ) -> Result<Option<Value>, Error> {
+    if env.get(&name).is_some() {
+        return Err(Error::ReAssignValue(name));
+    }
     let value = interpret_expr(env, expr)?;
-    (*env).insert(name, value);
+    env.insert(name, value);
     Ok(None)
 }
 

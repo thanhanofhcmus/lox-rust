@@ -61,7 +61,6 @@ fn run_one_stmt(input: &str, it: &mut interpreter::Environment) {
             return;
         }
     };
-    debug!("EXPR: {:?}", expr);
 
     let calc_result = interpreter::interpret_stmt(it, expr);
 
