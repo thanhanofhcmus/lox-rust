@@ -6,7 +6,6 @@ use crate::lex::LexItem;
 use crate::parse_error::ParseError;
 use crate::span::Span;
 use crate::token::Token;
-use log::trace;
 
 /*
 stmt         = reassignment | declaration | print | expr | if | while | return
@@ -51,7 +50,6 @@ impl<'a> ParseState<'a> {
 }
 
 pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
-    trace!("parse");
     let mut stmts = vec![];
     let mut state = ParseState::new(input, items);
     while state.curr_pos < items.len() {
@@ -69,7 +67,6 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
 }
 
 fn parse_stmt(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_stmt");
     let li = get_curr(state)?;
     match li.token {
         Token::Print => parse_print(state),
@@ -84,14 +81,12 @@ fn parse_stmt(state: &mut ParseState) -> Result<Statement, ParseError> {
 }
 
 fn parse_print(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_stmt");
     consume_token(state, Token::Print)?;
     let expr = parse_expr(state)?;
     Ok(Statement::Print(expr))
 }
 
 fn parse_if(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_if");
     consume_token(state, Token::If)?;
 
     let cond = parse_expr(state)?;
@@ -110,7 +105,6 @@ fn parse_if(state: &mut ParseState) -> Result<Statement, ParseError> {
     }))
 }
 fn parse_while(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_while");
     consume_token(state, Token::While)?;
     let cond = parse_expr(state)?;
     let body = parse_block_statement_list(state)?;
@@ -127,12 +121,10 @@ fn parse_return(state: &mut ParseState) -> Result<Statement, ParseError> {
 }
 
 fn parse_block(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_block");
     Ok(Statement::Block(parse_block_statement_list(state)?))
 }
 
 fn parse_block_statement_list(state: &mut ParseState) -> Result<StatementList, ParseError> {
-    trace!("parse_block_statement_list");
     consume_token(state, Token::LPointParen)?;
 
     let mut stmts = vec![];
@@ -158,7 +150,6 @@ fn parse_block_statement_list(state: &mut ParseState) -> Result<StatementList, P
 }
 
 fn parse_declaration(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_declaration");
     consume_token(state, Token::Var)?;
     let id_item = consume_token(state, Token::Identifier)?;
     consume_token(state, Token::Equal)?;
@@ -168,7 +159,6 @@ fn parse_declaration(state: &mut ParseState) -> Result<Statement, ParseError> {
 }
 
 fn parse_reassignment(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_reassignment");
     let id_item = consume_token(state, Token::Identifier)?;
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
@@ -177,7 +167,6 @@ fn parse_reassignment(state: &mut ParseState) -> Result<Statement, ParseError> {
 }
 
 fn parse_reassignment_or_expr(state: &mut ParseState) -> Result<Statement, ParseError> {
-    trace!("parse_reassignment_or_expr");
     if peek_2_token(state, &[Token::Equal]) {
         parse_reassignment(state)
     } else {
@@ -186,7 +175,6 @@ fn parse_reassignment_or_expr(state: &mut ParseState) -> Result<Statement, Parse
 }
 
 fn parse_expr(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_expr");
     if peek(state, &[Token::When]) {
         parse_ternary(state)
     } else {
@@ -209,12 +197,10 @@ fn parse_ternary(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_logical(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_logical");
     parse_recursive_binary(state, &[Token::And, Token::Or], parse_equality)
 }
 
 fn parse_equality(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_equality");
     parse_recursive_binary(
         state,
         &[Token::EqualEqual, Token::BangEqual],
@@ -223,7 +209,6 @@ fn parse_equality(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_comparison(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_comparison");
     parse_recursive_binary(
         state,
         &[
@@ -237,12 +222,10 @@ fn parse_comparison(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_term(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_term");
     parse_recursive_binary(state, &[Token::Plus, Token::Minus], parse_factor)
 }
 
 fn parse_factor(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_factor");
     parse_recursive_binary(state, &[Token::Star, Token::Slash], parse_unary)
 }
 
@@ -254,7 +237,6 @@ fn parse_recursive_binary<F>(
 where
     F: Fn(&mut ParseState) -> Result<Expression, ParseError>,
 {
-    trace!("parse_recursive_binary");
     let mut lhs = lower_fn(state)?;
 
     while let Some(op) = state.items.get(state.curr_pos) {
@@ -274,7 +256,6 @@ where
 }
 
 fn parse_unary(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_unary");
     let li = get_curr(state)?;
     match li.token {
         Token::Bang => parse_recursive_unary(state, Token::Bang),
@@ -287,7 +268,6 @@ fn parse_recursive_unary(
     state: &mut ParseState,
     match_token: Token,
 ) -> Result<Expression, ParseError> {
-    trace!("parse_recursive_unary");
     let li = get_curr(state)?;
     if li.token == match_token {
         state.curr_pos += 1;
@@ -301,7 +281,6 @@ fn parse_recursive_unary(
 }
 
 fn parse_call(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_call");
     let prim = parse_primary(state)?;
     if let Expression::Identifier(name) = &prim {
         if peek(state, &[Token::LRoundParen]) {
@@ -316,7 +295,6 @@ fn parse_call(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_primary(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_primary");
     let li = *get_curr(state)?;
     let mut next = |expr| {
         state.curr_pos += 1;
@@ -347,7 +325,6 @@ fn parse_primary(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_group(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_group");
     consume_token(state, Token::LRoundParen)?;
     let expr = parse_expr(state)?;
     consume_token(state, Token::RRoundParen)?;
@@ -355,13 +332,11 @@ fn parse_group(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_array(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_array");
     let exprs = parse_comma_list(state, Token::LSquareParen, Token::RSquareParen, parse_expr)?;
     Ok(Expression::Array(exprs))
 }
 
 fn parse_function(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_identifier");
     consume_token(state, Token::Fn)?;
     let arg_names = parse_comma_list(
         state,
@@ -381,7 +356,6 @@ fn parse_function(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_number(state: &mut ParseState) -> Result<Expression, ParseError> {
-    trace!("parse_number");
     let li = consume_token(state, Token::Number)?;
     let source = li.span.str_from_source(state.input);
     match source.parse::<f64>() {
@@ -404,7 +378,6 @@ fn parse_comma_list<F, T>(
 where
     F: Fn(&mut ParseState) -> Result<T, ParseError>,
 {
-    trace!("parse_comma_list");
     consume_token(state, left_paren)?;
 
     let mut result = Vec::new();
