@@ -81,7 +81,7 @@ fn get_value(env: &Environment, name: &str) -> Value {
 
 pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<Value>, Error> {
     match stmt {
-        Statement::Pritnt(expr) => Ok(Some(interpret_expr(env, expr)?)),
+        Statement::Pritnt(expr) => interpret_print_stmt(env, expr),
         Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
         Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
         Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
@@ -92,6 +92,12 @@ pub fn interpret_stmt(env: &mut Environment, stmt: Statement) -> Result<Option<V
         Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
         Statement::Global(stmts) => interpret_stmt_list(env, stmts),
     }
+}
+
+fn interpret_print_stmt(env: &Environment, expr: Expression) -> Result<Option<Value>, Error> {
+    let value = interpret_expr(env, expr)?;
+    println!("{}", value);
+    Ok(None)
 }
 
 fn interpret_stmt_list(
