@@ -31,4 +31,23 @@ impl Span {
     pub fn string_from_source(&self, input: &str) -> String {
         self.str_from_source(input).to_string()
     }
+
+    pub fn to_start_row_col(self, input: &str) -> (usize, usize) {
+        let mut row = 1;
+        let mut col = 1;
+        for i in 0..self.start {
+            if let Some(c) = input.chars().nth(i) {
+                match c {
+                    '\n' => {
+                        row += 1;
+                        col = 0;
+                    }
+                    _ => {
+                        col += 1;
+                    }
+                }
+            }
+        }
+        (row, col)
+    }
 }

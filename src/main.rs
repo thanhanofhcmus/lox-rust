@@ -6,7 +6,7 @@ mod parse_error;
 mod span;
 mod token;
 
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -72,10 +72,11 @@ fn run_stmt(input: &str, env: &mut interpreter::Context, print_result: bool) -> 
         Ok(list) => list,
         Err(err) => {
             error!("Parse error: {}", err);
+            trace!("{:?}", err.get_source_start(input));
             return Err(Box::new(err));
         }
     };
-    dbg!(&expr);
+    trace!("{:?}", &expr);
 
     let calc_result = interpreter::interpret(env, &expr);
 

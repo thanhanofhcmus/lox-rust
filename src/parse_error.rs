@@ -26,6 +26,21 @@ pub enum ParseError {
     Unfinished(Token, Span),
 }
 
+impl ParseError {
+    pub fn get_source_start(&self, input: &str) -> (usize, usize) {
+        use ParseError::*;
+        match self {
+            UnexpectedCharacter(s) => s.to_start_row_col(input),
+            UnexpectedToken(_, s, _) => s.to_start_row_col(input),
+            UnclosedString(u) => (*u, *u),
+            ParseToNumber(s) => s.to_start_row_col(input),
+            UnexpectedReturn(s) => s.to_start_row_col(input),
+            Eof => (0, 0),
+            Unfinished(_, s) => s.to_start_row_col(input),
+        }
+    }
+}
+
 fn diag_expect_token(o: &Option<Token>) -> String {
     match o {
         None => "".to_string(),
