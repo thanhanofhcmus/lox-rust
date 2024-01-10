@@ -76,6 +76,7 @@ pub enum Value {
     Function(Vec<String>, StatementList),
 }
 
+#[derive(Debug)]
 struct StmtReturn {
     value: Option<Value>,
     should_bubble_up: bool,
@@ -109,11 +110,13 @@ impl From<StmtReturn> for Option<Value> {
 }
 
 const CURRENT_MODULE_NAME: &str = "__current__";
+const STACK_LIMIT: usize = 20;
 
 pub struct Context<'cur, 'pa: 'cur> {
     variables: HashMap<String, Value>,
     parent: Option<&'cur Context<'pa, 'pa>>,
     current_module: IdentifierNode,
+    current_stack: usize,
 }
 
 impl<'cur, 'pa> Context<'cur, 'pa> {
@@ -122,14 +125,20 @@ impl<'cur, 'pa> Context<'cur, 'pa> {
             variables: HashMap::new(),
             current_module: IdentifierNode::one(CURRENT_MODULE_NAME.to_string()),
             parent: None,
+            current_stack: 0,
         }
     }
 
     pub fn with_parent(parent: &'pa Context<'cur, 'pa>) -> Self {
+        if parent.current_stack + 1 > STACK_LIMIT {
+            panic!("stack limit execeed");
+        }
+        dbg!(&parent.current_stack);
         Self {
             variables: HashMap::new(),
             current_module: IdentifierNode::one(CURRENT_MODULE_NAME.to_string()),
             parent: Some(parent),
+            current_stack: parent.current_stack + 1,
         }
     }
 
@@ -305,17 +314,17 @@ fn interpret_while_stmt(
     ctx: &mut Context,
     WhileNode { cond, body }: &WhileNode,
 ) -> Result<StmtReturn, Error> {
-    let mut result = Ok(StmtReturn::none());
+    let mut result = StmtReturn::none();
 
     loop {
         let bin = is_truthy(ctx, cond)?;
         if !bin {
             break;
         }
-        result = interpret_stmt_list(ctx, body);
+        result = interpret_stmt_list(ctx, body)?;
     }
 
-    result
+    Ok(result)
 }
 
 fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
@@ -381,10 +390,10 @@ fn interpret_index(ctx: &Context, node: &IndexExprNode) -> Result<Value, Error> 
 
 fn interpret_function_call(
     ctx: &Context,
-    FnCallNode { iden: name, args }: &FnCallNode,
+    FnCallNode { iden, args }: &FnCallNode,
 ) -> Result<Value, Error> {
-    let Some(fn_value) = ctx.get_include_parent(name) else {
-        return Err(Error::NotFoundVariable(name.join_dot()));
+    let Some(fn_value) = ctx.get_include_parent(iden) else {
+        return Err(Error::NotFoundVariable(iden.join_dot()));
     };
     let Value::Function(arg_names, body) = fn_value else {
         return Err(Error::ValueNotCallable(fn_value.to_owned()));
@@ -392,7 +401,7 @@ fn interpret_function_call(
 
     if arg_names.len() != args.len() {
         return Err(Error::WrongNumberOfArgument(
-            name.join_dot(),
+            iden.join_dot(),
             arg_names.len(),
             args.len(),
         ));
@@ -401,6 +410,7 @@ fn interpret_function_call(
     let mut local_ctx = Context::with_parent(ctx);
     for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
         let value = interpret_expr(&local_ctx, arg_expr)?;
+        dbg!(arg_name, &value);
         local_ctx.insert(IdentifierNode::one(arg_name.clone()), value);
     }
 
