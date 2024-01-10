@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, Expression, FnCallNode, IfStmtNode, Statement, StatementList, TernaryExprNode,
-    WhileNode,
+    BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, Statement, StatementList,
+    TernaryExprNode, WhileNode,
 };
 use crate::token::Token;
 use derive_more::Display;
@@ -137,47 +137,43 @@ pub fn interpret(ctx: &mut Context, stmt: &Statement) -> Result<Value, Error> {
     interpret_stmt(ctx, stmt).map(|r| r.value.unwrap_or(Value::Nil))
 }
 
-fn interpret_stmt(env: &mut Context, stmt: &Statement) -> Result<Return, Error> {
+fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<Return, Error> {
     match stmt {
-        Statement::Print(expr) => interpret_print_stmt(env, expr),
-        Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
-        Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
-        Statement::Return(expr) => interpret_expr(env, expr)
+        Statement::Print(expr) => interpret_print_stmt(ctx, expr),
+        Statement::Declare(name, expr) => interpret_declare_stmt(ctx, name, expr),
+        Statement::Reassign(name, expr) => interpret_reassign_stmt(ctx, name, expr),
+        Statement::Return(expr) => interpret_expr(ctx, expr)
             .map(Return::new)
             .map(Return::should_bubble_up),
-        Statement::Expr(expr) => interpret_expr(env, expr).map(Return::new),
-        Statement::While(node) => interpret_while_stmt(env, node),
-        Statement::If(node) => interpret_if_stmt(env, node),
-        Statement::Block(stmts) => interpret_stmt_list(&mut Context::with_parent(env), stmts),
-        Statement::Global(stmts) => interpret_stmt_list(env, stmts),
+        Statement::Expr(expr) => interpret_expr(ctx, expr).map(Return::new),
+        Statement::While(node) => interpret_while_stmt(ctx, node),
+        Statement::If(node) => interpret_if_stmt(ctx, node),
+        Statement::Block(stmts) => interpret_stmt_list(&mut Context::with_parent(ctx), stmts),
+        Statement::Global(stmts) => interpret_stmt_list(ctx, stmts),
     }
 }
 
-fn interpret_print_stmt(env: &mut Context, expr: &Expression) -> Result<Return, Error> {
-    let value = interpret_expr(env, expr)?;
+fn interpret_print_stmt(ctx: &mut Context, expr: &Expression) -> Result<Return, Error> {
+    let value = interpret_expr(ctx, expr)?;
     println!("{}", value);
     Ok(Return::none())
 }
 
-fn interpret_if_stmt(env: &mut Context, node: &IfStmtNode) -> Result<Return, Error> {
-    let cond_value = interpret_expr(env, &node.cond)?;
-    let Value::Bool(cond_bin) = cond_value else {
-        return Err(Error::CondNotBool(cond_value));
-    };
-    if !cond_bin {
+fn interpret_if_stmt(ctx: &mut Context, node: &IfStmtNode) -> Result<Return, Error> {
+    let cond = is_truthy(ctx, &node.cond)?;
+    if !cond {
         return node
             .else_stmts
             .as_ref()
-            .map(|stmts| interpret_stmt_list(env, stmts))
+            .map(|stmts| interpret_stmt_list(ctx, stmts))
             .unwrap_or(Ok(Return::none()));
     }
-
-    interpret_stmt_list(env, &node.if_stmts)
+    interpret_stmt_list(ctx, &node.if_stmts)
 }
 
-fn interpret_stmt_list(env: &mut Context, stmts: &[Statement]) -> Result<Return, Error> {
+fn interpret_stmt_list(ctx: &mut Context, stmts: &[Statement]) -> Result<Return, Error> {
     for stmt in stmts {
-        let ret = interpret_stmt(env, stmt)?;
+        let ret = interpret_stmt(ctx, stmt)?;
         if ret.should_bubble_up {
             return Ok(ret);
         }
@@ -186,48 +182,45 @@ fn interpret_stmt_list(env: &mut Context, stmts: &[Statement]) -> Result<Return,
 }
 
 fn interpret_declare_stmt(
-    env: &mut Context,
+    ctx: &mut Context,
     name: &str,
     expr: &Expression,
 ) -> Result<Return, Error> {
     let name = name.to_string();
-    if env.get_local_only(&name).is_some() {
+    if ctx.get_local_only(&name).is_some() {
         return Err(Error::ReDeclareVariable(name));
     }
-    let value = interpret_expr(env, expr)?;
-    env.insert(name, value);
+    let value = interpret_expr(ctx, expr)?;
+    ctx.insert(name, value);
     Ok(Return::none())
 }
 
 fn interpret_reassign_stmt(
-    env: &mut Context,
+    ctx: &mut Context,
     name: &str,
     expr: &Expression,
 ) -> Result<Return, Error> {
     let name = name.to_string();
-    if env.get_include_parent(&name).is_none() {
+    if ctx.get_include_parent(&name).is_none() {
         return Err(Error::NotFoundVariable(name));
     }
-    let value = interpret_expr(env, expr)?;
-    env.insert(name, value);
+    let value = interpret_expr(ctx, expr)?;
+    ctx.insert(name, value);
     Ok(Return::none())
 }
 
 fn interpret_while_stmt(
-    env: &mut Context,
+    ctx: &mut Context,
     WhileNode { cond, body }: &WhileNode,
 ) -> Result<Return, Error> {
     let mut result = Ok(Return::none());
 
     loop {
-        let cond_value = interpret_expr(env, cond)?;
-        let Value::Bool(bin) = cond_value else {
-            return Err(Error::CondNotBool(cond_value));
-        };
+        let bin = is_truthy(ctx, cond)?;
         if !bin {
             break;
         }
-        result = interpret_stmt_list(env, body);
+        result = interpret_stmt_list(ctx, body);
     }
 
     result
@@ -240,6 +233,7 @@ fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
             node.arg_names.to_owned(),
             node.body.to_owned(),
         )),
+        Expression::When(nodes) => interpret_when(ctx, nodes),
         Expression::Ternary(node) => interpret_ternary_expr(ctx, node),
         Expression::Identifier(name) => Ok(get_value_owned(ctx, name.as_str())),
         Expression::Nil => Ok(Value::Nil),
@@ -340,6 +334,16 @@ fn interpret_binary_op(
     }
 }
 
+fn interpret_when(ctx: &Context, cases: &[CaseNode]) -> Result<Value, Error> {
+    for CaseNode { cond, expr } in cases {
+        let bin = is_truthy(ctx, cond)?;
+        if bin {
+            return interpret_expr(ctx, expr);
+        }
+    }
+    Ok(Value::Nil)
+}
+
 fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Bool(match lhs {
         // TODO: conpare function pointer
@@ -359,6 +363,14 @@ fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
             _ => false,
         },
     }))
+}
+
+fn is_truthy(ctx: &Context, expr: &Expression) -> Result<bool, Error> {
+    let cond_value = interpret_expr(ctx, expr)?;
+    let Value::Bool(cond_bin) = cond_value else {
+        return Err(Error::CondNotBool(cond_value));
+    };
+    Ok(cond_bin)
 }
 
 fn compare(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {

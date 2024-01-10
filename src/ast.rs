@@ -8,6 +8,7 @@ pub enum Expression {
     Str(String),
     Array(Vec<Expression>),
     Ternary(TernaryExprNode),
+    When(Vec<CaseNode>),
     UnaryOp(Box<Expression>, Token),
     BinaryOp(BinaryOpNode),
     Identifier(String),
@@ -68,4 +69,10 @@ pub struct BinaryOpNode {
 pub struct WhileNode {
     pub cond: Expression,
     pub body: StatementList,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseNode {
+    pub cond: Expression,
+    pub expr: Expression,
 }

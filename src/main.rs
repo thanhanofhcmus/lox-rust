@@ -11,6 +11,9 @@ use log::{debug, error, info};
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
 fn main() -> DynResult {
+    if let Err(e) = dotenvy::dotenv() {
+        println!("dotenvy load with error {}", e);
+    }
     env_logger::init();
 
     let args = std::env::args().collect::<Vec<String>>();

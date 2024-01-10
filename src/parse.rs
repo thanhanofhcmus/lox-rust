@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, Statement, StatementList,
-    TernaryExprNode, WhileNode,
+    BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, Statement,
+    StatementList, TernaryExprNode, WhileNode,
 };
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
@@ -9,15 +9,17 @@ use crate::token::Token;
 
 /*
 stmt         = reassignment | declaration | print | expr | if | while | return
-print        = "print" expr
-if           = "if" expr block ("else" block)?
+print        = "print" clause
+if           = "if" clause block ("else" block)?
 declaration  = "var" IDENTIFIER "=" expr
-while        = "while" expr block
+while        = "while" clause block
 return       = "return" (expr)?
 block        = "{" (stmt ";")* "}"
 reassignment = IDENTIFIER "=" expr
-expr         = logical | ternary
-ternary      = "cond" logical "then" logical "else" logical
+expr         = clause | ternary | when
+ternary      = "cond" clause "then" clause "else" clause
+when         = "when" "{" ( "case" clause "->" expr "," ... )* "}"
+clause       = logical
 logical      = equality (( "and" | "or" ) equality)*
 equality     = comparison (("==" | "!=") comparison)*
 comparison   = term (("<" | "<" | "<=" | ">=") term)*
@@ -83,14 +85,14 @@ fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
 
 fn parse_print(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::Print)?;
-    let expr = parse_expr(state)?;
+    let expr = parse_clause(state)?;
     Ok(Statement::Print(expr))
 }
 
 fn parse_if(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::If)?;
 
-    let cond = parse_expr(state)?;
+    let cond = parse_clause(state)?;
     let if_stmts = parse_block_statement_list(state)?;
     let mut else_stmts = None;
 
@@ -107,7 +109,7 @@ fn parse_if(state: &mut ParseContext) -> Result<Statement, ParseError> {
 }
 fn parse_while(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::While)?;
-    let cond = parse_expr(state)?;
+    let cond = parse_clause(state)?;
     let body = parse_block_statement_list(state)?;
     Ok(Statement::While(WhileNode { cond, body }))
 }
@@ -176,25 +178,48 @@ fn parse_reassignment_or_expr(state: &mut ParseContext) -> Result<Statement, Par
 }
 
 fn parse_expr(state: &mut ParseContext) -> Result<Expression, ParseError> {
-    if peek(state, &[Token::Cond]) {
-        parse_ternary(state)
-    } else {
-        parse_logical(state)
+    match get_curr(state)?.token {
+        Token::Cond => parse_ternary(state),
+        Token::When => parse_when(state),
+        _ => parse_clause(state),
     }
 }
 
 fn parse_ternary(state: &mut ParseContext) -> Result<Expression, ParseError> {
     consume_token(state, Token::Cond)?;
-    let cond = parse_logical(state)?;
+    let cond = parse_clause(state)?;
     consume_token(state, Token::Then)?;
-    let true_expr = parse_logical(state)?;
+    let true_expr = parse_clause(state)?;
     consume_token(state, Token::Else)?;
-    let false_expr = parse_logical(state)?;
+    let false_expr = parse_clause(state)?;
     Ok(Expression::Ternary(TernaryExprNode {
         cond: Box::new(cond),
         true_expr: Box::new(true_expr),
         false_expr: Box::new(false_expr),
     }))
+}
+
+fn parse_when(state: &mut ParseContext) -> Result<Expression, ParseError> {
+    consume_token(state, Token::When)?;
+    let case_nodes = parse_comma_list(
+        state,
+        Token::LPointParen,
+        Token::RPointParen,
+        parse_when_case,
+    )?;
+    Ok(Expression::When(case_nodes))
+}
+
+fn parse_when_case(state: &mut ParseContext) -> Result<CaseNode, ParseError> {
+    consume_token(state, Token::Case)?;
+    let cond = parse_clause(state)?;
+    consume_token(state, Token::RTArrow)?;
+    let expr = parse_clause(state)?;
+    Ok(CaseNode { cond, expr })
+}
+
+fn parse_clause(state: &mut ParseContext) -> Result<Expression, ParseError> {
+    parse_logical(state)
 }
 
 fn parse_logical(state: &mut ParseContext) -> Result<Expression, ParseError> {

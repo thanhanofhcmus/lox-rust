@@ -29,6 +29,8 @@ pub enum Token {
     And,
     Or,
 
+    RTArrow, // right thin arrow "->"
+
     True,
     False,
     Nil,
@@ -41,6 +43,8 @@ pub enum Token {
     Return,
     Cond,
     Then,
+    When,
+    Case,
 
     Identifier,
     Number,

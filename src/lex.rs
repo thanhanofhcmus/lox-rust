@@ -19,6 +19,8 @@ static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "return" => Token::Return,
     "cond" => Token::Cond,
     "then" => Token::Then,
+    "when" => Token::When,
+    "case" => Token::Case,
 
     "print" => Token::Print,
 );
@@ -39,11 +41,11 @@ fn is_keyword_or_identifier_char(c: char) -> bool {
     c == '_' || c.is_ascii_alphanumeric()
 }
 
-fn is_next_equal(input: &str, curr_offset: usize) -> bool {
+fn is_next_char(input: &str, curr_offset: usize, expect: char) -> bool {
     input
         .chars()
         .nth(curr_offset + 1)
-        .map(|next| next == '=')
+        .map(|next| next == expect)
         .unwrap_or(false)
 }
 
@@ -56,7 +58,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
         let tok_one = |t| LexItem::new(t, Span::one(const_offset));
 
         let mut push_with_equal = |token_has_equal, token_no_equal| {
-            if is_next_equal(input, curr_offset) {
+            if is_next_char(input, curr_offset, '=') {
                 result.push(LexItem::new(token_has_equal, Span::two(curr_offset)));
                 curr_offset += 1;
             } else {
@@ -75,10 +77,18 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             ',' => result.push(tok_one(Token::Comma)),
             ';' => result.push(tok_one(Token::Semicolon)),
             '+' => result.push(tok_one(Token::Plus)),
-            '-' => result.push(tok_one(Token::Minus)),
             '*' => result.push(tok_one(Token::Star)),
             '/' => result.push(tok_one(Token::Slash)),
             '%' => result.push(tok_one(Token::Percentage)),
+
+            '-' => {
+                if is_next_char(input, curr_offset, '>') {
+                    result.push(LexItem::new(Token::RTArrow, Span::two(curr_offset)));
+                    curr_offset += 1;
+                } else {
+                    result.push(tok_one(Token::Minus));
+                }
+            }
 
             '=' => push_with_equal(Token::EqualEqual, Token::Equal),
             '!' => push_with_equal(Token::BangEqual, Token::Bang),
