@@ -52,40 +52,63 @@ pub enum Value {
     Function(Vec<String>, StatementList),
 }
 
-impl Value {
-    pub fn from_option(o: Option<Value>) -> Self {
-        match o {
-            Some(v) => v,
-            None => Value::Nil,
+struct Return {
+    value: Option<Value>,
+    should_bubble_up: bool,
+}
+
+impl Return {
+    fn new(value: Value) -> Self {
+        Self {
+            value: Some(value),
+            should_bubble_up: false,
         }
+    }
+
+    fn none() -> Self {
+        Self {
+            value: None,
+            should_bubble_up: false,
+        }
+    }
+
+    fn should_bubble_up(mut self) -> Self {
+        self.should_bubble_up = true;
+        self
     }
 }
 
-pub struct Environment<'a> {
-    values: HashMap<String, Value>,
-    parent: Option<&'a Environment<'a>>,
+impl From<Return> for Option<Value> {
+    fn from(ret: Return) -> Self {
+        ret.value
+    }
 }
 
-impl<'a> Environment<'a> {
+pub struct Context<'a> {
+    variables: HashMap<String, Value>,
+    parent: Option<&'a Context<'a>>,
+}
+
+impl<'a> Context<'a> {
     pub fn new() -> Self {
         Self {
-            values: HashMap::new(),
+            variables: HashMap::new(),
             parent: None,
         }
     }
 
-    pub fn with_parent<'b>(parent: &'b Environment<'b>) -> Self
+    pub fn with_parent<'b>(parent: &'b Context<'b>) -> Self
     where
         'b: 'a,
     {
         Self {
-            values: HashMap::new(),
+            variables: HashMap::new(),
             parent: Some(parent),
         }
     }
 
     pub fn get_local_only(&self, key: &'_ str) -> Option<&Value> {
-        self.values.get(key)
+        self.variables.get(key)
     }
 
     pub fn get_include_parent(&self, key: &'_ str) -> Option<&Value> {
@@ -96,99 +119,105 @@ impl<'a> Environment<'a> {
     }
 
     pub fn insert(&mut self, key: String, value: Value) {
-        let _ = self.values.insert(key.to_string(), value);
+        let _ = self.variables.insert(key.to_string(), value);
     }
 
-    pub fn change_parent<'b: 'a>(&mut self, parent: &'b Environment<'b>) {
+    pub fn change_parent<'b: 'a>(&mut self, parent: &'b Context<'b>) {
         self.parent = Some(parent);
     }
 }
 
-fn get_value_owned(env: &Environment, name: &str) -> Value {
-    env.get_include_parent(name)
+fn get_value_owned(ctx: &Context, name: &str) -> Value {
+    ctx.get_include_parent(name)
         .map(|v| v.to_owned())
         .unwrap_or(Value::Nil)
 }
 
-pub fn interpret_stmt(env: &mut Environment, stmt: &Statement) -> Result<Option<Value>, Error> {
+pub fn interpret(ctx: &mut Context, stmt: &Statement) -> Result<Value, Error> {
+    interpret_stmt(ctx, stmt).map(|r| r.value.unwrap_or(Value::Nil))
+}
+
+fn interpret_stmt(env: &mut Context, stmt: &Statement) -> Result<Return, Error> {
     match stmt {
         Statement::Print(expr) => interpret_print_stmt(env, expr),
         Statement::Declare(name, expr) => interpret_declare_stmt(env, name, expr),
         Statement::Reassign(name, expr) => interpret_reassign_stmt(env, name, expr),
-        Statement::Return(expr) => interpret_expr(env, expr).map(Some),
-        Statement::Expr(expr) => interpret_expr(env, expr).map(Some),
+        Statement::Return(expr) => interpret_expr(env, expr)
+            .map(Return::new)
+            .map(Return::should_bubble_up),
+        Statement::Expr(expr) => interpret_expr(env, expr).map(Return::new),
         Statement::While(node) => interpret_while_stmt(env, node),
         Statement::If(node) => interpret_if_stmt(env, node),
-        Statement::Block(stmts) => interpret_stmt_list(&mut Environment::with_parent(env), stmts),
+        Statement::Block(stmts) => interpret_stmt_list(&mut Context::with_parent(env), stmts),
         Statement::Global(stmts) => interpret_stmt_list(env, stmts),
     }
 }
 
-fn interpret_print_stmt(env: &mut Environment, expr: &Expression) -> Result<Option<Value>, Error> {
+fn interpret_print_stmt(env: &mut Context, expr: &Expression) -> Result<Return, Error> {
     let value = interpret_expr(env, expr)?;
     println!("{}", value);
-    Ok(None)
+    Ok(Return::none())
 }
 
-fn interpret_if_stmt(env: &mut Environment, node: &IfStmtNode) -> Result<Option<Value>, Error> {
+fn interpret_if_stmt(env: &mut Context, node: &IfStmtNode) -> Result<Return, Error> {
     let cond_value = interpret_expr(env, &node.cond)?;
     let Value::Bool(cond_bin) = cond_value else {
-        return  Err(Error::CondNotBool(cond_value));
+        return Err(Error::CondNotBool(cond_value));
     };
     if !cond_bin {
         return node
             .else_stmts
             .as_ref()
             .map(|stmts| interpret_stmt_list(env, stmts))
-            .unwrap_or(Ok(None));
+            .unwrap_or(Ok(Return::none()));
     }
 
     interpret_stmt_list(env, &node.if_stmts)
 }
 
-fn interpret_stmt_list(env: &mut Environment, stmts: &[Statement]) -> Result<Option<Value>, Error> {
+fn interpret_stmt_list(env: &mut Context, stmts: &[Statement]) -> Result<Return, Error> {
     for stmt in stmts {
-        if let Statement::Return(expr) = stmt {
-            return Ok(Some(interpret_expr(env, expr)?));
+        let ret = interpret_stmt(env, stmt)?;
+        if ret.should_bubble_up {
+            return Ok(ret);
         }
-        interpret_stmt(env, stmt)?;
     }
-    Ok(None)
+    Ok(Return::none())
 }
 
 fn interpret_declare_stmt(
-    env: &mut Environment,
+    env: &mut Context,
     name: &str,
     expr: &Expression,
-) -> Result<Option<Value>, Error> {
+) -> Result<Return, Error> {
     let name = name.to_string();
     if env.get_local_only(&name).is_some() {
         return Err(Error::ReDeclareVariable(name));
     }
     let value = interpret_expr(env, expr)?;
     env.insert(name, value);
-    Ok(None)
+    Ok(Return::none())
 }
 
 fn interpret_reassign_stmt(
-    env: &mut Environment,
+    env: &mut Context,
     name: &str,
     expr: &Expression,
-) -> Result<Option<Value>, Error> {
+) -> Result<Return, Error> {
     let name = name.to_string();
     if env.get_include_parent(&name).is_none() {
         return Err(Error::NotFoundVariable(name));
     }
     let value = interpret_expr(env, expr)?;
-    env.insert(name, value.clone());
-    Ok(Some(value))
+    env.insert(name, value);
+    Ok(Return::none())
 }
 
 fn interpret_while_stmt(
-    env: &mut Environment,
+    env: &mut Context,
     WhileNode { cond, body }: &WhileNode,
-) -> Result<Option<Value>, Error> {
-    let mut result = Ok(None);
+) -> Result<Return, Error> {
+    let mut result = Ok(Return::none());
 
     loop {
         let cond_value = interpret_expr(env, cond)?;
@@ -204,51 +233,51 @@ fn interpret_while_stmt(
     result
 }
 
-fn interpret_expr(env: &Environment, expr: &Expression) -> Result<Value, Error> {
+fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
     match expr {
-        Expression::FnCall(node) => interpret_function_call(env, node),
+        Expression::FnCall(node) => interpret_function_call(ctx, node),
         Expression::FnDecl(node) => Ok(Value::Function(
             node.arg_names.to_owned(),
             node.body.to_owned(),
         )),
-        Expression::Ternary(node) => interpret_ternary_expr(env, node),
-        Expression::Identifier(name) => Ok(get_value_owned(env, name.as_str())),
+        Expression::Ternary(node) => interpret_ternary_expr(ctx, node),
+        Expression::Identifier(name) => Ok(get_value_owned(ctx, name.as_str())),
         Expression::Nil => Ok(Value::Nil),
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
         Expression::Bool(v) => Ok(Value::Bool(*v)),
         Expression::Number(v) => Ok(Value::Number(*v)),
-        Expression::Array(exprs) => get_array_value(env, exprs),
-        Expression::UnaryOp(expr, op) => interpret_unary_op(env, expr, *op),
-        Expression::BinaryOp(node) => interpret_binary_op(env, node),
+        Expression::Array(exprs) => get_array_value(ctx, exprs),
+        Expression::UnaryOp(expr, op) => interpret_unary_op(ctx, expr, *op),
+        Expression::BinaryOp(node) => interpret_binary_op(ctx, node),
     }
 }
 
-fn interpret_ternary_expr(env: &Environment, node: &TernaryExprNode) -> Result<Value, Error> {
-    let cond_value = interpret_expr(env, &node.cond)?;
-    let Value::Bool(cond_bin) =  cond_value else {
-        return Err(Error::CondNotBool(cond_value))
+fn interpret_ternary_expr(ctx: &Context, node: &TernaryExprNode) -> Result<Value, Error> {
+    let cond_value = interpret_expr(ctx, &node.cond)?;
+    let Value::Bool(cond_bin) = cond_value else {
+        return Err(Error::CondNotBool(cond_value));
     };
 
     if cond_bin {
-        interpret_expr(env, &node.true_expr)
+        interpret_expr(ctx, &node.true_expr)
     } else {
-        interpret_expr(env, &node.false_expr)
+        interpret_expr(ctx, &node.false_expr)
     }
 }
 
-fn get_array_value(env: &Environment, exprs: &Vec<Expression>) -> Result<Value, Error> {
+fn get_array_value(ctx: &Context, exprs: &Vec<Expression>) -> Result<Value, Error> {
     let mut result = vec![];
     for expr in exprs {
-        result.push(interpret_expr(env, expr)?);
+        result.push(interpret_expr(ctx, expr)?);
     }
     Ok(Value::Array(result))
 }
 
 fn interpret_function_call(
-    env: &Environment,
+    ctx: &Context,
     FnCallNode { name, args }: &FnCallNode,
 ) -> Result<Value, Error> {
-    let Some(fn_value) = env.get_include_parent(name) else {
+    let Some(fn_value) = ctx.get_include_parent(name) else {
         return Err(Error::NotFoundVariable(name.clone()));
     };
     let Value::Function(arg_names, body) = fn_value else {
@@ -263,18 +292,18 @@ fn interpret_function_call(
         ));
     }
 
-    let mut local_env = Environment::new();
+    let mut local_env = Context::new();
     for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
-        let value = interpret_expr(env, arg_expr)?;
+        let value = interpret_expr(ctx, arg_expr)?;
         local_env.insert(arg_name.to_string(), value);
     }
-    local_env.change_parent(env);
+    local_env.change_parent(ctx);
 
-    interpret_stmt_list(&mut local_env, body).map(Value::from_option)
+    interpret_stmt_list(&mut local_env, body).map(|r| r.value.unwrap_or(Value::Nil))
 }
 
-fn interpret_unary_op(env: &Environment, expr: &Expression, op: Token) -> Result<Value, Error> {
-    let res = interpret_expr(env, expr)?;
+fn interpret_unary_op(ctx: &Context, expr: &Expression, op: Token) -> Result<Value, Error> {
+    let res = interpret_expr(ctx, expr)?;
     match op {
         Token::Bang => match res {
             Value::Bool(v) => Ok(Value::Bool(!v)),
@@ -289,11 +318,11 @@ fn interpret_unary_op(env: &Environment, expr: &Expression, op: Token) -> Result
 }
 
 fn interpret_binary_op(
-    env: &Environment,
+    ctx: &Context,
     BinaryOpNode { lhs, op, rhs }: &BinaryOpNode,
 ) -> Result<Value, Error> {
-    let lhs = interpret_expr(env, lhs)?;
-    let rhs = interpret_expr(env, rhs)?;
+    let lhs = interpret_expr(ctx, lhs)?;
+    let rhs = interpret_expr(ctx, rhs)?;
     let op = *op;
 
     match op {
@@ -350,10 +379,10 @@ fn compare(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
 
 fn and_or(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
     let &Value::Bool(l) = lhs else {
-        return Err(Error::InvalidOperationOnType(op, lhs.clone()))
+        return Err(Error::InvalidOperationOnType(op, lhs.clone()));
     };
     let &Value::Bool(r) = rhs else {
-        return Err(Error::InvalidOperationOnType(op, rhs.clone()))
+        return Err(Error::InvalidOperationOnType(op, rhs.clone()));
     };
 
     match op {
@@ -379,10 +408,10 @@ fn add(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
 
 fn subtract(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     let Value::Number(l) = lhs else {
-        return Err(Error::InvalidOperationOnType(Token::Minus, lhs.clone()))
+        return Err(Error::InvalidOperationOnType(Token::Minus, lhs.clone()));
     };
     let Value::Number(r) = rhs else {
-        return Err(Error::InvalidOperationOnType(Token::Minus, rhs.clone()))
+        return Err(Error::InvalidOperationOnType(Token::Minus, rhs.clone()));
     };
 
     Ok(Value::Number(l - r))
@@ -390,7 +419,7 @@ fn subtract(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
 
 fn times(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     let (Value::Number(l), Value::Number(r)) = (lhs, rhs) else {
-     return Err(Error::InvalidOperationOnType(Token::Star, lhs.clone()))
+        return Err(Error::InvalidOperationOnType(Token::Star, lhs.clone()));
     };
 
     Ok(Value::Number(l * r))
@@ -398,10 +427,10 @@ fn times(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
 
 fn divide(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     let Value::Number(l) = lhs else {
-        return Err(Error::InvalidOperationOnType(Token::Slash, lhs.clone()))
+        return Err(Error::InvalidOperationOnType(Token::Slash, lhs.clone()));
     };
     let Value::Number(r) = rhs else {
-        return Err(Error::InvalidOperationOnType(Token::Minus, rhs.clone()))
+        return Err(Error::InvalidOperationOnType(Token::Minus, rhs.clone()));
     };
 
     if *r == 0.0 {

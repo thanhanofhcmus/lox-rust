@@ -20,14 +20,14 @@ fn main() -> DynResult {
     match input.as_str() {
         "-i" => repl(),
         "-f" => read_from_file(args.get(2).expect("must provide file name")),
-        _ => run_stmt(input, &mut interpreter::Environment::new(), true),
+        _ => run_stmt(input, &mut interpreter::Context::new(), true),
     }
 }
 
 fn repl() -> DynResult {
     info!("Running in REPL mode");
 
-    let mut env = interpreter::Environment::new();
+    let mut env = interpreter::Context::new();
 
     loop {
         let mut line = String::new();
@@ -44,10 +44,10 @@ fn repl() -> DynResult {
 fn read_from_file(file_path: &str) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
-    run_stmt(&contents, &mut interpreter::Environment::new(), false)
+    run_stmt(&contents, &mut interpreter::Context::new(), false)
 }
 
-fn run_stmt(input: &str, env: &mut interpreter::Environment, print_result: bool) -> DynResult {
+fn run_stmt(input: &str, env: &mut interpreter::Context, print_result: bool) -> DynResult {
     let tokens = match lex::lex(input) {
         Ok(list) => list,
         Err(err) => {
@@ -73,17 +73,12 @@ fn run_stmt(input: &str, env: &mut interpreter::Environment, print_result: bool)
         }
     };
 
-    let calc_result = interpreter::interpret_stmt(env, &expr);
+    let calc_result = interpreter::interpret(env, &expr);
 
     match calc_result {
         Ok(value) => {
             if print_result {
-                info!(
-                    "{:?}",
-                    value
-                        .map(|v| format!("{}", v))
-                        .unwrap_or("None".to_string())
-                )
+                info!("{:?}", value)
             }
         }
         Err(err) => {
