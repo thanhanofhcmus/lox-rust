@@ -330,6 +330,7 @@ fn interpret_binary_op(
         Token::Minus => subtract(&lhs, &rhs),
         Token::Star => times(&lhs, &rhs),
         Token::Slash => divide(&lhs, &rhs),
+        Token::Percentage => modulo(&lhs, &rhs),
         Token::And | Token::Or => and_or(&lhs, op, &rhs),
         Token::EqualEqual | Token::BangEqual => is_equal(&lhs, &rhs),
         Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
@@ -407,35 +408,36 @@ fn add(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
 }
 
 fn subtract(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    let Value::Number(l) = lhs else {
-        return Err(Error::InvalidOperationOnType(Token::Minus, lhs.clone()));
-    };
-    let Value::Number(r) = rhs else {
-        return Err(Error::InvalidOperationOnType(Token::Minus, rhs.clone()));
-    };
-
+    let l = extract_number(lhs, Token::Minus)?;
+    let r = extract_number(rhs, Token::Minus)?;
     Ok(Value::Number(l - r))
 }
 
 fn times(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    let (Value::Number(l), Value::Number(r)) = (lhs, rhs) else {
-        return Err(Error::InvalidOperationOnType(Token::Star, lhs.clone()));
-    };
-
+    let l = extract_number(lhs, Token::Star)?;
+    let r = extract_number(rhs, Token::Star)?;
     Ok(Value::Number(l * r))
 }
 
 fn divide(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    let Value::Number(l) = lhs else {
-        return Err(Error::InvalidOperationOnType(Token::Slash, lhs.clone()));
-    };
-    let Value::Number(r) = rhs else {
-        return Err(Error::InvalidOperationOnType(Token::Minus, rhs.clone()));
-    };
-
-    if *r == 0.0 {
+    let l = extract_number(lhs, Token::Slash)?;
+    let r = extract_number(rhs, Token::Slash)?;
+    if r == 0.0 {
         return Err(Error::DivideByZero);
     }
-
     Ok(Value::Number(l / r))
+}
+
+fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
+    let l = extract_number(lhs, Token::Percentage)?;
+    let r = extract_number(rhs, Token::Percentage)?;
+    Ok(Value::Number(l % r))
+}
+
+fn extract_number(v: &Value, token: Token) -> Result<f64, Error> {
+    if let Value::Number(n) = v {
+        Ok(*n)
+    } else {
+        Err(Error::InvalidOperationOnType(token, v.clone()))
+    }
 }

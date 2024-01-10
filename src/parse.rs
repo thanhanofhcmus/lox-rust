@@ -22,7 +22,8 @@ logical      = equality (( "and" | "or" ) equality)*
 equality     = comparison (("==" | "!=") comparison)*
 comparison   = term (("<" | "<" | "<=" | ">=") term)*
 term         = factor (("+" | "-") factor)*
-factor       = unary (("*" | "/") unary)*
+factor       = modulo (("*" | "/") modulo)*
+modulo       = unary ("%" unary)%
 unary        = ("!" | "-")* unary | call
 call         = primary "(" (expr "," ...)* ")"
 primary      = STRING | NUMBER | IDENTIFIER | "true" | "false" | "nil" | group | array | function
@@ -226,7 +227,11 @@ fn parse_term(state: &mut ParseContext) -> Result<Expression, ParseError> {
 }
 
 fn parse_factor(state: &mut ParseContext) -> Result<Expression, ParseError> {
-    parse_recursive_binary(state, &[Token::Star, Token::Slash], parse_unary)
+    parse_recursive_binary(state, &[Token::Star, Token::Slash], parse_modulo)
+}
+
+fn parse_modulo(state: &mut ParseContext) -> Result<Expression, ParseError> {
+    parse_recursive_binary(state, &[Token::Percentage], parse_unary)
 }
 
 fn parse_recursive_binary<F>(

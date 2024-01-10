@@ -78,6 +78,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             '-' => result.push(tok_one(Token::Minus)),
             '*' => result.push(tok_one(Token::Star)),
             '/' => result.push(tok_one(Token::Slash)),
+            '%' => result.push(tok_one(Token::Percentage)),
 
             '=' => push_with_equal(Token::EqualEqual, Token::Equal),
             '!' => push_with_equal(Token::BangEqual, Token::Bang),
