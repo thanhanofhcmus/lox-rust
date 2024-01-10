@@ -38,7 +38,7 @@ pub enum Token {
     While,
     Fn,
     Return,
-    When,
+    Cond,
     Then,
 
     Identifier,
@@ -48,6 +48,6 @@ pub enum Token {
     Comma,
     Semicolon,
 
-    // TODO: remove when implement function
+    // TODO: remove when implement functions and modules
     Print,
 }

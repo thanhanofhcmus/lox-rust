@@ -17,7 +17,7 @@ return       = "return" (expr)?
 block        = "{" (stmt ";")* "}"
 reassignment = IDENTIFIER "=" expr
 expr         = logical | ternary
-ternary      = "when" logical "then" logical "else" logical
+ternary      = "cond" logical "then" logical "else" logical
 logical      = equality (( "and" | "or" ) equality)*
 equality     = comparison (("==" | "!=") comparison)*
 comparison   = term (("<" | "<" | "<=" | ">=") term)*
@@ -175,7 +175,7 @@ fn parse_reassignment_or_expr(state: &mut ParseState) -> Result<Statement, Parse
 }
 
 fn parse_expr(state: &mut ParseState) -> Result<Expression, ParseError> {
-    if peek(state, &[Token::When]) {
+    if peek(state, &[Token::Cond]) {
         parse_ternary(state)
     } else {
         parse_logical(state)
@@ -183,7 +183,7 @@ fn parse_expr(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_ternary(state: &mut ParseState) -> Result<Expression, ParseError> {
-    consume_token(state, Token::When)?;
+    consume_token(state, Token::Cond)?;
     let cond = parse_logical(state)?;
     consume_token(state, Token::Then)?;
     let true_expr = parse_logical(state)?;

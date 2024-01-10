@@ -17,7 +17,7 @@ static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "while" => Token::While,
     "fn" => Token::Fn,
     "return" => Token::Return,
-    "when" => Token::When,
+    "cond" => Token::Cond,
     "then" => Token::Then,
 
     "print" => Token::Print,
