@@ -51,6 +51,7 @@ pub enum Token {
     String,
 
     Comma,
+    Colon,
     Semicolon,
 
     // TODO: remove when implement functions and modules

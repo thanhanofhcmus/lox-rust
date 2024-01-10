@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, IndexExprNode,
-    ReAssignIndexNode, Statement, StatementList, TernaryExprNode, WhileNode,
+    ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode,
+    IndexExprNode, ReAssignIndexNode, Statement, StatementList, TernaryExprNode, WhileNode,
 };
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
@@ -33,8 +33,8 @@ index        = primary ("[" clause "]")?
 primary      = STRING | NUMBER | IDENTIFIER | atom | group | array | function
 atom         = "true" | "false" | "nil"
 function     = "fn" "(" ( IDENTIFIER "," ... )* ")" block
-array        = "[" (expr, ",")* "]"
-group        = "(" expr ")"
+array        = "[" (clause, "," ... )* | (clause ":" clause) "]"
+group        = "(" clause ")"
 */
 
 struct ParseContext<'a> {
@@ -401,8 +401,25 @@ fn parse_group(state: &mut ParseContext) -> Result<Expression, ParseError> {
 }
 
 fn parse_array(state: &mut ParseContext) -> Result<Expression, ParseError> {
-    let exprs = parse_comma_list(state, Token::LSquareParen, Token::RSquareParen, parse_expr)?;
-    Ok(Expression::Array(exprs))
+    if peek_2_token(state, &[Token::Colon]) {
+        consume_token(state, Token::LSquareParen)?;
+        consume_token(state, Token::Colon)?;
+        let value = parse_clause(state)?;
+        consume_token(state, Token::Colon)?;
+        let repeat = parse_clause(state)?;
+        consume_token(state, Token::RSquareParen)?;
+        return Ok(Expression::ArrayRepeat(Box::new(ArrayRepeatNode {
+            repeat,
+            value,
+        })));
+    }
+    let exprs = parse_comma_list(
+        state,
+        Token::LSquareParen,
+        Token::RSquareParen,
+        parse_clause,
+    )?;
+    Ok(Expression::ArrayList(exprs))
 }
 
 fn parse_function(state: &mut ParseContext) -> Result<Expression, ParseError> {

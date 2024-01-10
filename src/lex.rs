@@ -75,6 +75,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             '{' => result.push(tok_one(Token::LPointParen)),
             '}' => result.push(tok_one(Token::RPointParen)),
             ',' => result.push(tok_one(Token::Comma)),
+            ':' => result.push(tok_one(Token::Colon)),
             ';' => result.push(tok_one(Token::Semicolon)),
             '+' => result.push(tok_one(Token::Plus)),
             '*' => result.push(tok_one(Token::Star)),

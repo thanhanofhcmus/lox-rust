@@ -6,7 +6,8 @@ pub enum Expression {
     Bool(bool),
     Number(f64),
     Str(String),
-    Array(Vec<Expression>),
+    ArrayList(Vec<Expression>),
+    ArrayRepeat(Box<ArrayRepeatNode>),
     Ternary(TernaryExprNode),
     When(Vec<CaseNode>),
     UnaryOp(Box<Expression>, Token),
@@ -46,6 +47,12 @@ pub struct TernaryExprNode {
     pub cond: Box<Expression>,
     pub true_expr: Box<Expression>,
     pub false_expr: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrayRepeatNode {
+    pub value: Expression,
+    pub repeat: Expression,
 }
 
 #[derive(Debug, Clone)]

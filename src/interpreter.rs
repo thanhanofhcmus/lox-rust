@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, IndexExprNode, ReAssignIndexNode,
-    Statement, StatementList, TernaryExprNode, WhileNode,
+    ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, IndexExprNode,
+    ReAssignIndexNode, Statement, StatementList, TernaryExprNode, WhileNode,
 };
 use crate::token::Token;
 use derive_more::Display;
@@ -45,7 +45,11 @@ pub enum Error {
     ValueUnIndexabble(Value),
 
     #[error("Value `{0}` is can not be used as key for array or map")]
-    ValueCanBeUsedAsKey(Value),
+    #[allow(dead_code)]
+    ValueCannotBeUsedAsKey(Value),
+
+    #[error("Value `{0}` is not of the type non-negative integer")]
+    ValueMustBeUsize(Value),
 
     #[error("Expect expresstion of type `{0}`, have type `{1:?}`")]
     InvalidExpresstionType(String, Expression),
@@ -301,7 +305,8 @@ fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
         Expression::Bool(v) => Ok(Value::Bool(*v)),
         Expression::Number(v) => Ok(Value::Number(*v)),
-        Expression::Array(exprs) => make_array_value(ctx, exprs),
+        Expression::ArrayList(exprs) => make_array_value(ctx, exprs),
+        Expression::ArrayRepeat(node) => make_array_repeat(ctx, node),
         Expression::UnaryOp(expr, op) => interpret_unary_op(ctx, expr, *op),
         Expression::BinaryOp(node) => interpret_binary_op(ctx, node),
     }
@@ -321,9 +326,21 @@ fn interpret_ternary_expr(ctx: &Context, node: &TernaryExprNode) -> Result<Value
 }
 
 fn make_array_value(ctx: &Context, exprs: &Vec<Expression>) -> Result<Value, Error> {
-    let mut result = vec![];
+    let mut result = Vec::with_capacity(exprs.len());
     for expr in exprs {
         result.push(interpret_expr(ctx, expr)?);
+    }
+    Ok(Value::Array(result))
+}
+
+fn make_array_repeat(ctx: &Context, node: &ArrayRepeatNode) -> Result<Value, Error> {
+    let value = interpret_expr(ctx, &node.value)?;
+    let repeat_val = interpret_expr(ctx, &node.repeat)?;
+    let repeat = is_usize(&repeat_val)?;
+
+    let mut result = Vec::with_capacity(repeat);
+    for _ in 0..repeat {
+        result.push(value.clone());
     }
     Ok(Value::Array(result))
 }
@@ -512,17 +529,21 @@ fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Number(l % r))
 }
 
-fn prepare_indexee(indexee: &Value) -> Result<usize, Error> {
-    let Value::Number(idx) = indexee else {
-        return Err(Error::ValueCanBeUsedAsKey(indexee.clone()));
+fn is_usize(value: &Value) -> Result<usize, Error> {
+    let Value::Number(idx) = value else {
+        return Err(Error::ValueMustBeUsize(value.clone()));
     };
     let idx = *idx;
 
     // check if idx is a interger
     if idx < 0.0 || idx.fract() != 0.0 {
-        return Err(Error::ValueCanBeUsedAsKey(indexee.clone()));
+        return Err(Error::ValueMustBeUsize(value.clone()));
     }
     Ok(idx as usize)
+}
+
+fn prepare_indexee(indexee: &Value) -> Result<usize, Error> {
+    is_usize(indexee)
 }
 
 fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
