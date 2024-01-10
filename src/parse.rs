@@ -144,28 +144,11 @@ fn parse_block(state: &mut ParseContext) -> Result<Statement, ParseError> {
 }
 
 fn parse_block_statement_list(state: &mut ParseContext) -> Result<StatementList, ParseError> {
-    // TODO: maybe use parse_enclosed_list
     consume_token(state, Token::LPointParen)?;
-
-    let mut stmts = vec![];
-
-    while let Some(li) = state.items.get(state.curr_pos) {
-        if li.token == Token::RPointParen {
-            break;
-        }
-
-        let stmt = parse_stmt(state)?;
-
-        // TODO: maybe allow optional ';' at the last stmt
-        if !peek(state, &[Token::RPointParen]) {
-            consume_token(state, Token::Semicolon)?;
-        }
-
-        stmts.push(stmt);
-    }
-
+    let stmts = parse_repeatd_with_separtor(state, Token::Semicolon, parse_stmt, |t| {
+        t == Token::RPointParen
+    })?;
     consume_token(state, Token::RPointParen)?;
-
     Ok(stmts)
 }
 
@@ -530,37 +513,8 @@ where
     F: Fn(&mut ParseContext) -> Result<T, ParseError>,
 {
     consume_token(state, left_paren)?;
-
-    let mut result = Vec::new();
-    let mut has_consumed_comma = true;
-
-    while let Some(li) = state.items.get(state.curr_pos) {
-        if li.token == right_paren {
-            break;
-        }
-
-        if !has_consumed_comma {
-            return Err(ParseError::UnexpectedToken(
-                li.token,
-                li.span,
-                Some(Token::Comma),
-            ));
-        }
-
-        let expr = lower_fn(state)?;
-        result.push(expr);
-        has_consumed_comma = false;
-
-        if let Some(next) = state.items.get(state.curr_pos) {
-            if next.token == Token::Comma {
-                state.curr_pos += 1;
-                has_consumed_comma = true;
-            }
-        };
-    }
-
+    let result = parse_repeatd_with_separtor(state, Token::Comma, lower_fn, |t| t == right_paren)?;
     consume_token(state, right_paren)?;
-
     Ok(result)
 }
 

@@ -409,7 +409,6 @@ fn interpret_function_call(
     let mut local_ctx = Context::with_parent(ctx);
     for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
         let value = interpret_expr(&local_ctx, arg_expr)?;
-        dbg!(arg_name, &value);
         local_ctx.insert(IdentifierNode::one(arg_name.clone()), value);
     }
 
