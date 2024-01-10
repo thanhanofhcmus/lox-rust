@@ -131,9 +131,8 @@ impl<'cur, 'pa> Context<'cur, 'pa> {
 
     pub fn with_parent(parent: &'pa Context<'cur, 'pa>) -> Self {
         if parent.current_stack + 1 > STACK_LIMIT {
-            panic!("stack limit execeed");
+            panic!("lox stack limit execeed");
         }
-        dbg!(&parent.current_stack);
         Self {
             variables: HashMap::new(),
             current_module: IdentifierNode::one(CURRENT_MODULE_NAME.to_string()),
