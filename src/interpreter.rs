@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, IndexNode, Statement,
-    StatementList, TernaryExprNode, WhileNode,
+    BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, IndexExprNode, ReAssignIndexNode,
+    Statement, StatementList, TernaryExprNode, WhileNode,
 };
 use crate::token::Token;
 use derive_more::Display;
@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error("Variable or function of name `{0} has not been declared but get re-assigned")]
     NotFoundVariable(String),
+
+    #[error("Variable of name `{0}` is readonly in this scope")]
+    VariableReadOnly(String),
 
     #[error("Unknown operator `{0}`")]
     UnknownOperation(Token),
@@ -43,6 +46,12 @@ pub enum Error {
 
     #[error("Value `{0}` is can not be used as key for array or map")]
     ValueCanBeUsedAsKey(Value),
+
+    #[error("Expect expresstion of type `{0}`, have type `{1:?}`")]
+    InvalidExpresstionType(String, Expression),
+
+    #[error("Array of name `{0}` has length `{1}` but receive index `{2}`")]
+    ArrayOutOfBound(String, usize, usize),
 }
 
 #[derive(Display, Debug, Clone)]
@@ -94,12 +103,12 @@ impl From<Return> for Option<Value> {
     }
 }
 
-pub struct Context<'a> {
+pub struct Context<'cur, 'pa: 'cur> {
     variables: HashMap<String, Value>,
-    parent: Option<&'a Context<'a>>,
+    parent: Option<&'cur Context<'pa, 'pa>>,
 }
 
-impl<'a> Context<'a> {
+impl<'cur, 'pa> Context<'cur, 'pa> {
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
@@ -107,10 +116,7 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn with_parent<'b>(parent: &'b Context<'b>) -> Self
-    where
-        'b: 'a,
-    {
+    pub fn with_parent(parent: &'pa Context<'cur, 'pa>) -> Self {
         Self {
             variables: HashMap::new(),
             parent: Some(parent),
@@ -119,6 +125,10 @@ impl<'a> Context<'a> {
 
     pub fn get_local_only(&self, key: &'_ str) -> Option<&Value> {
         self.variables.get(key)
+    }
+
+    pub fn get_mut_local_only(&mut self, key: &'_ str) -> Option<&mut Value> {
+        self.variables.get_mut(key)
     }
 
     pub fn get_include_parent(&self, key: &'_ str) -> Option<&Value> {
@@ -130,10 +140,6 @@ impl<'a> Context<'a> {
 
     pub fn insert(&mut self, key: String, value: Value) {
         let _ = self.variables.insert(key.to_string(), value);
-    }
-
-    pub fn change_parent<'b: 'a>(&mut self, parent: &'b Context<'b>) {
-        self.parent = Some(parent);
     }
 }
 
@@ -151,7 +157,8 @@ fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<Return, Error> 
     match stmt {
         Statement::Print(exprs) => interpret_print_stmt(ctx, exprs),
         Statement::Declare(name, expr) => interpret_declare_stmt(ctx, name, expr),
-        Statement::Reassign(name, expr) => interpret_reassign_stmt(ctx, name, expr),
+        Statement::ReassignIden(name, expr) => interpret_reassign_id_stmt(ctx, name, expr),
+        Statement::ReassignIndex(node) => interpret_reassign_index_stmt(ctx, node),
         Statement::Return(expr) => interpret_expr(ctx, expr)
             .map(Return::new)
             .map(Return::should_bubble_up),
@@ -208,17 +215,57 @@ fn interpret_declare_stmt(
     Ok(Return::none())
 }
 
-fn interpret_reassign_stmt(
+fn interpret_reassign_id_stmt(
     ctx: &mut Context,
     name: &str,
     expr: &Expression,
 ) -> Result<Return, Error> {
     let name = name.to_string();
-    if ctx.get_include_parent(&name).is_none() {
-        return Err(Error::NotFoundVariable(name));
+    if ctx.get_local_only(&name).is_none() {
+        return if ctx.get_include_parent(&name).is_some() {
+            Err(Error::VariableReadOnly(name))
+        } else {
+            Err(Error::NotFoundVariable(name))
+        };
     }
     let value = interpret_expr(ctx, expr)?;
     ctx.insert(name, value);
+    Ok(Return::none())
+}
+
+fn interpret_reassign_index_stmt(
+    ctx: &mut Context,
+    node: &ReAssignIndexNode,
+) -> Result<Return, Error> {
+    let indexee_val = interpret_expr(ctx, &node.indexee)?;
+    let idx = prepare_indexee(&indexee_val)?;
+
+    let value = interpret_expr(ctx, &node.expr)?;
+
+    let Expression::Identifier(ref indexer_id) = node.indexer else {
+        // TODO: more okey error
+        return Err(Error::InvalidExpresstionType(
+            "Identifier".to_string(),
+            node.indexer.to_owned(),
+        ));
+    };
+    let Some(indexer_arr) = ctx.get_mut_local_only(indexer_id) else {
+        return Err(Error::NotFoundVariable(indexer_id.clone()));
+    };
+    let Value::Array(ref mut arr) = indexer_arr else {
+        return Err(Error::ValueUnIndexabble(indexer_arr.clone()));
+    };
+
+    if arr.len() < idx {
+        return Err(Error::ArrayOutOfBound(
+            indexer_id.to_string(),
+            arr.len(),
+            idx,
+        ));
+    }
+
+    arr[idx] = value;
+
     Ok(Return::none())
 }
 
@@ -281,7 +328,7 @@ fn make_array_value(ctx: &Context, exprs: &Vec<Expression>) -> Result<Value, Err
     Ok(Value::Array(result))
 }
 
-fn interpret_index(ctx: &Context, node: &IndexNode) -> Result<Value, Error> {
+fn interpret_index(ctx: &Context, node: &IndexExprNode) -> Result<Value, Error> {
     let indexer_val = interpret_expr(ctx, &node.indexer)?;
     let indexee_val = interpret_expr(ctx, &node.indexee)?;
     index(&indexer_val, &indexee_val)
@@ -306,14 +353,13 @@ fn interpret_function_call(
         ));
     }
 
-    let mut local_env = Context::new();
+    let mut local_ctx = Context::with_parent(ctx);
     for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
-        let value = interpret_expr(ctx, arg_expr)?;
-        local_env.insert(arg_name.to_string(), value);
+        let value = interpret_expr(&local_ctx, arg_expr)?;
+        local_ctx.insert(arg_name.to_string(), value);
     }
-    local_env.change_parent(ctx);
 
-    interpret_stmt_list(&mut local_env, body).map(|r| r.value.unwrap_or(Value::Nil))
+    interpret_stmt_list(&mut local_ctx, body).map(|r| r.value.unwrap_or(Value::Nil))
 }
 
 fn interpret_unary_op(ctx: &Context, expr: &Expression, op: Token) -> Result<Value, Error> {
@@ -466,10 +512,7 @@ fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Number(l % r))
 }
 
-fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
-    let Value::Array(arr) = indexer else {
-        return Err(Error::ValueUnIndexabble(indexer.clone()));
-    };
+fn prepare_indexee(indexee: &Value) -> Result<usize, Error> {
     let Value::Number(idx) = indexee else {
         return Err(Error::ValueCanBeUsedAsKey(indexee.clone()));
     };
@@ -479,10 +522,15 @@ fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
     if idx < 0.0 || idx.fract() != 0.0 {
         return Err(Error::ValueCanBeUsedAsKey(indexee.clone()));
     }
-    Ok(arr
-        .get(idx as usize)
-        .map(Value::to_owned)
-        .unwrap_or(Value::Nil))
+    Ok(idx as usize)
+}
+
+fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
+    let Value::Array(arr) = indexer else {
+        return Err(Error::ValueUnIndexabble(indexer.clone()));
+    };
+    let idx = prepare_indexee(indexee)?;
+    Ok(arr.get(idx).map(Value::to_owned).unwrap_or(Value::Nil))
 }
 
 fn extract_number(v: &Value, token: Token) -> Result<f64, Error> {

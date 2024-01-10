@@ -75,6 +75,7 @@ fn run_stmt(input: &str, env: &mut interpreter::Context, print_result: bool) -> 
             return Err(Box::new(err));
         }
     };
+    dbg!(&expr);
 
     let calc_result = interpreter::interpret(env, &expr);
 

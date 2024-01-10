@@ -12,7 +12,7 @@ pub enum Expression {
     UnaryOp(Box<Expression>, Token),
     BinaryOp(BinaryOpNode),
     Identifier(String),
-    Index(IndexNode),
+    Index(IndexExprNode),
     FnDecl(FnDeclNode),
     FnCall(FnCallNode),
 }
@@ -24,7 +24,8 @@ pub enum Statement {
     If(IfStmtNode),
     While(WhileNode),
     Declare(String, Expression),
-    Reassign(String, Expression),
+    ReassignIden(String, Expression),
+    ReassignIndex(ReAssignIndexNode),
     Block(StatementList),
     Global(StatementList),
 
@@ -79,7 +80,14 @@ pub struct CaseNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct IndexNode {
+pub struct IndexExprNode {
     pub indexer: Box<Expression>,
     pub indexee: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReAssignIndexNode {
+    pub indexer: Expression,
+    pub indexee: Expression,
+    pub expr: Expression,
 }

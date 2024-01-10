@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, IndexNode, Statement,
-    StatementList, TernaryExprNode, WhileNode,
+    BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, IndexExprNode,
+    ReAssignIndexNode, Statement, StatementList, TernaryExprNode, WhileNode,
 };
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
@@ -15,7 +15,8 @@ declaration  = "var" IDENTIFIER "=" expr
 while        = "while" clause block
 return       = "return" (expr)?
 block        = "{" (stmt ";")* "}"
-reassignment = IDENTIFIER "=" expr
+reassignment = lvalue "=" expr
+lvalue       = IDENTIFIER | index
 expr         = clause | ternary | when
 ternary      = "cond" clause "then" clause "else" clause
 when         = "when" "{" ( "case" clause "->" expr "," ... )* "}"
@@ -75,7 +76,7 @@ fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
     let li = get_curr(state)?;
     match li.token {
         Token::Print => parse_print(state),
-        Token::Identifier => parse_reassignment_or_expr(state),
+        Token::Identifier => parse_reassignment(state),
         Token::Var => parse_declaration(state),
         Token::While => parse_while(state),
         Token::If => parse_if(state),
@@ -164,18 +165,38 @@ fn parse_declaration(state: &mut ParseContext) -> Result<Statement, ParseError> 
 }
 
 fn parse_reassignment(state: &mut ParseContext) -> Result<Statement, ParseError> {
+    if peek_2_token(state, &[Token::Equal]) {
+        parse_iden_reassignment(state)
+    } else {
+        parse_index_reassignment_or_expr(state)
+    }
+}
+
+fn parse_iden_reassignment(state: &mut ParseContext) -> Result<Statement, ParseError> {
     let id_item = consume_token(state, Token::Identifier)?;
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
     let name = id_item.span.str_from_source(state.input);
-    Ok(Statement::Reassign(name.to_string(), expr))
+    Ok(Statement::ReassignIden(name.to_string(), expr))
 }
 
-fn parse_reassignment_or_expr(state: &mut ParseContext) -> Result<Statement, ParseError> {
-    if peek_2_token(state, &[Token::Equal]) {
-        parse_reassignment(state)
+fn parse_index_reassignment_or_expr(state: &mut ParseContext) -> Result<Statement, ParseError> {
+    let id = parse_expr(state)?;
+    if peek(state, &[Token::Equal]) {
+        let Expression::Index(index_expr) = id else {
+            // TODO: more concrete error
+            return Err(ParseError::Eof);
+        };
+        let expr = parse_expr(state)?;
+        Ok(Statement::ReassignIndex({
+            ReAssignIndexNode {
+                indexer: *index_expr.indexer,
+                indexee: *index_expr.indexee,
+                expr,
+            }
+        }))
     } else {
-        parse_expr(state).map(Statement::Expr)
+        Ok(Statement::Expr(id))
     }
 }
 
@@ -336,7 +357,7 @@ fn parse_index(state: &mut ParseContext) -> Result<Expression, ParseError> {
     consume_token(state, Token::LSquareParen)?;
     let indexee = parse_clause(state)?;
     consume_token(state, Token::RSquareParen)?;
-    Ok(Expression::Index(IndexNode {
+    Ok(Expression::Index(IndexExprNode {
         indexer: Box::new(indexer),
         indexee: Box::new(indexee),
     }))
