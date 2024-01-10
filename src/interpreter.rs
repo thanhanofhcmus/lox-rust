@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, Statement, StatementList,
-    TernaryExprNode, WhileNode,
+    BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, IndexNode, Statement,
+    StatementList, TernaryExprNode, WhileNode,
 };
 use crate::token::Token;
 use derive_more::Display;
@@ -37,6 +37,12 @@ pub enum Error {
 
     #[error("Callable `{0}` accept {1} number of arguments but receive {2}")]
     WrongNumberOfArgument(String, usize, usize),
+
+    #[error("Value `{0}` is not of the type array of map, hence indexable")]
+    ValueUnIndexabble(Value),
+
+    #[error("Value `{0}` is can not be used as key for array or map")]
+    ValueCanBeUsedAsKey(Value),
 }
 
 #[derive(Display, Debug, Clone)]
@@ -240,6 +246,7 @@ fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
             node.arg_names.to_owned(),
             node.body.to_owned(),
         )),
+        Expression::Index(node) => interpret_index(ctx, node),
         Expression::When(nodes) => interpret_when(ctx, nodes),
         Expression::Ternary(node) => interpret_ternary_expr(ctx, node),
         Expression::Identifier(name) => Ok(get_value_owned(ctx, name.as_str())),
@@ -247,7 +254,7 @@ fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
         Expression::Bool(v) => Ok(Value::Bool(*v)),
         Expression::Number(v) => Ok(Value::Number(*v)),
-        Expression::Array(exprs) => get_array_value(ctx, exprs),
+        Expression::Array(exprs) => make_array_value(ctx, exprs),
         Expression::UnaryOp(expr, op) => interpret_unary_op(ctx, expr, *op),
         Expression::BinaryOp(node) => interpret_binary_op(ctx, node),
     }
@@ -266,12 +273,18 @@ fn interpret_ternary_expr(ctx: &Context, node: &TernaryExprNode) -> Result<Value
     }
 }
 
-fn get_array_value(ctx: &Context, exprs: &Vec<Expression>) -> Result<Value, Error> {
+fn make_array_value(ctx: &Context, exprs: &Vec<Expression>) -> Result<Value, Error> {
     let mut result = vec![];
     for expr in exprs {
         result.push(interpret_expr(ctx, expr)?);
     }
     Ok(Value::Array(result))
+}
+
+fn interpret_index(ctx: &Context, node: &IndexNode) -> Result<Value, Error> {
+    let indexer_val = interpret_expr(ctx, &node.indexer)?;
+    let indexee_val = interpret_expr(ctx, &node.indexee)?;
+    index(&indexer_val, &indexee_val)
 }
 
 fn interpret_function_call(
@@ -451,6 +464,25 @@ fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     let l = extract_number(lhs, Token::Percentage)?;
     let r = extract_number(rhs, Token::Percentage)?;
     Ok(Value::Number(l % r))
+}
+
+fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
+    let Value::Array(arr) = indexer else {
+        return Err(Error::ValueUnIndexabble(indexer.clone()));
+    };
+    let Value::Number(idx) = indexee else {
+        return Err(Error::ValueCanBeUsedAsKey(indexee.clone()));
+    };
+    let idx = *idx;
+
+    // check if idx is a interger
+    if idx < 0.0 || idx.fract() != 0.0 {
+        return Err(Error::ValueCanBeUsedAsKey(indexee.clone()));
+    }
+    Ok(arr
+        .get(idx as usize)
+        .map(Value::to_owned)
+        .unwrap_or(Value::Nil))
 }
 
 fn extract_number(v: &Value, token: Token) -> Result<f64, Error> {

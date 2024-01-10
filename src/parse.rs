@@ -1,5 +1,5 @@
 use crate::ast::{
-    BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, Statement,
+    BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode, IndexNode, Statement,
     StatementList, TernaryExprNode, WhileNode,
 };
 use crate::lex::LexItem;
@@ -27,7 +27,8 @@ term         = factor (("+" | "-") factor)*
 factor       = modulo (("*" | "/") modulo)*
 modulo       = unary ("%" unary)%
 unary        = ("!" | "-")* unary | call
-call         = primary "(" (expr "," ...)* ")"
+call         = index "(" (clause "," ...)* ")"
+index        = primary ("[" clause "]")?
 primary      = STRING | NUMBER | IDENTIFIER | atom | group | array | function
 atom         = "true" | "false" | "nil"
 function     = "fn" "(" ( IDENTIFIER "," ... )* ")" block
@@ -312,17 +313,33 @@ fn parse_recursive_unary(
 }
 
 fn parse_call(state: &mut ParseContext) -> Result<Expression, ParseError> {
-    let prim = parse_primary(state)?;
-    if let Expression::Identifier(name) = &prim {
+    let lower = parse_index(state)?;
+    if let Expression::Identifier(name) = &lower {
         if peek(state, &[Token::LRoundParen]) {
-            let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
+            let args =
+                parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
             return Ok(Expression::FnCall(FnCallNode {
                 name: name.to_string(),
                 args,
             }));
         }
     }
-    Ok(prim)
+    Ok(lower)
+}
+
+fn parse_index(state: &mut ParseContext) -> Result<Expression, ParseError> {
+    let indexer = parse_primary(state)?;
+    if !peek(state, &[Token::LSquareParen]) {
+        return Ok(indexer);
+    }
+
+    consume_token(state, Token::LSquareParen)?;
+    let indexee = parse_clause(state)?;
+    consume_token(state, Token::RSquareParen)?;
+    Ok(Expression::Index(IndexNode {
+        indexer: Box::new(indexer),
+        indexee: Box::new(indexee),
+    }))
 }
 
 fn parse_primary(state: &mut ParseContext) -> Result<Expression, ParseError> {

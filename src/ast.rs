@@ -12,6 +12,7 @@ pub enum Expression {
     UnaryOp(Box<Expression>, Token),
     BinaryOp(BinaryOpNode),
     Identifier(String),
+    Index(IndexNode),
     FnDecl(FnDeclNode),
     FnCall(FnCallNode),
 }
@@ -75,4 +76,10 @@ pub struct WhileNode {
 pub struct CaseNode {
     pub cond: Expression,
     pub expr: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexNode {
+    pub indexer: Box<Expression>,
+    pub indexee: Box<Expression>,
 }
