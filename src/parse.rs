@@ -9,7 +9,7 @@ use crate::token::Token;
 
 /*
 stmt         = reassignment | declaration | print | expr | if | while | return
-print        = "print" clause
+print        = "print" (clause "," ...)*
 if           = "if" clause block ("else" block)?
 declaration  = "var" IDENTIFIER "=" expr
 while        = "while" clause block
@@ -28,8 +28,9 @@ factor       = modulo (("*" | "/") modulo)*
 modulo       = unary ("%" unary)%
 unary        = ("!" | "-")* unary | call
 call         = primary "(" (expr "," ...)* ")"
-primary      = STRING | NUMBER | IDENTIFIER | "true" | "false" | "nil" | group | array | function
-function     = "fn" "(" ( FUNC_ARG "," ... )* ")" block
+primary      = STRING | NUMBER | IDENTIFIER | atom | group | array | function
+atom         = "true" | "false" | "nil"
+function     = "fn" "(" ( IDENTIFIER "," ... )* ")" block
 array        = "[" (expr, ",")* "]"
 group        = "(" expr ")"
 */
@@ -85,8 +86,8 @@ fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
 
 fn parse_print(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::Print)?;
-    let expr = parse_clause(state)?;
-    Ok(Statement::Print(expr))
+    let exprs = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
+    Ok(Statement::Print(exprs))
 }
 
 fn parse_if(state: &mut ParseContext) -> Result<Statement, ParseError> {

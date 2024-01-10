@@ -27,7 +27,7 @@ pub enum Statement {
     Block(StatementList),
     Global(StatementList),
 
-    Print(Expression),
+    Print(Vec<Expression>),
 }
 
 pub type StatementList = Vec<Statement>;

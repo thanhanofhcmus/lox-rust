@@ -42,9 +42,13 @@ pub enum Error {
 #[derive(Display, Debug, Clone)]
 pub enum Value {
     Nil,
+
     Str(String),
+
     Number(f64),
+
     Bool(bool),
+
     #[display(fmt = "{:?}", _0)]
     Array(Vec<Value>),
 
@@ -139,7 +143,7 @@ pub fn interpret(ctx: &mut Context, stmt: &Statement) -> Result<Value, Error> {
 
 fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<Return, Error> {
     match stmt {
-        Statement::Print(expr) => interpret_print_stmt(ctx, expr),
+        Statement::Print(exprs) => interpret_print_stmt(ctx, exprs),
         Statement::Declare(name, expr) => interpret_declare_stmt(ctx, name, expr),
         Statement::Reassign(name, expr) => interpret_reassign_stmt(ctx, name, expr),
         Statement::Return(expr) => interpret_expr(ctx, expr)
@@ -153,9 +157,12 @@ fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<Return, Error> 
     }
 }
 
-fn interpret_print_stmt(ctx: &mut Context, expr: &Expression) -> Result<Return, Error> {
-    let value = interpret_expr(ctx, expr)?;
-    println!("{}", value);
+fn interpret_print_stmt(ctx: &mut Context, exprs: &[Expression]) -> Result<Return, Error> {
+    for expr in exprs {
+        let value = interpret_expr(ctx, expr)?;
+        print!("{} ", value);
+    }
+    println!();
     Ok(Return::none())
 }
 
