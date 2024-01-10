@@ -31,14 +31,14 @@ array        = "[" (expr, ",")* "]"
 group        = "(" expr ")"
 */
 
-struct ParseState<'a> {
+struct ParseContext<'a> {
     input: &'a str,
     items: &'a [LexItem],
     curr_pos: usize,
     is_in_fn: bool,
 }
 
-impl<'a> ParseState<'a> {
+impl<'a> ParseContext<'a> {
     fn new(input: &'a str, items: &'a [LexItem]) -> Self {
         Self {
             input,
@@ -51,7 +51,7 @@ impl<'a> ParseState<'a> {
 
 pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
     let mut stmts = vec![];
-    let mut state = ParseState::new(input, items);
+    let mut state = ParseContext::new(input, items);
     while state.curr_pos < items.len() {
         let result = parse_stmt(&mut state)?;
         stmts.push(result);
@@ -66,7 +66,7 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
     }
 }
 
-fn parse_stmt(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
     let li = get_curr(state)?;
     match li.token {
         Token::Print => parse_print(state),
@@ -80,13 +80,13 @@ fn parse_stmt(state: &mut ParseState) -> Result<Statement, ParseError> {
     }
 }
 
-fn parse_print(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_print(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::Print)?;
     let expr = parse_expr(state)?;
     Ok(Statement::Print(expr))
 }
 
-fn parse_if(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_if(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::If)?;
 
     let cond = parse_expr(state)?;
@@ -104,14 +104,14 @@ fn parse_if(state: &mut ParseState) -> Result<Statement, ParseError> {
         else_stmts,
     }))
 }
-fn parse_while(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_while(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::While)?;
     let cond = parse_expr(state)?;
     let body = parse_block_statement_list(state)?;
     Ok(Statement::While(WhileNode { cond, body }))
 }
 
-fn parse_return(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_return(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::Return)?;
     if !state.is_in_fn {
         return Err(ParseError::UnexpectedReturn(Span::one(state.curr_pos)));
@@ -120,11 +120,11 @@ fn parse_return(state: &mut ParseState) -> Result<Statement, ParseError> {
     Ok(Statement::Return(expr))
 }
 
-fn parse_block(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_block(state: &mut ParseContext) -> Result<Statement, ParseError> {
     Ok(Statement::Block(parse_block_statement_list(state)?))
 }
 
-fn parse_block_statement_list(state: &mut ParseState) -> Result<StatementList, ParseError> {
+fn parse_block_statement_list(state: &mut ParseContext) -> Result<StatementList, ParseError> {
     consume_token(state, Token::LPointParen)?;
 
     let mut stmts = vec![];
@@ -149,7 +149,7 @@ fn parse_block_statement_list(state: &mut ParseState) -> Result<StatementList, P
     Ok(stmts)
 }
 
-fn parse_declaration(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_declaration(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::Var)?;
     let id_item = consume_token(state, Token::Identifier)?;
     consume_token(state, Token::Equal)?;
@@ -158,7 +158,7 @@ fn parse_declaration(state: &mut ParseState) -> Result<Statement, ParseError> {
     Ok(Statement::Declare(name.to_string(), expr))
 }
 
-fn parse_reassignment(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_reassignment(state: &mut ParseContext) -> Result<Statement, ParseError> {
     let id_item = consume_token(state, Token::Identifier)?;
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
@@ -166,7 +166,7 @@ fn parse_reassignment(state: &mut ParseState) -> Result<Statement, ParseError> {
     Ok(Statement::Reassign(name.to_string(), expr))
 }
 
-fn parse_reassignment_or_expr(state: &mut ParseState) -> Result<Statement, ParseError> {
+fn parse_reassignment_or_expr(state: &mut ParseContext) -> Result<Statement, ParseError> {
     if peek_2_token(state, &[Token::Equal]) {
         parse_reassignment(state)
     } else {
@@ -174,7 +174,7 @@ fn parse_reassignment_or_expr(state: &mut ParseState) -> Result<Statement, Parse
     }
 }
 
-fn parse_expr(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_expr(state: &mut ParseContext) -> Result<Expression, ParseError> {
     if peek(state, &[Token::Cond]) {
         parse_ternary(state)
     } else {
@@ -182,7 +182,7 @@ fn parse_expr(state: &mut ParseState) -> Result<Expression, ParseError> {
     }
 }
 
-fn parse_ternary(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_ternary(state: &mut ParseContext) -> Result<Expression, ParseError> {
     consume_token(state, Token::Cond)?;
     let cond = parse_logical(state)?;
     consume_token(state, Token::Then)?;
@@ -196,11 +196,11 @@ fn parse_ternary(state: &mut ParseState) -> Result<Expression, ParseError> {
     }))
 }
 
-fn parse_logical(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_logical(state: &mut ParseContext) -> Result<Expression, ParseError> {
     parse_recursive_binary(state, &[Token::And, Token::Or], parse_equality)
 }
 
-fn parse_equality(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_equality(state: &mut ParseContext) -> Result<Expression, ParseError> {
     parse_recursive_binary(
         state,
         &[Token::EqualEqual, Token::BangEqual],
@@ -208,7 +208,7 @@ fn parse_equality(state: &mut ParseState) -> Result<Expression, ParseError> {
     )
 }
 
-fn parse_comparison(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_comparison(state: &mut ParseContext) -> Result<Expression, ParseError> {
     parse_recursive_binary(
         state,
         &[
@@ -221,21 +221,21 @@ fn parse_comparison(state: &mut ParseState) -> Result<Expression, ParseError> {
     )
 }
 
-fn parse_term(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_term(state: &mut ParseContext) -> Result<Expression, ParseError> {
     parse_recursive_binary(state, &[Token::Plus, Token::Minus], parse_factor)
 }
 
-fn parse_factor(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_factor(state: &mut ParseContext) -> Result<Expression, ParseError> {
     parse_recursive_binary(state, &[Token::Star, Token::Slash], parse_unary)
 }
 
 fn parse_recursive_binary<F>(
-    state: &mut ParseState,
+    state: &mut ParseContext,
     match_tokens: &'static [Token],
     lower_fn: F,
 ) -> Result<Expression, ParseError>
 where
-    F: Fn(&mut ParseState) -> Result<Expression, ParseError>,
+    F: Fn(&mut ParseContext) -> Result<Expression, ParseError>,
 {
     let mut lhs = lower_fn(state)?;
 
@@ -255,7 +255,7 @@ where
     Ok(lhs)
 }
 
-fn parse_unary(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_unary(state: &mut ParseContext) -> Result<Expression, ParseError> {
     let li = get_curr(state)?;
     match li.token {
         Token::Bang => parse_recursive_unary(state, Token::Bang),
@@ -265,7 +265,7 @@ fn parse_unary(state: &mut ParseState) -> Result<Expression, ParseError> {
 }
 
 fn parse_recursive_unary(
-    state: &mut ParseState,
+    state: &mut ParseContext,
     match_token: Token,
 ) -> Result<Expression, ParseError> {
     let li = get_curr(state)?;
@@ -280,7 +280,7 @@ fn parse_recursive_unary(
     }
 }
 
-fn parse_call(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_call(state: &mut ParseContext) -> Result<Expression, ParseError> {
     let prim = parse_primary(state)?;
     if let Expression::Identifier(name) = &prim {
         if peek(state, &[Token::LRoundParen]) {
@@ -294,7 +294,7 @@ fn parse_call(state: &mut ParseState) -> Result<Expression, ParseError> {
     Ok(prim)
 }
 
-fn parse_primary(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_primary(state: &mut ParseContext) -> Result<Expression, ParseError> {
     let li = *get_curr(state)?;
     let mut next = |expr| {
         state.curr_pos += 1;
@@ -324,19 +324,19 @@ fn parse_primary(state: &mut ParseState) -> Result<Expression, ParseError> {
     }
 }
 
-fn parse_group(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_group(state: &mut ParseContext) -> Result<Expression, ParseError> {
     consume_token(state, Token::LRoundParen)?;
     let expr = parse_expr(state)?;
     consume_token(state, Token::RRoundParen)?;
     Ok(expr)
 }
 
-fn parse_array(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_array(state: &mut ParseContext) -> Result<Expression, ParseError> {
     let exprs = parse_comma_list(state, Token::LSquareParen, Token::RSquareParen, parse_expr)?;
     Ok(Expression::Array(exprs))
 }
 
-fn parse_function(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_function(state: &mut ParseContext) -> Result<Expression, ParseError> {
     consume_token(state, Token::Fn)?;
     let arg_names = parse_comma_list(
         state,
@@ -355,7 +355,7 @@ fn parse_function(state: &mut ParseState) -> Result<Expression, ParseError> {
     Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
 }
 
-fn parse_number(state: &mut ParseState) -> Result<Expression, ParseError> {
+fn parse_number(state: &mut ParseContext) -> Result<Expression, ParseError> {
     let li = consume_token(state, Token::Number)?;
     let source = li.span.str_from_source(state.input);
     match source.parse::<f64>() {
@@ -364,19 +364,19 @@ fn parse_number(state: &mut ParseState) -> Result<Expression, ParseError> {
     }
 }
 
-fn get_identifier(state: &mut ParseState) -> Result<LexItem, ParseError> {
+fn get_identifier(state: &mut ParseContext) -> Result<LexItem, ParseError> {
     let li = consume_token(state, Token::Identifier)?;
     Ok(li.to_owned())
 }
 
 fn parse_comma_list<F, T>(
-    state: &mut ParseState,
+    state: &mut ParseContext,
     left_paren: Token,
     right_paren: Token,
     lower_fn: F,
 ) -> Result<Vec<T>, ParseError>
 where
-    F: Fn(&mut ParseState) -> Result<T, ParseError>,
+    F: Fn(&mut ParseContext) -> Result<T, ParseError>,
 {
     consume_token(state, left_paren)?;
 
@@ -413,7 +413,7 @@ where
     Ok(result)
 }
 
-fn consume_token(state: &mut ParseState, token: Token) -> Result<LexItem, ParseError> {
+fn consume_token(state: &mut ParseContext, token: Token) -> Result<LexItem, ParseError> {
     let li = *get_curr(state)?;
     if li.token != token {
         return Err(ParseError::UnexpectedToken(li.token, li.span, Some(token)));
@@ -422,7 +422,7 @@ fn consume_token(state: &mut ParseState, token: Token) -> Result<LexItem, ParseE
     Ok(li)
 }
 
-fn peek(state: &ParseState, match_tokens: &'static [Token]) -> bool {
+fn peek(state: &ParseContext, match_tokens: &'static [Token]) -> bool {
     state
         .items
         .get(state.curr_pos)
@@ -430,7 +430,7 @@ fn peek(state: &ParseState, match_tokens: &'static [Token]) -> bool {
         .unwrap_or(false)
 }
 
-fn peek_2_token(state: &ParseState, match_tokens: &'static [Token]) -> bool {
+fn peek_2_token(state: &ParseContext, match_tokens: &'static [Token]) -> bool {
     state
         .items
         .get(state.curr_pos + 1)
@@ -438,7 +438,7 @@ fn peek_2_token(state: &ParseState, match_tokens: &'static [Token]) -> bool {
         .unwrap_or(false)
 }
 
-fn get_curr<'a>(state: &'a ParseState) -> Result<&'a LexItem, ParseError> {
+fn get_curr<'a>(state: &'a ParseContext) -> Result<&'a LexItem, ParseError> {
     match state.items.get(state.curr_pos) {
         Some(li) => Ok(li),
         None => Err(ParseError::Eof),
