@@ -1,6 +1,7 @@
 use crate::ast::{
-    ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, IfStmtNode, IndexExprNode,
-    ReAssignIndexNode, Statement, StatementList, TernaryExprNode, WhileNode,
+    ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, IdentifierNode, IfStmtNode,
+    IndexExprNode, ModuleNode, ReAssignIndexNode, Statement, StatementList, TernaryExprNode,
+    WhileNode,
 };
 use crate::token::Token;
 use derive_more::Display;
@@ -75,12 +76,12 @@ pub enum Value {
     Function(Vec<String>, StatementList),
 }
 
-struct Return {
+struct StmtReturn {
     value: Option<Value>,
     should_bubble_up: bool,
 }
 
-impl Return {
+impl StmtReturn {
     fn new(value: Value) -> Self {
         Self {
             value: Some(value),
@@ -101,21 +102,25 @@ impl Return {
     }
 }
 
-impl From<Return> for Option<Value> {
-    fn from(ret: Return) -> Self {
+impl From<StmtReturn> for Option<Value> {
+    fn from(ret: StmtReturn) -> Self {
         ret.value
     }
 }
 
+const CURRENT_MODULE_NAME: &str = "__current__";
+
 pub struct Context<'cur, 'pa: 'cur> {
     variables: HashMap<String, Value>,
     parent: Option<&'cur Context<'pa, 'pa>>,
+    current_module: IdentifierNode,
 }
 
 impl<'cur, 'pa> Context<'cur, 'pa> {
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
+            current_module: IdentifierNode::one(CURRENT_MODULE_NAME.to_string()),
             parent: None,
         }
     }
@@ -123,32 +128,49 @@ impl<'cur, 'pa> Context<'cur, 'pa> {
     pub fn with_parent(parent: &'pa Context<'cur, 'pa>) -> Self {
         Self {
             variables: HashMap::new(),
+            current_module: IdentifierNode::one(CURRENT_MODULE_NAME.to_string()),
             parent: Some(parent),
         }
     }
 
-    pub fn get_local_only(&self, key: &'_ str) -> Option<&Value> {
-        self.variables.get(key)
+    fn with_module_name(&self, key: &IdentifierNode) -> String {
+        self.current_module.join_dot() + "." + key.join_dot().as_str()
     }
 
-    pub fn get_mut_local_only(&mut self, key: &'_ str) -> Option<&mut Value> {
-        self.variables.get_mut(key)
+    pub fn get_local_only(&self, key: &IdentifierNode) -> Option<&Value> {
+        if let Some(v) = self.variables.get(self.with_module_name(key).as_str()) {
+            Some(v)
+        } else {
+            self.get_local_only_no_current(key)
+        }
     }
 
-    pub fn get_include_parent(&self, key: &'_ str) -> Option<&Value> {
+    pub fn get_mut_local_only(&mut self, key: &IdentifierNode) -> Option<&mut Value> {
+        self.variables.get_mut(&key.join_dot())
+    }
+
+    fn get_local_only_no_current(&self, key: &IdentifierNode) -> Option<&Value> {
+        self.variables.get(key.join_dot().as_str())
+    }
+
+    pub fn get_include_parent(&self, key: &IdentifierNode) -> Option<&Value> {
         if let Some(value) = self.get_local_only(key) {
             return Some(value);
         }
         self.parent.and_then(|p| p.get_include_parent(key))
     }
 
-    pub fn insert(&mut self, key: String, value: Value) {
-        let _ = self.variables.insert(key.to_string(), value);
+    pub fn insert(&mut self, key: IdentifierNode, value: Value) {
+        let _ = self.variables.insert(self.with_module_name(&key), value);
+    }
+
+    pub fn swap_current_module(&mut self, new_module: IdentifierNode) -> IdentifierNode {
+        std::mem::replace(&mut self.current_module, new_module)
     }
 }
 
-fn get_value_owned(ctx: &Context, name: &str) -> Value {
-    ctx.get_include_parent(name)
+fn get_value_owned(ctx: &Context, iden: &IdentifierNode) -> Value {
+    ctx.get_include_parent(iden)
         .map(|v| v.to_owned())
         .unwrap_or(Value::Nil)
 }
@@ -157,16 +179,17 @@ pub fn interpret(ctx: &mut Context, stmt: &Statement) -> Result<Value, Error> {
     interpret_stmt(ctx, stmt).map(|r| r.value.unwrap_or(Value::Nil))
 }
 
-fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<Return, Error> {
+fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<StmtReturn, Error> {
     match stmt {
+        Statement::Module(node) => interpret_module_stmt(ctx, node),
         Statement::Print(exprs) => interpret_print_stmt(ctx, exprs),
         Statement::Declare(name, expr) => interpret_declare_stmt(ctx, name, expr),
         Statement::ReassignIden(name, expr) => interpret_reassign_id_stmt(ctx, name, expr),
         Statement::ReassignIndex(node) => interpret_reassign_index_stmt(ctx, node),
         Statement::Return(expr) => interpret_expr(ctx, expr)
-            .map(Return::new)
-            .map(Return::should_bubble_up),
-        Statement::Expr(expr) => interpret_expr(ctx, expr).map(Return::new),
+            .map(StmtReturn::new)
+            .map(StmtReturn::should_bubble_up),
+        Statement::Expr(expr) => interpret_expr(ctx, expr).map(StmtReturn::new),
         Statement::While(node) => interpret_while_stmt(ctx, node),
         Statement::If(node) => interpret_if_stmt(ctx, node),
         Statement::Block(stmts) => interpret_stmt_list(&mut Context::with_parent(ctx), stmts),
@@ -174,73 +197,78 @@ fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<Return, Error> 
     }
 }
 
-fn interpret_print_stmt(ctx: &mut Context, exprs: &[Expression]) -> Result<Return, Error> {
+fn interpret_module_stmt(ctx: &mut Context, node: &ModuleNode) -> Result<StmtReturn, Error> {
+    let curent_module = ctx.swap_current_module(node.name.clone());
+    let res = interpret_stmt_list(ctx, &node.body);
+    let _ = ctx.swap_current_module(curent_module);
+    res
+}
+
+fn interpret_print_stmt(ctx: &mut Context, exprs: &[Expression]) -> Result<StmtReturn, Error> {
     for expr in exprs {
         let value = interpret_expr(ctx, expr)?;
         print!("{} ", value);
     }
     println!();
-    Ok(Return::none())
+    Ok(StmtReturn::none())
 }
 
-fn interpret_if_stmt(ctx: &mut Context, node: &IfStmtNode) -> Result<Return, Error> {
+fn interpret_if_stmt(ctx: &mut Context, node: &IfStmtNode) -> Result<StmtReturn, Error> {
     let cond = is_truthy(ctx, &node.cond)?;
     if !cond {
         return node
             .else_stmts
             .as_ref()
             .map(|stmts| interpret_stmt_list(ctx, stmts))
-            .unwrap_or(Ok(Return::none()));
+            .unwrap_or(Ok(StmtReturn::none()));
     }
     interpret_stmt_list(ctx, &node.if_stmts)
 }
 
-fn interpret_stmt_list(ctx: &mut Context, stmts: &[Statement]) -> Result<Return, Error> {
+fn interpret_stmt_list(ctx: &mut Context, stmts: &[Statement]) -> Result<StmtReturn, Error> {
     for stmt in stmts {
         let ret = interpret_stmt(ctx, stmt)?;
         if ret.should_bubble_up {
             return Ok(ret);
         }
     }
-    Ok(Return::none())
+    Ok(StmtReturn::none())
 }
 
 fn interpret_declare_stmt(
     ctx: &mut Context,
-    name: &str,
+    iden: &IdentifierNode,
     expr: &Expression,
-) -> Result<Return, Error> {
-    let name = name.to_string();
-    if ctx.get_local_only(&name).is_some() {
-        return Err(Error::ReDeclareVariable(name));
+) -> Result<StmtReturn, Error> {
+    if ctx.get_local_only(iden).is_some() {
+        return Err(Error::ReDeclareVariable(iden.join_dot()));
     }
     let value = interpret_expr(ctx, expr)?;
-    ctx.insert(name, value);
-    Ok(Return::none())
+    ctx.insert(iden.clone(), value);
+    Ok(StmtReturn::none())
 }
 
 fn interpret_reassign_id_stmt(
     ctx: &mut Context,
-    name: &str,
+    iden: &IdentifierNode,
     expr: &Expression,
-) -> Result<Return, Error> {
-    let name = name.to_string();
-    if ctx.get_local_only(&name).is_none() {
-        return if ctx.get_include_parent(&name).is_some() {
-            Err(Error::VariableReadOnly(name))
+) -> Result<StmtReturn, Error> {
+    if ctx.get_local_only(iden).is_none() {
+        return if ctx.get_include_parent(iden).is_some() {
+            Err(Error::VariableReadOnly(iden.join_dot()))
         } else {
-            Err(Error::NotFoundVariable(name))
+            Err(Error::NotFoundVariable(iden.join_dot()))
         };
     }
     let value = interpret_expr(ctx, expr)?;
-    ctx.insert(name, value);
-    Ok(Return::none())
+    ctx.insert(iden.clone(), value);
+    Ok(StmtReturn::none())
 }
 
 fn interpret_reassign_index_stmt(
     ctx: &mut Context,
     node: &ReAssignIndexNode,
-) -> Result<Return, Error> {
+) -> Result<StmtReturn, Error> {
     let indexee_val = interpret_expr(ctx, &node.indexee)?;
     let idx = prepare_indexee(&indexee_val)?;
 
@@ -254,7 +282,7 @@ fn interpret_reassign_index_stmt(
         ));
     };
     let Some(indexer_arr) = ctx.get_mut_local_only(indexer_id) else {
-        return Err(Error::NotFoundVariable(indexer_id.clone()));
+        return Err(Error::NotFoundVariable(indexer_id.join_dot()));
     };
     let Value::Array(ref mut arr) = indexer_arr else {
         return Err(Error::ValueUnIndexabble(indexer_arr.clone()));
@@ -262,7 +290,7 @@ fn interpret_reassign_index_stmt(
 
     if arr.len() < idx {
         return Err(Error::ArrayOutOfBound(
-            indexer_id.to_string(),
+            indexer_id.join_dot(),
             arr.len(),
             idx,
         ));
@@ -270,14 +298,14 @@ fn interpret_reassign_index_stmt(
 
     arr[idx] = value;
 
-    Ok(Return::none())
+    Ok(StmtReturn::none())
 }
 
 fn interpret_while_stmt(
     ctx: &mut Context,
     WhileNode { cond, body }: &WhileNode,
-) -> Result<Return, Error> {
-    let mut result = Ok(Return::none());
+) -> Result<StmtReturn, Error> {
+    let mut result = Ok(StmtReturn::none());
 
     loop {
         let bin = is_truthy(ctx, cond)?;
@@ -300,7 +328,7 @@ fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
         Expression::Index(node) => interpret_index(ctx, node),
         Expression::When(nodes) => interpret_when(ctx, nodes),
         Expression::Ternary(node) => interpret_ternary_expr(ctx, node),
-        Expression::Identifier(name) => Ok(get_value_owned(ctx, name.as_str())),
+        Expression::Identifier(node) => Ok(get_value_owned(ctx, node)),
         Expression::Nil => Ok(Value::Nil),
         Expression::Str(v) => Ok(Value::Str(v.to_string())),
         Expression::Bool(v) => Ok(Value::Bool(*v)),
@@ -353,10 +381,10 @@ fn interpret_index(ctx: &Context, node: &IndexExprNode) -> Result<Value, Error> 
 
 fn interpret_function_call(
     ctx: &Context,
-    FnCallNode { name, args }: &FnCallNode,
+    FnCallNode { iden: name, args }: &FnCallNode,
 ) -> Result<Value, Error> {
     let Some(fn_value) = ctx.get_include_parent(name) else {
-        return Err(Error::NotFoundVariable(name.clone()));
+        return Err(Error::NotFoundVariable(name.join_dot()));
     };
     let Value::Function(arg_names, body) = fn_value else {
         return Err(Error::ValueNotCallable(fn_value.to_owned()));
@@ -364,7 +392,7 @@ fn interpret_function_call(
 
     if arg_names.len() != args.len() {
         return Err(Error::WrongNumberOfArgument(
-            name.clone(),
+            name.join_dot(),
             arg_names.len(),
             args.len(),
         ));
@@ -373,7 +401,7 @@ fn interpret_function_call(
     let mut local_ctx = Context::with_parent(ctx);
     for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
         let value = interpret_expr(&local_ctx, arg_expr)?;
-        local_ctx.insert(arg_name.to_string(), value);
+        local_ctx.insert(IdentifierNode::one(arg_name.clone()), value);
     }
 
     interpret_stmt_list(&mut local_ctx, body).map(|r| r.value.unwrap_or(Value::Nil))

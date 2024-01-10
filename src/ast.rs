@@ -12,7 +12,7 @@ pub enum Expression {
     When(Vec<CaseNode>),
     UnaryOp(Box<Expression>, Token),
     BinaryOp(BinaryOpNode),
-    Identifier(String),
+    Identifier(IdentifierNode),
     Index(IndexExprNode),
     FnDecl(FnDeclNode),
     FnCall(FnCallNode),
@@ -20,12 +20,13 @@ pub enum Expression {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
+    Module(ModuleNode),
     Expr(Expression),
     Return(Expression),
     If(IfStmtNode),
     While(WhileNode),
-    Declare(String, Expression),
-    ReassignIden(String, Expression),
+    Declare(IdentifierNode, Expression),
+    ReassignIden(IdentifierNode, Expression),
     ReassignIndex(ReAssignIndexNode),
     Block(StatementList),
     Global(StatementList),
@@ -40,6 +41,33 @@ pub struct IfStmtNode {
     pub cond: Expression,
     pub if_stmts: StatementList,
     pub else_stmts: Option<StatementList>,
+}
+
+#[derive(Debug, Clone)]
+pub enum IdentifierNode {
+    Simple(String),
+    Compound(Vec<String>),
+}
+
+impl IdentifierNode {
+    pub fn new(mut ids: Vec<String>) -> Self {
+        if ids.len() == 1 {
+            Self::Simple(ids.pop().unwrap())
+        } else {
+            Self::Compound(ids)
+        }
+    }
+
+    pub fn one(id: String) -> Self {
+        Self::Simple(id)
+    }
+
+    pub fn join_dot(&self) -> String {
+        match self {
+            IdentifierNode::Simple(s) => s.to_owned(),
+            IdentifierNode::Compound(ss) => ss.join("."),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +91,7 @@ pub struct FnDeclNode {
 
 #[derive(Debug, Clone)]
 pub struct FnCallNode {
-    pub name: String,
+    pub iden: IdentifierNode,
     pub args: Vec<Expression>,
 }
 
@@ -72,6 +100,12 @@ pub struct BinaryOpNode {
     pub lhs: Box<Expression>,
     pub op: Token,
     pub rhs: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleNode {
+    pub name: IdentifierNode,
+    pub body: StatementList,
 }
 
 #[derive(Debug, Clone)]

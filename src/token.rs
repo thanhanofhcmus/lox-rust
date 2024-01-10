@@ -45,11 +45,13 @@ pub enum Token {
     Then,
     When,
     Case,
+    Module,
 
     Identifier,
     Number,
     String,
 
+    Dot,
     Comma,
     Colon,
     Semicolon,

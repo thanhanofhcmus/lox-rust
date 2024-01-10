@@ -27,4 +27,8 @@ impl Span {
     pub fn str_from_source<'a>(&self, input: &'a str) -> &'a str {
         &input[self.start..=self.end]
     }
+
+    pub fn string_from_source(&self, input: &str) -> String {
+        self.str_from_source(input).to_string()
+    }
 }

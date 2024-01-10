@@ -21,6 +21,7 @@ static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "then" => Token::Then,
     "when" => Token::When,
     "case" => Token::Case,
+    "module" => Token::Module,
 
     "print" => Token::Print,
 );
@@ -74,6 +75,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             ']' => result.push(tok_one(Token::RSquareParen)),
             '{' => result.push(tok_one(Token::LPointParen)),
             '}' => result.push(tok_one(Token::RPointParen)),
+            '.' => result.push(tok_one(Token::Dot)),
             ',' => result.push(tok_one(Token::Comma)),
             ':' => result.push(tok_one(Token::Colon)),
             ';' => result.push(tok_one(Token::Semicolon)),

@@ -1,6 +1,7 @@
 use crate::ast::{
-    ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IfStmtNode,
-    IndexExprNode, ReAssignIndexNode, Statement, StatementList, TernaryExprNode, WhileNode,
+    ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IdentifierNode,
+    IfStmtNode, IndexExprNode, ModuleNode, ReAssignIndexNode, Statement, StatementList,
+    TernaryExprNode, WhileNode,
 };
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
@@ -8,7 +9,8 @@ use crate::span::Span;
 use crate::token::Token;
 
 /*
-stmt         = reassignment | declaration | print | expr | if | while | return
+stmt         = reassignment | declaration | print | expr | if | while | return | module
+module       = "module" block
 print        = "print" (clause "," ...)*
 if           = "if" clause block ("else" block)?
 declaration  = "var" IDENTIFIER "=" expr
@@ -26,12 +28,13 @@ equality     = comparison (("==" | "!=") comparison)*
 comparison   = term (("<" | "<" | "<=" | ">=") term)*
 term         = factor (("+" | "-") factor)*
 factor       = modulo (("*" | "/") modulo)*
-modulo       = unary ("%" unary)%
+modulo       = unary ("%" unary)?
 unary        = ("!" | "-")* unary | call
 call         = index "(" (clause "," ...)* ")"
 index        = primary ("[" clause "]")?
-primary      = STRING | NUMBER | IDENTIFIER | atom | group | array | function
+primary      = STRING | NUMBER | identifier | atom | group | array | function
 atom         = "true" | "false" | "nil"
+identifier   = (IDENTIFIER "." ...)*
 function     = "fn" "(" ( IDENTIFIER "," ... )* ")" block
 array        = "[" (clause, "," ... )* | (clause ":" clause) "]"
 group        = "(" clause ")"
@@ -75,6 +78,7 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
 fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
     let li = get_curr(state)?;
     match li.token {
+        Token::Module => parse_module(state),
         Token::Print => parse_print(state),
         Token::Identifier => parse_reassignment(state),
         Token::Var => parse_declaration(state),
@@ -84,6 +88,15 @@ fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
         Token::LPointParen => parse_block(state),
         _ => parse_expr(state).map(Statement::Expr),
     }
+}
+
+fn parse_module(state: &mut ParseContext) -> Result<Statement, ParseError> {
+    consume_token(state, Token::Module)?;
+    let li = consume_token(state, Token::Identifier)?;
+    Ok(Statement::Module(ModuleNode {
+        name: IdentifierNode::one(li.span.string_from_source(state.input)),
+        body: parse_block_statement_list(state)?,
+    }))
 }
 
 fn parse_print(state: &mut ParseContext) -> Result<Statement, ParseError> {
@@ -131,6 +144,7 @@ fn parse_block(state: &mut ParseContext) -> Result<Statement, ParseError> {
 }
 
 fn parse_block_statement_list(state: &mut ParseContext) -> Result<StatementList, ParseError> {
+    // TODO: maybe use parse_enclosed_list
     consume_token(state, Token::LPointParen)?;
 
     let mut stmts = vec![];
@@ -160,8 +174,8 @@ fn parse_declaration(state: &mut ParseContext) -> Result<Statement, ParseError> 
     let id_item = consume_token(state, Token::Identifier)?;
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
-    let name = id_item.span.str_from_source(state.input);
-    Ok(Statement::Declare(name.to_string(), expr))
+    let name = id_item.span.string_from_source(state.input);
+    Ok(Statement::Declare(IdentifierNode::one(name), expr))
 }
 
 fn parse_reassignment(state: &mut ParseContext) -> Result<Statement, ParseError> {
@@ -176,8 +190,8 @@ fn parse_iden_reassignment(state: &mut ParseContext) -> Result<Statement, ParseE
     let id_item = consume_token(state, Token::Identifier)?;
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
-    let name = id_item.span.str_from_source(state.input);
-    Ok(Statement::ReassignIden(name.to_string(), expr))
+    let name = id_item.span.string_from_source(state.input);
+    Ok(Statement::ReassignIden(IdentifierNode::one(name), expr))
 }
 
 fn parse_index_reassignment_or_expr(state: &mut ParseContext) -> Result<Statement, ParseError> {
@@ -340,7 +354,7 @@ fn parse_call(state: &mut ParseContext) -> Result<Expression, ParseError> {
             let args =
                 parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
             return Ok(Expression::FnCall(FnCallNode {
-                name: name.to_string(),
+                iden: name.clone(),
                 args,
             }));
         }
@@ -377,20 +391,31 @@ fn parse_primary(state: &mut ParseContext) -> Result<Expression, ParseError> {
         Token::String => {
             next(Expression::Str(
                 // remove start '"' and end '"'
-                Span::new(li.span.start + 1, li.span.end - 1)
-                    .str_from_source(state.input)
-                    .to_string(),
+                Span::new(li.span.start + 1, li.span.end - 1).string_from_source(state.input),
             ))
         }
-        Token::Identifier => next(Expression::Identifier(
-            li.span.str_from_source(state.input).to_string(),
-        )),
+        Token::Identifier => parse_identifier(state),
         Token::Number => parse_number(state),
         Token::LSquareParen => parse_array(state),
         Token::LRoundParen => parse_group(state),
         Token::Fn => parse_function(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
+}
+
+fn parse_identifier(state: &mut ParseContext) -> Result<Expression, ParseError> {
+    let lex_items = parse_repeatd_with_separtor(
+        state,
+        Token::Dot,
+        |s| consume_token(s, Token::Identifier),
+        |t| t != Token::Identifier,
+    )?;
+    Ok(Expression::Identifier(IdentifierNode::new(
+        lex_items
+            .into_iter()
+            .map(|li| li.span.string_from_source(state.input))
+            .collect(),
+    )))
 }
 
 fn parse_group(state: &mut ParseContext) -> Result<Expression, ParseError> {
@@ -431,7 +456,7 @@ fn parse_function(state: &mut ParseContext) -> Result<Expression, ParseError> {
         get_identifier,
     )?
     .into_iter()
-    .map(|li| li.span.str_from_source(state.input).to_string())
+    .map(|li| li.span.string_from_source(state.input))
     .collect();
 
     state.is_in_fn = true;
@@ -453,6 +478,46 @@ fn parse_number(state: &mut ParseContext) -> Result<Expression, ParseError> {
 fn get_identifier(state: &mut ParseContext) -> Result<LexItem, ParseError> {
     let li = consume_token(state, Token::Identifier)?;
     Ok(li.to_owned())
+}
+
+fn parse_repeatd_with_separtor<F, T>(
+    state: &mut ParseContext,
+    separtor: Token,
+    lower_fn: F,
+    break_check_fn: impl Fn(Token) -> bool,
+) -> Result<Vec<T>, ParseError>
+where
+    F: Fn(&mut ParseContext) -> Result<T, ParseError>,
+{
+    let mut result = Vec::new();
+    let mut has_consumed_separator = true;
+
+    while let Some(li) = state.items.get(state.curr_pos) {
+        if break_check_fn(li.token) {
+            break;
+        }
+
+        if !has_consumed_separator {
+            return Err(ParseError::UnexpectedToken(
+                li.token,
+                li.span,
+                Some(separtor),
+            ));
+        }
+
+        let expr = lower_fn(state)?;
+        result.push(expr);
+        has_consumed_separator = false;
+
+        if let Some(next) = state.items.get(state.curr_pos) {
+            if next.token == separtor {
+                state.curr_pos += 1;
+                has_consumed_separator = true;
+            }
+        };
+    }
+
+    Ok(result)
 }
 
 fn parse_comma_list<F, T>(
