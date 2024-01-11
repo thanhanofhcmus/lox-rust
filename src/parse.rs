@@ -145,7 +145,7 @@ fn parse_block(state: &mut ParseContext) -> Result<Statement, ParseError> {
 
 fn parse_block_statement_list(state: &mut ParseContext) -> Result<StatementList, ParseError> {
     consume_token(state, Token::LPointParen)?;
-    let stmts = parse_repeatd_with_separtor(state, Token::Semicolon, parse_stmt, |t| {
+    let stmts = parse_repeated_with_separator(state, Token::Semicolon, parse_stmt, |t| {
         t == Token::RPointParen
     })?;
     consume_token(state, Token::RPointParen)?;
@@ -387,7 +387,7 @@ fn parse_primary(state: &mut ParseContext) -> Result<Expression, ParseError> {
 }
 
 fn parse_identifier(state: &mut ParseContext) -> Result<Expression, ParseError> {
-    let lex_items = parse_repeatd_with_separtor(
+    let lex_items = parse_repeated_with_separator(
         state,
         Token::Dot,
         |s| consume_token(s, Token::Identifier),
@@ -463,9 +463,9 @@ fn get_identifier(state: &mut ParseContext) -> Result<LexItem, ParseError> {
     Ok(li.to_owned())
 }
 
-fn parse_repeatd_with_separtor<F, T>(
+fn parse_repeated_with_separator<F, T>(
     state: &mut ParseContext,
-    separtor: Token,
+    separator: Token,
     lower_fn: F,
     break_check_fn: impl Fn(Token) -> bool,
 ) -> Result<Vec<T>, ParseError>
@@ -484,7 +484,7 @@ where
             return Err(ParseError::UnexpectedToken(
                 li.token,
                 li.span,
-                Some(separtor),
+                Some(separator),
             ));
         }
 
@@ -493,7 +493,7 @@ where
         has_consumed_separator = false;
 
         if let Some(next) = state.items.get(state.curr_pos) {
-            if next.token == separtor {
+            if next.token == separator {
                 state.curr_pos += 1;
                 has_consumed_separator = true;
             }
@@ -513,7 +513,8 @@ where
     F: Fn(&mut ParseContext) -> Result<T, ParseError>,
 {
     consume_token(state, left_paren)?;
-    let result = parse_repeatd_with_separtor(state, Token::Comma, lower_fn, |t| t == right_paren)?;
+    let result =
+        parse_repeated_with_separator(state, Token::Comma, lower_fn, |t| t == right_paren)?;
     consume_token(state, right_paren)?;
     Ok(result)
 }

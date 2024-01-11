@@ -43,7 +43,7 @@ pub enum Error {
     WrongNumberOfArgument(String, usize, usize),
 
     #[error("Value `{0}` is not of the type array of map, hence indexable")]
-    ValueUnIndexabble(Value),
+    ValueUnIndexable(Value),
 
     #[error("Value `{0}` is can not be used as key for array or map")]
     #[allow(dead_code)]
@@ -52,8 +52,8 @@ pub enum Error {
     #[error("Value `{0}` is not of the type non-negative integer")]
     ValueMustBeUsize(Value),
 
-    #[error("Expect expresstion of type `{0}`, have type `{1:?}`")]
-    InvalidExpresstionType(String, Expression),
+    #[error("Expect expression of type `{0}`, have type `{1:?}`")]
+    InvalidExpressionType(String, Expression),
 
     #[error("Array of name `{0}` has length `{1}` but receive index `{2}`")]
     ArrayOutOfBound(String, usize, usize),
@@ -131,7 +131,7 @@ impl<'cur, 'pa> Context<'cur, 'pa> {
 
     pub fn with_parent(parent: &'pa Context<'cur, 'pa>) -> Self {
         if parent.current_stack + 1 > STACK_LIMIT {
-            panic!("lox stack limit execeed");
+            panic!("lox stack limit exceeded");
         }
         Self {
             variables: HashMap::new(),
@@ -206,9 +206,9 @@ fn interpret_stmt(ctx: &mut Context, stmt: &Statement) -> Result<StmtReturn, Err
 }
 
 fn interpret_module_stmt(ctx: &mut Context, node: &ModuleNode) -> Result<StmtReturn, Error> {
-    let curent_module = ctx.swap_current_module(node.name.clone());
+    let current_module = ctx.swap_current_module(node.name.clone());
     let res = interpret_stmt_list(ctx, &node.body);
-    let _ = ctx.swap_current_module(curent_module);
+    let _ = ctx.swap_current_module(current_module);
     res
 }
 
@@ -283,8 +283,8 @@ fn interpret_reassign_index_stmt(
     let value = interpret_expr(ctx, &node.expr)?;
 
     let Expression::Identifier(ref indexer_id) = node.indexer else {
-        // TODO: more okey error
-        return Err(Error::InvalidExpresstionType(
+        // TODO: more concrete error
+        return Err(Error::InvalidExpressionType(
             "Identifier".to_string(),
             node.indexer.to_owned(),
         ));
@@ -293,7 +293,7 @@ fn interpret_reassign_index_stmt(
         return Err(Error::NotFoundVariable(indexer_id.join_dot()));
     };
     let Value::Array(ref mut arr) = indexer_arr else {
-        return Err(Error::ValueUnIndexabble(indexer_arr.clone()));
+        return Err(Error::ValueUnIndexable(indexer_arr.clone()));
     };
 
     if arr.len() < idx {
@@ -465,7 +465,7 @@ fn interpret_when(ctx: &Context, cases: &[CaseNode]) -> Result<Value, Error> {
 
 fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Bool(match lhs {
-        // TODO: conpare function pointer
+        // TODO: compare function pointer
         Value::Function(_, _) => false,
         Value::Nil => false,
         Value::Array(_) => false,
@@ -571,7 +571,7 @@ fn is_usize(value: &Value) -> Result<usize, Error> {
     };
     let idx = *idx;
 
-    // check if idx is a interger
+    // check if idx is a integer
     if idx < 0.0 || idx.fract() != 0.0 {
         return Err(Error::ValueMustBeUsize(value.clone()));
     }
@@ -584,7 +584,7 @@ fn prepare_indexee(indexee: &Value) -> Result<usize, Error> {
 
 fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
     let Value::Array(arr) = indexer else {
-        return Err(Error::ValueUnIndexabble(indexer.clone()));
+        return Err(Error::ValueUnIndexable(indexer.clone()));
     };
     let idx = prepare_indexee(indexee)?;
     Ok(arr.get(idx).map(Value::to_owned).unwrap_or(Value::Nil))
