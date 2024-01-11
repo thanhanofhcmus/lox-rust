@@ -35,7 +35,7 @@ index        = primary ("[" clause "]")?
 primary      = STRING | NUMBER | identifier | atom | group | array | function
 atom         = "true" | "false" | "nil"
 identifier   = (IDENTIFIER "." ...)*
-function     = "fn" "(" ( IDENTIFIER "," ... )* ")" block
+function     = "fn" "(" ( IDENTIFIER "," ... )* ")" (block | expr)
 array        = "[" (clause, "," ... )* | (clause ":" clause) "]"
 group        = "(" clause ")"
 */
@@ -442,9 +442,16 @@ fn parse_function(state: &mut ParseContext) -> Result<Expression, ParseError> {
     .map(|li| li.span.string_from_source(state.input))
     .collect();
 
-    state.is_in_fn = true;
-    let body = parse_block_statement_list(state)?;
-    state.is_in_fn = false;
+    let body;
+
+    if peek(state, &[Token::LPointParen]) {
+        state.is_in_fn = true;
+        body = parse_block_statement_list(state)?;
+        state.is_in_fn = false;
+    } else {
+        let expr = parse_expr(state)?;
+        body = vec![Statement::Return(expr)];
+    }
 
     Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
 }
