@@ -58,10 +58,6 @@ impl IdentifierNode {
         }
     }
 
-    pub fn one(id: String) -> Self {
-        Self::Simple(id)
-    }
-
     pub fn join_dot(&self) -> String {
         match self {
             IdentifierNode::Simple(s) => s.to_owned(),

@@ -94,7 +94,7 @@ fn parse_module(state: &mut ParseContext) -> Result<Statement, ParseError> {
     consume_token(state, Token::Module)?;
     let li = consume_token(state, Token::Identifier)?;
     Ok(Statement::Module(ModuleNode {
-        name: IdentifierNode::one(li.span.string_from_source(state.input)),
+        name: IdentifierNode::Simple(li.span.string_from_source(state.input)),
         body: parse_block_statement_list(state)?,
     }))
 }
@@ -158,7 +158,7 @@ fn parse_declaration(state: &mut ParseContext) -> Result<Statement, ParseError> 
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
     let name = id_item.span.string_from_source(state.input);
-    Ok(Statement::Declare(IdentifierNode::one(name), expr))
+    Ok(Statement::Declare(IdentifierNode::Simple(name), expr))
 }
 
 fn parse_reassignment(state: &mut ParseContext) -> Result<Statement, ParseError> {
@@ -174,7 +174,7 @@ fn parse_iden_reassignment(state: &mut ParseContext) -> Result<Statement, ParseE
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
     let name = id_item.span.string_from_source(state.input);
-    Ok(Statement::ReassignIden(IdentifierNode::one(name), expr))
+    Ok(Statement::ReassignIden(IdentifierNode::Simple(name), expr))
 }
 
 fn parse_index_reassignment_or_expr(state: &mut ParseContext) -> Result<Statement, ParseError> {

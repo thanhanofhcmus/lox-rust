@@ -123,7 +123,7 @@ impl<'cur, 'pa> Context<'cur, 'pa> {
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
-            current_module: IdentifierNode::one(CURRENT_MODULE_NAME.to_string()),
+            current_module: IdentifierNode::Simple(CURRENT_MODULE_NAME.to_string()),
             parent: None,
             current_stack: 0,
         }
@@ -135,7 +135,7 @@ impl<'cur, 'pa> Context<'cur, 'pa> {
         }
         Self {
             variables: HashMap::new(),
-            current_module: IdentifierNode::one(CURRENT_MODULE_NAME.to_string()),
+            current_module: IdentifierNode::Simple(CURRENT_MODULE_NAME.to_string()),
             parent: Some(parent),
             current_stack: parent.current_stack + 1,
         }
@@ -328,13 +328,13 @@ fn interpret_while_stmt(
 
 fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
     match expr {
-        Expression::FnCall(node) => interpret_function_call(ctx, node),
+        Expression::FnCall(node) => interpret_fn_call_expr(ctx, node),
         Expression::FnDecl(node) => Ok(Value::Function(
             node.arg_names.to_owned(),
             node.body.to_owned(),
         )),
-        Expression::Index(node) => interpret_index(ctx, node),
-        Expression::When(nodes) => interpret_when(ctx, nodes),
+        Expression::Index(node) => interpret_index_expr(ctx, node),
+        Expression::When(nodes) => interpret_when_expr(ctx, nodes),
         Expression::Ternary(node) => interpret_ternary_expr(ctx, node),
         Expression::Identifier(node) => Ok(get_value_owned(ctx, node)),
         Expression::Nil => Ok(Value::Nil),
@@ -349,12 +349,8 @@ fn interpret_expr(ctx: &Context, expr: &Expression) -> Result<Value, Error> {
 }
 
 fn interpret_ternary_expr(ctx: &Context, node: &TernaryExprNode) -> Result<Value, Error> {
-    let cond_value = interpret_expr(ctx, &node.cond)?;
-    let Value::Bool(cond_bin) = cond_value else {
-        return Err(Error::CondNotBool(cond_value));
-    };
-
-    if cond_bin {
+    let cond = is_truthy(ctx, &node.cond)?;
+    if cond {
         interpret_expr(ctx, &node.true_expr)
     } else {
         interpret_expr(ctx, &node.false_expr)
@@ -381,13 +377,13 @@ fn make_array_repeat(ctx: &Context, node: &ArrayRepeatNode) -> Result<Value, Err
     Ok(Value::Array(result))
 }
 
-fn interpret_index(ctx: &Context, node: &IndexExprNode) -> Result<Value, Error> {
+fn interpret_index_expr(ctx: &Context, node: &IndexExprNode) -> Result<Value, Error> {
     let indexer_val = interpret_expr(ctx, &node.indexer)?;
     let indexee_val = interpret_expr(ctx, &node.indexee)?;
     index(&indexer_val, &indexee_val)
 }
 
-fn interpret_function_call(
+fn interpret_fn_call_expr(
     ctx: &Context,
     FnCallNode { iden, args }: &FnCallNode,
 ) -> Result<Value, Error> {
@@ -409,7 +405,7 @@ fn interpret_function_call(
     let mut local_ctx = Context::with_parent(ctx);
     for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
         let value = interpret_expr(&local_ctx, arg_expr)?;
-        local_ctx.insert(IdentifierNode::one(arg_name.clone()), value);
+        local_ctx.insert(IdentifierNode::Simple(arg_name.clone()), value);
     }
 
     interpret_stmt_list(&mut local_ctx, body).map(|r| r.value.unwrap_or(Value::Nil))
@@ -453,7 +449,7 @@ fn interpret_binary_op(
     }
 }
 
-fn interpret_when(ctx: &Context, cases: &[CaseNode]) -> Result<Value, Error> {
+fn interpret_when_expr(ctx: &Context, cases: &[CaseNode]) -> Result<Value, Error> {
     for CaseNode { cond, expr } in cases {
         let bin = is_truthy(ctx, cond)?;
         if bin {
