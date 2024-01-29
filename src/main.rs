@@ -5,7 +5,9 @@ mod parse;
 mod parse_error;
 mod span;
 mod token;
+mod vm;
 
+use crate::ast::Statement;
 use log::{debug, error, info, trace};
 
 type DynResult = Result<(), Box<dyn std::error::Error>>;
@@ -23,6 +25,7 @@ fn main() -> DynResult {
     match input.as_str() {
         "-i" => repl(),
         "-f" => read_from_file(args.get(2).expect("must provide file name")),
+        "-vm" => run_vm(),
         _ => run_stmt(input, &mut interpreter::Context::new(), true),
     }
 }
@@ -44,13 +47,29 @@ fn repl() -> DynResult {
     }
 }
 
+fn run_vm() -> DynResult {
+    let mut vm = vm::VM::new();
+
+    loop {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+
+        if line == "quit" {
+            return Ok(());
+        }
+
+        let stmt = parse(&line)?;
+        vm::compile_and_run(&mut vm, &stmt)?;
+    }
+}
+
 fn read_from_file(file_path: &str) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
     run_stmt(&contents, &mut interpreter::Context::new(), false)
 }
 
-fn run_stmt(input: &str, env: &mut interpreter::Context, print_result: bool) -> DynResult {
+fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
     let tokens = match lex::lex(input) {
         Ok(list) => list,
         Err(err) => {
@@ -78,7 +97,12 @@ fn run_stmt(input: &str, env: &mut interpreter::Context, print_result: bool) -> 
     };
     trace!("{:?}", &expr);
 
-    let calc_result = interpreter::interpret(env, &expr);
+    Ok(expr)
+}
+
+fn run_stmt(input: &str, env: &mut interpreter::Context, print_result: bool) -> DynResult {
+    let stmt = parse(input)?;
+    let calc_result = interpreter::interpret(env, &stmt);
 
     match calc_result {
         Ok(value) => {
