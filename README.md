@@ -6,7 +6,7 @@ Original tutorial in Java and C [link](https://craftinginterpreters.com/)
 
 ## Features
 
-```
+```bash
 # `hash` for comment
 
 # create a new variable with `var`
