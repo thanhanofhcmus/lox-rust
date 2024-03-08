@@ -33,6 +33,7 @@ pub enum Error {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum Instruction {
     Return,
     Constant,
