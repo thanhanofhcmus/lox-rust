@@ -2,6 +2,8 @@
 
 A implementation of the lox programming language in `rust` with author flavor on it.
 
+Original tutorial in Java and C [link](https://craftinginterpreters.com/)
+
 ## Features
 
 ```
