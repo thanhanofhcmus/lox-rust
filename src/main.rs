@@ -70,24 +70,10 @@ fn read_from_file(file_path: &str) -> DynResult {
 }
 
 fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
-    let tokens = match lex::lex(input) {
-        Ok(list) => list,
-        Err(err) => {
-            error!("Lex error: {}", err);
-            return Err(Box::new(err));
-        }
-    };
+    let mut lexer = lex::Lexer::new(input);
+    let mut parser = parse::Parser::new(input, lexer);
 
-    for token in &tokens {
-        debug!(
-            "{} - {:?}: {:?}",
-            token.span,
-            token.token,
-            token.span.str_from_source(input),
-        );
-    }
-
-    let expr = match parse::parse(input, &tokens) {
+    let expr = match parser.parse() {
         Ok(list) => list,
         Err(err) => {
             error!("Parse error: {}", err);

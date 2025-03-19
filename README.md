@@ -93,6 +93,8 @@ var print_times_two = fn(n) = { print(n * 2) }
 ```
 
 ## Todos:
+- Implement on-deman lexer instead of lex everything at once
+- Implement Pratt-Parsing to reduce nested recursive-decent
 - Make last expression in a block return the value of the block (like rust)
 - Implement `map` data structure and
 - Maybe implement node-id
