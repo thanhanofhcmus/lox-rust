@@ -91,8 +91,3 @@ var add = fn(a, b) { return a + b }
 var print_times_two = fn(n) = { print(n * 2) }
 
 ```
-
-## Todos:
-- Make last expression in a block return the value of the block (like rust)
-- Implement `map` data structure and
-- Maybe implement node-id
