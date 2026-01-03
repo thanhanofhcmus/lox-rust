@@ -40,22 +40,22 @@ array        = "[" (clause, "," ... )* | (clause ":" clause) "]"
 group        = "(" clause ")"
 */
 
-struct ParseContext<'a> {
-    input: &'a str,
-    curr_pos: usize,
+struct ParseContext {
+    // input: &'a str,
+    // curr_pos: usize,
     is_in_fn: bool,
     // TODO: stub to reduce error message, remove this
-    items: &'a [LexItem],
+    // items: &'a [LexItem],
 }
 
-impl<'a> ParseContext<'a> {
-    pub fn new(input: &'a str) -> Self {
+impl ParseContext {
+    pub fn new() -> Self {
         ParseContext {
-            input,
-            curr_pos: 0,
+            // input,
+            // curr_pos: 0,
             is_in_fn: false,
             // TODO: remove this
-            items: &[],
+            // items: &[],
         }
     }
 }
@@ -63,7 +63,7 @@ impl<'a> ParseContext<'a> {
 pub struct Parser<'a> {
     input: &'a str,
     lexer: Lexer<'a>,
-    context: ParseContext<'a>,
+    context: ParseContext,
 }
 
 impl<'a> Parser<'a> {
@@ -71,7 +71,7 @@ impl<'a> Parser<'a> {
         Parser {
             input,
             lexer,
-            context: ParseContext::new(input),
+            context: ParseContext::new(),
         }
     }
 
@@ -295,6 +295,7 @@ impl<'a> Parser<'a> {
     {
         let mut lhs = lower_fn(self)?;
 
+        // TODO: this logic is shaky
         while let Some(op) = self.context.items.get(self.context.curr_pos) {
             if !match_tokens.contains(&op.token) {
                 break;
@@ -401,7 +402,7 @@ impl<'a> Parser<'a> {
         Ok(Expression::Identifier(IdentifierNode::new(
             lex_items
                 .into_iter()
-                .map(|li| li.span.string_from_source(self.context.input))
+                .map(|li| li.span.string_from_source(self.input))
                 .collect(),
         )))
     }
@@ -486,7 +487,8 @@ impl<'a> Parser<'a> {
         let mut result = Vec::new();
         let mut has_consumed_separator = true;
 
-        while let Some(li) = self.context.items.get(self.context.curr_pos) {
+        // TODO: handle error case
+        while let Ok(li) = self.get_curr() {
             if break_check_fn(li.token) {
                 break;
             }
@@ -503,11 +505,9 @@ impl<'a> Parser<'a> {
             result.push(expr);
             has_consumed_separator = false;
 
-            if let Some(next) = self.context.items.get(self.context.curr_pos) {
-                if next.token == separator {
-                    self.context.curr_pos += 1;
-                    has_consumed_separator = true;
-                }
+            if self.peek(&[separator]) {
+                self.lexer.next_token()?;
+                has_consumed_separator = true;
             };
         }
 
@@ -535,15 +535,18 @@ impl<'a> Parser<'a> {
         if li.token != token {
             return Err(ParseError::UnexpectedToken(li.token, li.span, Some(token)));
         }
-        self.context.curr_pos += 1;
         Ok(li)
     }
 
-    fn peek(&mut self, match_tokens: &'static [Token]) -> bool {
+    fn peek(&mut self, match_tokens: &'_ [Token]) -> bool {
+        // TODO: handle error
+        self.lexer.prepare_peek_one().unwrap();
         self.lexer.peek_one(match_tokens)
     }
 
-    fn peek_2_token(&mut self, match_tokens: &'static [Token]) -> bool {
+    fn peek_2_token(&mut self, match_tokens: &'_ [Token]) -> bool {
+        // TODO: handle error
+        self.lexer.preare_peek_two().unwrap();
         self.lexer.peek_two(match_tokens)
     }
 

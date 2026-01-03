@@ -59,13 +59,13 @@ impl<'a> Lexer<'a> {
         self.input
     }
 
-    pub fn peek_one(&self, match_tokens: &'static [Token]) -> bool {
+    pub fn peek_one(&self, match_tokens: &'_ [Token]) -> bool {
         self.next_one
             .map(|t| match_tokens.contains(&t.token))
             .unwrap_or(false)
     }
 
-    pub fn peek_two(&self, match_tokens: &'static [Token]) -> bool {
+    pub fn peek_two(&self, match_tokens: &'_ [Token]) -> bool {
         self.next_two
             .map(|t| match_tokens.contains(&t.token))
             .unwrap_or(false)

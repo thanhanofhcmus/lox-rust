@@ -15,8 +15,11 @@ pub fn run_instruction(vm: &mut VM) -> Result<(), Error> {
             }
             Constant => {
                 let next_ins = try_read_ins(vm, &mut ip)?;
-                let Instruction::Index(offset) =  next_ins else {
-                    return Err(Error::WrongInstruction(next_ins, Some(Instruction::Index(0))));
+                let Instruction::Index(offset) = next_ins else {
+                    return Err(Error::WrongInstruction(
+                        next_ins,
+                        Some(Instruction::Index(0)),
+                    ));
                 };
                 let v = read_const(vm, offset)?;
                 trace!("READ CONST: {:?}", v);
