@@ -39,7 +39,7 @@ fn repl() -> DynResult {
         let mut line = String::new();
         std::io::stdin().read_line(&mut line)?;
 
-        if line == "quit" {
+        if line.trim_end() == "quit" {
             return Ok(());
         }
 
@@ -54,7 +54,7 @@ fn run_vm() -> DynResult {
         let mut line = String::new();
         std::io::stdin().read_line(&mut line)?;
 
-        if line == "quit" {
+        if line.trim_end() == "quit" {
             return Ok(());
         }
 
