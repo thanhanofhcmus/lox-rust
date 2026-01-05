@@ -7,10 +7,11 @@ mod span;
 mod token;
 mod vm;
 
-use std::{cell::RefCell, io::Write, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::ast::Statement;
 use log::{debug, error, info, trace};
+use rustyline::{error::ReadlineError, DefaultEditor};
 
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -35,26 +36,26 @@ fn main() -> DynResult {
 fn repl() -> DynResult {
     info!("Running in REPL mode");
 
-    let stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
+    let mut rl = DefaultEditor::new()?;
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-
     let mut ctx = interpreter::Context::new(rc);
 
     loop {
-        stdout.write_all(b"> ")?;
-        stdout.flush().unwrap();
-
-        let mut line = String::new();
-        stdin.read_line(&mut line)?;
-
-        if line.trim_end() == "quit" {
-            return Ok(());
+        match rl.readline("> ") {
+            Ok(line) => {
+                rl.add_history_entry(&line)?;
+                run_stmt(line.trim_end(), &mut ctx, true).unwrap_or_else(|e| error!("{}", e));
+            }
+            Err(ReadlineError::Eof) => break,
+            Err(ReadlineError::Interrupted) => break,
+            Err(err) => {
+                return Err(Box::new(err));
+            }
         }
-
-        run_stmt(line.trim_end(), &mut ctx, true).unwrap_or_else(|e| error!("{}", e));
     }
+
+    Ok(())
 }
 
 fn run_vm() -> DynResult {
@@ -113,9 +114,8 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
 
 fn run_stmt(input: &str, ctx: &mut interpreter::Context, print_result: bool) -> DynResult {
     let stmt = parse(input)?;
-    let calc_result = interpreter::interpret(ctx, &stmt);
 
-    match calc_result {
+    match interpreter::interpret(ctx, &stmt) {
         Ok(value) => {
             if print_result {
                 info!("{:?}", value)
