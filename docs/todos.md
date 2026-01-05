@@ -3,6 +3,7 @@
 - More docs
 - More test, try fuzzing
 - Experimenting the byte code VM
+- Implement more string stuff, multi-line, escape sequence, formatted string
 - Add tree-sitter
 - Add LSP
 - Make last expression in a block return the value of the block (like rust)

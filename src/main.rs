@@ -7,6 +7,8 @@ mod span;
 mod token;
 mod vm;
 
+use std::{cell::RefCell, io::Write, rc::Rc};
+
 use crate::ast::Statement;
 use log::{debug, error, info, trace};
 
@@ -26,24 +28,32 @@ fn main() -> DynResult {
         "-i" => repl(),
         "-f" => read_from_file(args.get(2).expect("must provide file name")),
         "-vm" => run_vm(),
-        _ => run_stmt(input, &mut interpreter::Context::new(), true),
+        _ => panic!("expect a mode"),
     }
 }
 
 fn repl() -> DynResult {
     info!("Running in REPL mode");
 
-    let mut env = interpreter::Context::new();
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+
+    let rc = Rc::new(RefCell::new(std::io::stdout()));
+
+    let mut ctx = interpreter::Context::new(rc);
 
     loop {
+        stdout.write_all(b"> ")?;
+        stdout.flush().unwrap();
+
         let mut line = String::new();
-        std::io::stdin().read_line(&mut line)?;
+        stdin.read_line(&mut line)?;
 
         if line.trim_end() == "quit" {
             return Ok(());
         }
 
-        run_stmt(line.trim_end(), &mut env, true).unwrap_or_else(|e| error!("{}", e));
+        run_stmt(line.trim_end(), &mut ctx, true).unwrap_or_else(|e| error!("{}", e));
     }
 }
 
@@ -66,7 +76,8 @@ fn run_vm() -> DynResult {
 fn read_from_file(file_path: &str) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
-    run_stmt(&contents, &mut interpreter::Context::new(), false)
+    let rc = Rc::new(RefCell::new(std::io::stdout()));
+    run_stmt(&contents, &mut interpreter::Context::new(rc), false)
 }
 
 fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
@@ -100,9 +111,9 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
     Ok(expr)
 }
 
-fn run_stmt(input: &str, env: &mut interpreter::Context, print_result: bool) -> DynResult {
+fn run_stmt(input: &str, ctx: &mut interpreter::Context, print_result: bool) -> DynResult {
     let stmt = parse(input)?;
-    let calc_result = interpreter::interpret(env, &stmt);
+    let calc_result = interpreter::interpret(ctx, &stmt);
 
     match calc_result {
         Ok(value) => {

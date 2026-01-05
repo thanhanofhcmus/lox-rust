@@ -5,7 +5,9 @@ use crate::ast::{
 };
 use crate::token::Token;
 use derive_more::Display;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use thiserror::Error;
 
 const NUMBER_DELTA: f64 = 1e-10;
@@ -61,8 +63,11 @@ pub enum Error {
 
 #[derive(Display, Debug, Clone)]
 pub enum Value {
+    #[display(fmt = "nil")]
     Nil,
 
+    // use ":?" to print the string in quotes
+    #[display(fmt = "{:?}", _0)]
     Str(String),
 
     Number(f64),
@@ -117,15 +122,18 @@ pub struct Context<'cur, 'pa: 'cur> {
     parent: Option<&'cur Context<'pa, 'pa>>,
     current_module: IdentifierNode,
     current_stack: usize,
+
+    print_writer: Rc<RefCell<dyn std::io::Write>>,
 }
 
 impl<'cur, 'pa> Context<'cur, 'pa> {
-    pub fn new() -> Self {
+    pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>) -> Self {
         Self {
             variables: HashMap::new(),
             current_module: IdentifierNode::Simple(CURRENT_MODULE_NAME.to_string()),
             parent: None,
             current_stack: 0,
+            print_writer,
         }
     }
 
@@ -138,6 +146,7 @@ impl<'cur, 'pa> Context<'cur, 'pa> {
             current_module: IdentifierNode::Simple(CURRENT_MODULE_NAME.to_string()),
             parent: Some(parent),
             current_stack: parent.current_stack + 1,
+            print_writer: Rc::clone(&parent.print_writer),
         }
     }
 
@@ -215,7 +224,9 @@ fn interpret_module_stmt(ctx: &mut Context, node: &ModuleNode) -> Result<StmtRet
 fn interpret_print_stmt(ctx: &mut Context, exprs: &[Expression]) -> Result<StmtReturn, Error> {
     for expr in exprs {
         let value = interpret_expr(ctx, expr)?;
-        print!("{} ", value);
+        let mut out = ctx.print_writer.borrow_mut();
+        // TODO: handle error here
+        write!(out, "{}", value).unwrap();
     }
     println!();
     Ok(StmtReturn::none())
