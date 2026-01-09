@@ -1,4 +1,5 @@
 mod ast;
+mod id;
 mod interpreter;
 mod lex;
 mod parse;

@@ -1,4 +1,7 @@
-use crate::token::Token;
+use crate::{
+    id::{Category, Id},
+    token::Token,
+};
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -44,9 +47,9 @@ pub struct IfStmtNode {
 }
 
 #[derive(Debug, Clone)]
-pub enum IdentifierNode {
-    Simple(String),
-    Compound(Vec<String>),
+pub struct IdentifierNode {
+    pub name: String,
+    pub category: Category,
 }
 
 impl IdentifierNode {
@@ -58,11 +61,8 @@ impl IdentifierNode {
         }
     }
 
-    pub fn join_dot(&self) -> String {
-        match self {
-            IdentifierNode::Simple(s) => s.to_owned(),
-            IdentifierNode::Compound(ss) => ss.join("."),
-        }
+    pub fn id(&self) -> Id {
+        Id::new(self.category, &self.name)
     }
 }
 
