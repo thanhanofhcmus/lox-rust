@@ -161,6 +161,7 @@ impl Scope {
 
 struct ModuleEnvironment {
     variables: HashMap<Id, Value>,
+    #[allow(unused)]
     id: Id,
 }
 
@@ -180,8 +181,6 @@ pub struct Interpreter {
     scopes: Vec<Scope>,
     modules: HashMap<Id, ModuleEnvironment>,
 
-    current_module_id: Id,
-
     print_writer: Rc<RefCell<dyn std::io::Write>>,
 }
 
@@ -196,7 +195,6 @@ impl Interpreter {
         Self {
             scopes,
             modules,
-            current_module_id,
 
             print_writer,
         }
@@ -211,13 +209,14 @@ impl Interpreter {
 
     fn push_scope(&mut self) {
         let new_scope_index = self.scopes.len();
-        // TODO: check for max scope
+        if new_scope_index > SCOPE_SIZE_LIMIT {
+            panic!("Scope overflow");
+        }
         self.scopes.push(Scope::new(new_scope_index));
     }
 
     fn pop_scope(&mut self) {
-        // TODO: check for min scope
-        self.scopes.pop();
+        self.scopes.pop().expect("Scope underflow");
     }
 
     fn get_current_scope(&self) -> &Scope {
@@ -232,22 +231,40 @@ impl Interpreter {
             .expect("There must be at least one scope")
     }
 
-    fn get_variable_current_scope(&self, id: Id) -> Option<&Value> {
-        self.get_current_scope().get_variable(id)
+    fn get_variable_current_scope(&self, node: &IdentifierNode) -> Option<&Value> {
+        self.get_current_scope().get_variable(node.id())
     }
 
-    fn get_variable_current_scope_mut(&mut self, id: Id) -> Option<&mut Value> {
-        self.get_current_scope_mut().get_variable_mut(id)
+    fn get_variable_current_scope_mut(&mut self, node: &IdentifierNode) -> Option<&mut Value> {
+        self.get_current_scope_mut().get_variable_mut(node.id())
     }
 
-    fn get_varible_all_scope(&self, _id: Id) -> Option<&Value> {
-        // TODO: get from the current scope first
-        // check if it is coming from a parent scope or in parent module
-        unimplemented!()
+    fn get_varible_all_scope(&self, node: &IdentifierNode) -> Option<&Value> {
+        // check scopes/stacks
+        let id = node.id();
+        if let Some(value) = self
+            .get_current_scope()
+            .get_variable_recursive(id, &self.scopes)
+        {
+            return Some(value);
+        }
+        // For now, we expect a variable from another module is in the form
+        // module_name.variable_name (1 dot, 2 parts)
+        let module_id = Id::new(Category::Module, &node.prefixes[0]);
+        let Some(module) = self.modules.get(&module_id) else {
+            return None;
+        };
+
+        module.variables.get(&id)
     }
 
-    fn insert_variable_current_scope(&mut self, id: Id, value: Value) -> Option<Value> {
-        self.get_current_scope_mut().insert_variable(id, value)
+    fn insert_variable_current_scope(
+        &mut self,
+        node: &IdentifierNode,
+        value: Value,
+    ) -> Option<Value> {
+        self.get_current_scope_mut()
+            .insert_variable(node.id(), value)
     }
 
     // other functions
@@ -324,11 +341,11 @@ impl Interpreter {
         iden: &IdentifierNode,
         expr: &Expression,
     ) -> Result<StmtReturn, Error> {
-        if self.get_variable_current_scope(iden.id()).is_some() {
+        if self.get_variable_current_scope(iden).is_some() {
             return Err(Error::ReDeclareVariable(iden.join_dot()));
         }
         let value = self.interpret_expr(expr)?;
-        self.insert_variable_current_scope(iden.id(), value);
+        self.insert_variable_current_scope(iden, value);
         Ok(StmtReturn::none())
     }
 
@@ -337,17 +354,14 @@ impl Interpreter {
         iden: &IdentifierNode,
         expr: &Expression,
     ) -> Result<StmtReturn, Error> {
-        let id = iden.id();
-        {
-            if self.get_variable_current_scope(id).is_none() {
-                return match self.get_varible_all_scope(id) {
-                    Some(_) => Err(Error::VariableReadOnly(iden.join_dot())),
-                    None => Err(Error::NotFoundVariable(iden.join_dot())),
-                };
-            }
+        if self.get_variable_current_scope(iden).is_none() {
+            return match self.get_varible_all_scope(iden) {
+                Some(_) => Err(Error::VariableReadOnly(iden.join_dot())),
+                None => Err(Error::NotFoundVariable(iden.join_dot())),
+            };
         }
         let value = self.interpret_expr(expr)?;
-        self.get_current_scope_mut().insert_variable(id, value);
+        self.insert_variable_current_scope(iden, value);
         Ok(StmtReturn::none())
     }
 
@@ -367,7 +381,7 @@ impl Interpreter {
                 node.indexer.to_owned(),
             ));
         };
-        let Some(indexer_arr) = self.get_variable_current_scope_mut(indexer_id.id()) else {
+        let Some(indexer_arr) = self.get_variable_current_scope_mut(indexer_id) else {
             return Err(Error::NotFoundVariable(indexer_id.join_dot()));
         };
         let Value::Array(ref mut arr) = indexer_arr else {
@@ -414,7 +428,7 @@ impl Interpreter {
             Expression::Index(node) => self.interpret_index_expr(node),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Ternary(node) => self.interpret_ternary_expr(node),
-            Expression::Identifier(node) => match self.get_variable_current_scope(node.id()) {
+            Expression::Identifier(node) => match self.get_variable_current_scope(node) {
                 Some(value) => Ok(value.to_owned()),
                 None => Ok(Value::Nil),
             },
@@ -468,7 +482,7 @@ impl Interpreter {
         &mut self,
         FnCallNode { iden, args }: &FnCallNode,
     ) -> Result<Value, Error> {
-        let Some(fn_value) = self.get_varible_all_scope(iden.id()) else {
+        let Some(fn_value) = self.get_varible_all_scope(iden) else {
             return Err(Error::NotFoundVariable(iden.join_dot()));
         };
         let Value::Function(arg_names, body) = fn_value else {
@@ -492,7 +506,10 @@ impl Interpreter {
         self.push_scope();
         for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
             let value = self.interpret_expr(arg_expr)?;
-            self.insert_variable_current_scope(Id::new(Category::Value, arg_name), value);
+            self.insert_variable_current_scope(
+                &IdentifierNode::new_from_name(arg_name.clone(), Category::Value),
+                value,
+            );
         }
         let result = self
             .interpret_stmt_list(&body)
