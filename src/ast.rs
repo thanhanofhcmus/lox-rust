@@ -49,7 +49,7 @@ pub struct IfStmtNode {
 #[derive(Debug, Clone)]
 pub struct IdentifierNode {
     pub name: String,
-    pub prefix: Vec<String>,
+    pub prefixes: Vec<String>,
     pub category: Category,
 }
 
@@ -57,17 +57,28 @@ impl IdentifierNode {
     pub fn new_from_name(name: String, category: Category) -> Self {
         Self {
             name,
-            prefix: vec![],
+            prefixes: vec![],
             category,
         }
     }
 
-    pub fn new_from_vec(parts: Vec<String>, category: Category) -> Self {
-        unimplemented!()
+    pub fn new_from_vec(mut parts: Vec<String>, category: Category) -> Self {
+        let name = parts.pop().expect("must have at least one part for name");
+        Self {
+            name,
+            prefixes: parts,
+            category,
+        }
     }
 
+    // TODO: move to use span
     pub fn join_dot(&self) -> String {
-        unimplemented!()
+        self.prefixes
+            .iter()
+            .map(|s| s.clone())
+            .chain(std::iter::once(self.name.clone()))
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     pub fn id(&self) -> Id {
