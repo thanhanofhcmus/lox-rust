@@ -115,12 +115,12 @@ impl From<StmtReturn> for Option<Value> {
     }
 }
 
-struct StackEnvironment {
+struct Scope {
     variables: HashMap<Id, Value>,
     index: usize,
 }
 
-impl StackEnvironment {
+impl Scope {
     fn new(index: usize) -> Self {
         Self {
             variables: HashMap::new(),
@@ -136,28 +136,21 @@ impl StackEnvironment {
         self.variables.get_mut(&id)
     }
 
-    fn get_variable_recursive<'a>(
-        &'a self,
-        id: Id,
-        stacks: &'a Vec<StackEnvironment>,
-    ) -> Option<&'a Value> {
+    fn get_variable_recursive<'a>(&'a self, id: Id, scopes: &'a Vec<Scope>) -> Option<&'a Value> {
         if let Some(value) = self.variables.get(&id) {
             return Some(value);
         }
-        if let Some(parent_stack) = self.get_parent_stack(stacks) {
-            return parent_stack.get_variable_recursive(id, stacks);
+        if let Some(parent_scope) = self.get_parent_scope(scopes) {
+            return parent_scope.get_variable_recursive(id, scopes);
         }
         None
     }
 
-    fn get_parent_stack<'a>(
-        &self,
-        stacks: &'a Vec<StackEnvironment>,
-    ) -> Option<&'a StackEnvironment> {
+    fn get_parent_scope<'a>(&self, scopes: &'a Vec<Scope>) -> Option<&'a Scope> {
         if self.index == 0 {
             None
         } else {
-            Some(&stacks[self.index - 1])
+            Some(&scopes[self.index - 1])
         }
     }
 
@@ -181,10 +174,10 @@ impl ModuleEnvironment {
 }
 
 const CURRENT_MODULE_NAME: &str = "__current__";
-const STACK_LIMIT: usize = 20;
+const SCOPE_SIZE_LIMIT: usize = 20;
 
 pub struct Interpreter {
-    stacks: Vec<StackEnvironment>,
+    scopes: Vec<Scope>,
     modules: HashMap<Id, ModuleEnvironment>,
 
     current_module_id: Id,
@@ -194,15 +187,14 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>) -> Self {
-        let current_stack_index = 0;
         let current_module_id = Id::new(Category::Module, CURRENT_MODULE_NAME);
 
-        let stacks = vec![StackEnvironment::new(current_stack_index)];
+        let scopes = vec![Scope::new(0)];
         let mut modules = HashMap::new();
         modules.insert(current_module_id, ModuleEnvironment::new(current_module_id));
 
         Self {
-            stacks,
+            scopes,
             modules,
             current_module_id,
 
@@ -217,35 +209,35 @@ impl Interpreter {
 
     // other functions
 
-    fn push_stack(&mut self) {
-        let new_stack_index = self.stacks.len();
-        // TODO: check for max stack
-        self.stacks.push(StackEnvironment::new(new_stack_index));
+    fn push_scope(&mut self) {
+        let new_scope_index = self.scopes.len();
+        // TODO: check for max scope
+        self.scopes.push(Scope::new(new_scope_index));
     }
 
-    fn pop_stack(&mut self) {
-        // TODO: check for min stack
-        self.stacks.pop();
+    fn pop_scope(&mut self) {
+        // TODO: check for min scope
+        self.scopes.pop();
     }
 
-    fn get_stack(&self) -> &StackEnvironment {
-        self.stacks
+    fn get_current_scope(&self) -> &Scope {
+        self.scopes
             .last()
-            .expect("stacks must have at least one block")
+            .expect("There must be at least one scope")
     }
 
-    fn get_stack_mut(&mut self) -> &mut StackEnvironment {
-        self.stacks
+    fn get_current_scope_mut(&mut self) -> &mut Scope {
+        self.scopes
             .last_mut()
-            .expect("stacks must have at least one block")
+            .expect("There must be at least one scope")
     }
 
     fn get_variable_current_scope(&self, id: Id) -> Option<&Value> {
-        self.get_stack().get_variable(id)
+        self.get_current_scope().get_variable(id)
     }
 
     fn get_variable_current_scope_mut(&mut self, id: Id) -> Option<&mut Value> {
-        self.get_stack_mut().get_variable_mut(id)
+        self.get_current_scope_mut().get_variable_mut(id)
     }
 
     fn get_varible_all_scope(&self, _id: Id) -> Option<&Value> {
@@ -255,10 +247,8 @@ impl Interpreter {
     }
 
     fn insert_variable_current_scope(&mut self, id: Id, value: Value) -> Option<Value> {
-        self.get_stack_mut().insert_variable(id, value)
+        self.get_current_scope_mut().insert_variable(id, value)
     }
-
-    // TODO insert values
 
     // other functions
 
@@ -277,9 +267,9 @@ impl Interpreter {
             Statement::While(node) => self.interpret_while_stmt(node),
             Statement::If(node) => self.interpret_if_stmt(node),
             Statement::Block(stmts) => {
-                self.push_stack();
+                self.push_scope();
                 let res = self.interpret_stmt_list(stmts);
-                self.pop_stack();
+                self.pop_scope();
                 res
             }
             Statement::Global(stmts) => self.interpret_stmt_list(stmts),
@@ -349,16 +339,15 @@ impl Interpreter {
     ) -> Result<StmtReturn, Error> {
         let id = iden.id();
         {
-            let current_stack = self.get_stack();
-            if current_stack.get_variable(id).is_none() {
-                return match current_stack.get_variable_recursive(id, &self.stacks) {
+            if self.get_variable_current_scope(id).is_none() {
+                return match self.get_varible_all_scope(id) {
                     Some(_) => Err(Error::VariableReadOnly(iden.join_dot())),
                     None => Err(Error::NotFoundVariable(iden.join_dot())),
                 };
             }
         }
         let value = self.interpret_expr(expr)?;
-        self.get_stack_mut().insert_variable(id, value);
+        self.get_current_scope_mut().insert_variable(id, value);
         Ok(StmtReturn::none())
     }
 
@@ -500,7 +489,7 @@ impl Interpreter {
         // create a new stack for the function call
         // currently, later args can reference sonner args
         // TODO: make this go away
-        self.push_stack();
+        self.push_scope();
         for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
             let value = self.interpret_expr(arg_expr)?;
             self.insert_variable_current_scope(Id::new(Category::Value, arg_name), value);
@@ -508,7 +497,7 @@ impl Interpreter {
         let result = self
             .interpret_stmt_list(&body)
             .map(|r| r.value.unwrap_or(Value::Nil));
-        self.pop_stack();
+        self.pop_scope();
 
         result
     }
