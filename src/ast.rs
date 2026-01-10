@@ -71,6 +71,10 @@ impl IdentifierNode {
         }
     }
 
+    pub fn is_simple(&self) -> bool {
+        self.prefixes.is_empty()
+    }
+
     // TODO: move to use span
     pub fn join_dot(&self) -> String {
         self.prefixes

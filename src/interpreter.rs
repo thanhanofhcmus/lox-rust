@@ -5,9 +5,11 @@ use crate::ast::{
 };
 use crate::id::{Category, Id};
 use crate::token::Token;
+use crate::{lex, parse, parse_error};
 use derive_more::Display;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::Path;
 use std::rc::Rc;
 use thiserror::Error;
 
@@ -34,7 +36,7 @@ pub enum Error {
     MismatchType(Value, Value),
 
     #[error("Condition evaluated to `{0}` which is not a boolean value")]
-    CondNotBool(Value),
+    ConditionNotBool(Value),
 
     #[error("Divide by 0")]
     DivideByZero,
@@ -60,6 +62,18 @@ pub enum Error {
 
     #[error("Array of name `{0}` has length `{1}` but receive index `{2}`")]
     ArrayOutOfBound(String, usize, usize),
+
+    #[error("Module `{0}` cannot be found in path `{1}`")]
+    ModuleNotFoundInPath(String, String),
+
+    #[error("Reading module `{0}` in path `{1}` failed with error {2}")]
+    ReadModuleFailed(String, String, std::io::Error),
+
+    #[error("Parse module `{0}` in path `{1}` failed with error {2}")]
+    ParseModuleFailed(String, String, parse_error::ParseError),
+
+    #[error("Interpret module `{0}` in path `{1}` failed with error {2}")]
+    InterpretModuleFailed(String, String, Box<Error>),
 }
 
 #[derive(Display, Debug, Clone)]
@@ -181,6 +195,8 @@ pub struct Interpreter {
     scopes: Vec<Scope>,
     modules: HashMap<Id, ModuleEnvironment>,
 
+    current_module_id: Id,
+
     print_writer: Rc<RefCell<dyn std::io::Write>>,
 }
 
@@ -196,6 +212,8 @@ impl Interpreter {
             scopes,
             modules,
 
+            current_module_id,
+
             print_writer,
         }
     }
@@ -206,6 +224,21 @@ impl Interpreter {
     }
 
     // other functions
+
+    fn init_module(&mut self, id: Id) {
+        self.current_module_id = id;
+        // if we were to allow import in any places, we need to stash the stack
+        // of the current module and restore it later
+    }
+
+    fn deinit_module(&mut self) {
+        let mut module = ModuleEnvironment::new(self.current_module_id);
+        // after a module is parsed, the should only be the "global" scope
+        assert!(self.scopes.len() == 1);
+        module.variables = std::mem::take(&mut self.get_current_scope_mut().variables);
+
+        self.modules.insert(self.current_module_id, module);
+    }
 
     fn push_scope(&mut self) {
         let new_scope_index = self.scopes.len();
@@ -293,14 +326,60 @@ impl Interpreter {
         }
     }
 
-    fn interpret_import_stmt(&mut self, _node: &ImportNode) -> Result<StmtReturn, Error> {
-        unimplemented!()
-        // let module_name = node.name.clone();
-        // self.push_module(module_name);
-        // let res = self.interpret_stmt_list(&node.body);
-        // self.pop_module();
-        // // TODO: Store module
-        // res
+    fn interpret_import_stmt(&mut self, node: &ImportNode) -> Result<StmtReturn, Error> {
+        if !node.iden.is_simple() {
+            // TODO: move this to the parser part
+            panic!("import Identifier must be simple");
+        }
+
+        // check if we import this yet
+        let module_id = node.iden.id();
+        if self.modules.contains_key(&module_id) {
+            return Ok(StmtReturn::none());
+        }
+
+        let name = node.iden.name.clone();
+        let path = node.path.clone();
+
+        // read the file
+        // TODO: move file loader to an interface
+        let file_path = Path::new(&node.path);
+        if !file_path.exists() && !file_path.is_file() {
+            return Err(Error::ModuleNotFoundInPath(name, path));
+        }
+
+        let content = match std::fs::read_to_string(file_path) {
+            Ok(v) => v,
+            Err(err) => return Err(Error::ReadModuleFailed(name, path, err)),
+        };
+
+        // parse the file
+        let tokens = match lex::lex(&content) {
+            Ok(tokens) => tokens,
+            Err(err) => return Err(Error::ParseModuleFailed(name, path, err)),
+        };
+
+        let statement = match parse::parse(&content, &tokens) {
+            Ok(ast) => ast,
+            Err(err) => return Err(Error::ParseModuleFailed(name, path, err)),
+        };
+
+        // interpret the file
+        // we will kind of need to keep track of the current module stack
+        // and the current scope stack
+        // everything starts from a module
+        self.init_module(module_id);
+
+        match self.interpret(&statement) {
+            Ok(_) => (),
+            Err(err) => return Err(Error::InterpretModuleFailed(name, path, Box::new(err))),
+        }
+
+        self.deinit_module();
+
+        // TODO: detect circular dependency
+
+        Ok(StmtReturn::none())
     }
 
     fn interpret_print_stmt(&mut self, exprs: &[Expression]) -> Result<StmtReturn, Error> {
@@ -570,7 +649,7 @@ impl Interpreter {
     fn is_truthy(&mut self, expr: &Expression) -> Result<bool, Error> {
         let cond_value = self.interpret_expr(expr)?;
         let Value::Bool(cond_bin) = cond_value else {
-            return Err(Error::CondNotBool(cond_value));
+            return Err(Error::ConditionNotBool(cond_value));
         };
         Ok(cond_bin)
     }
