@@ -1,8 +1,9 @@
 use crate::ast::{
     ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, FnDeclNode, IdentifierNode,
-    IfStmtNode, IndexExprNode, ModuleNode, ReAssignIndexNode, Statement, StatementList,
+    IfStmtNode, ImportNode, IndexExprNode, ReAssignIndexNode, Statement, StatementList,
     TernaryExprNode, WhileNode,
 };
+use crate::id::Category;
 use crate::lex::LexItem;
 use crate::parse_error::ParseError;
 use crate::span::Span;
@@ -46,7 +47,8 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
 fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
     let li = get_curr(state)?;
     match li.token {
-        Token::Module => parse_module(state),
+        Token::Module => panic!("module keyword is removed"),
+        Token::Import => parse_import(state),
         Token::Print => parse_print(state),
         Token::Identifier => parse_reassignment(state),
         Token::Var => parse_declaration(state),
@@ -58,12 +60,16 @@ fn parse_stmt(state: &mut ParseContext) -> Result<Statement, ParseError> {
     }
 }
 
-fn parse_module(state: &mut ParseContext) -> Result<Statement, ParseError> {
-    consume_token(state, Token::Module)?;
-    let li = consume_token(state, Token::Identifier)?;
-    Ok(Statement::Module(ModuleNode {
-        name: IdentifierNode::Simple(li.span.string_from_source(state.input)),
-        body: parse_block_statement_list(state)?,
+fn parse_import(state: &mut ParseContext) -> Result<Statement, ParseError> {
+    consume_token(state, Token::Import)?;
+    let path_li = consume_token(state, Token::String)?;
+    consume_token(state, Token::As)?;
+    let iden_li = consume_token(state, Token::Identifier)?;
+    let name = iden_li.span.string_from_source(state.input);
+    Ok(Statement::Import(ImportNode {
+        path: Span::new(path_li.span.start + 1, path_li.span.end - 1)
+            .string_from_source(state.input),
+        iden: IdentifierNode::new_from_name(name, Category::Module),
     }))
 }
 
@@ -126,7 +132,10 @@ fn parse_declaration(state: &mut ParseContext) -> Result<Statement, ParseError> 
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
     let name = id_item.span.string_from_source(state.input);
-    Ok(Statement::Declare(IdentifierNode::Simple(name), expr))
+    Ok(Statement::Declare(
+        IdentifierNode::new_from_name(name, Category::Value),
+        expr,
+    ))
 }
 
 fn parse_reassignment(state: &mut ParseContext) -> Result<Statement, ParseError> {
@@ -142,7 +151,10 @@ fn parse_iden_reassignment(state: &mut ParseContext) -> Result<Statement, ParseE
     consume_token(state, Token::Equal)?;
     let expr = parse_expr(state)?;
     let name = id_item.span.string_from_source(state.input);
-    Ok(Statement::ReassignIden(IdentifierNode::Simple(name), expr))
+    Ok(Statement::ReassignIden(
+        IdentifierNode::new_from_name(name, Category::Value),
+        expr,
+    ))
 }
 
 fn parse_index_reassignment_or_expr(state: &mut ParseContext) -> Result<Statement, ParseError> {
@@ -361,11 +373,12 @@ fn parse_identifier(state: &mut ParseContext) -> Result<Expression, ParseError> 
         |s| consume_token(s, Token::Identifier),
         |t| t != Token::Identifier,
     )?;
-    Ok(Expression::Identifier(IdentifierNode::new(
+    Ok(Expression::Identifier(IdentifierNode::new_from_vec(
         lex_items
             .into_iter()
             .map(|li| li.span.string_from_source(state.input))
             .collect(),
+        Category::Unknown,
     )))
 }
 

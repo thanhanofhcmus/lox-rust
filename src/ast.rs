@@ -23,7 +23,7 @@ pub enum Expression {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Module(ModuleNode),
+    Import(ImportNode),
     Expr(Expression),
     Return(Expression),
     If(IfStmtNode),
@@ -49,16 +49,25 @@ pub struct IfStmtNode {
 #[derive(Debug, Clone)]
 pub struct IdentifierNode {
     pub name: String,
+    pub prefix: Vec<String>,
     pub category: Category,
 }
 
 impl IdentifierNode {
-    pub fn new(mut ids: Vec<String>) -> Self {
-        if ids.len() == 1 {
-            Self::Simple(ids.pop().unwrap())
-        } else {
-            Self::Compound(ids)
+    pub fn new_from_name(name: String, category: Category) -> Self {
+        Self {
+            name,
+            prefix: vec![],
+            category,
         }
+    }
+
+    pub fn new_from_vec(parts: Vec<String>, category: Category) -> Self {
+        unimplemented!()
+    }
+
+    pub fn join_dot(&self) -> String {
+        unimplemented!()
     }
 
     pub fn id(&self) -> Id {
@@ -99,9 +108,9 @@ pub struct BinaryOpNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModuleNode {
-    pub name: IdentifierNode,
-    pub body: StatementList,
+pub struct ImportNode {
+    pub path: String,
+    pub iden: IdentifierNode,
 }
 
 #[derive(Debug, Clone)]

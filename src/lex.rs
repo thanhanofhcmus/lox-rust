@@ -22,6 +22,8 @@ static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "when" => Token::When,
     "case" => Token::Case,
     "module" => Token::Module,
+    "import" => Token::Import,
+    "as" => Token::As,
 
     "print" => Token::Print,
 );

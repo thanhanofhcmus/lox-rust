@@ -1,8 +1,8 @@
 Lox syntax
 
 ```
-stmt         = reassignment | declaration | print | expr | if | while | return | module
-module       = "module" block
+stmt         = reassignment | declaration | print | expr | if | while | return | import
+import       = "import" UNIX_PATH_STRING "as" IDENTIFIER
 print        = "print" (clause "," ...)*
 if           = "if" clause block ("else" block)?
 declaration  = "var" IDENTIFIER "=" expr

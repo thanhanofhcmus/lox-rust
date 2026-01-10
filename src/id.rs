@@ -7,6 +7,8 @@ use strum_macros::FromRepr;
 pub enum Category {
     Module = 1,
     Value = 2,
+
+    Unknown = u8::MAX,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -20,7 +22,7 @@ impl Id {
         name.hash(&mut hasher);
         let full_hash = hasher.finish();
 
-        let id = ((cateory as u64) << 60 | (full_hash & Self::MASK_60_BITS));
+        let id = (cateory as u64) << 60 | (full_hash & Self::MASK_60_BITS);
 
         Id(id)
     }
