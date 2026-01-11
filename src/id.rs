@@ -17,10 +17,13 @@ pub struct Id(u64);
 impl Id {
     const MASK_60_BITS: u64 = 0x0FFF_FFFF_FFFF_FFFF;
 
-    pub fn new(cateory: Category, name: &str) -> Self {
+    pub fn new(_cateory: Category, name: &str) -> Self {
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
         let full_hash = hasher.finish();
+
+        // TODO: fix category, or remove it all together
+        let cateory = Category::Unknown;
 
         let id = (cateory as u64) << 60 | (full_hash & Self::MASK_60_BITS);
 

@@ -1,8 +1,4 @@
-use crate::ast::{
-    ArrayRepeatNode, BinaryOpNode, CaseNode, Expression, FnCallNode, IdentifierNode, IfStmtNode,
-    ImportNode, IndexExprNode, ReAssignIndexNode, Statement, StatementList, TernaryExprNode,
-    WhileNode,
-};
+use crate::ast::*;
 use crate::id::{Category, Id};
 use crate::token::Token;
 use crate::{lex, parse, parse_error};
@@ -160,7 +156,7 @@ impl Scope {
         None
     }
 
-    fn get_parent_scope<'a>(&self, scopes: &'a Vec<Scope>) -> Option<&'a Scope> {
+    fn get_parent_scope<'a>(&self, scopes: &'a [Scope]) -> Option<&'a Scope> {
         if self.index == 0 {
             None
         } else {
@@ -272,7 +268,7 @@ impl Interpreter {
         self.get_current_scope_mut().get_variable_mut(node.id())
     }
 
-    fn get_varible_all_scope(&self, node: &IdentifierNode) -> Option<&Value> {
+    fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<&Value> {
         // check scopes/stacks
         let id = node.id();
         if let Some(value) = self
@@ -281,13 +277,19 @@ impl Interpreter {
         {
             return Some(value);
         }
+
+        // No prefixes mean this code is trying to reference values from the trasparent scope only
+        if node.prefixes.is_empty() {
+            return None;
+        }
+
         // For now, we expect a variable from another module is in the form
         // module_name.variable_name (1 dot, 2 parts)
         let module_id = Id::new(Category::Module, &node.prefixes[0]);
-        let Some(module) = self.modules.get(&module_id) else {
-            return None;
-        };
+        let module = self.modules.get(&module_id)?;
 
+        // This code is allowing code to un-imported module
+        // for example print(a.b) -> nil eventhoug we have not import a yet
         module.variables.get(&id)
     }
 
@@ -434,7 +436,7 @@ impl Interpreter {
         expr: &Expression,
     ) -> Result<StmtReturn, Error> {
         if self.get_variable_current_scope(iden).is_none() {
-            return match self.get_varible_all_scope(iden) {
+            return match self.get_variable_all_scope(iden) {
                 Some(_) => Err(Error::VariableReadOnly(iden.join_dot())),
                 None => Err(Error::NotFoundVariable(iden.join_dot())),
             };
@@ -507,7 +509,7 @@ impl Interpreter {
             Expression::Index(node) => self.interpret_index_expr(node),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Ternary(node) => self.interpret_ternary_expr(node),
-            Expression::Identifier(node) => match self.get_variable_current_scope(node) {
+            Expression::Identifier(node) => match self.get_variable_all_scope(node) {
                 Some(value) => Ok(value.to_owned()),
                 None => Ok(Value::Nil),
             },
@@ -561,7 +563,7 @@ impl Interpreter {
         &mut self,
         FnCallNode { iden, args }: &FnCallNode,
     ) -> Result<Value, Error> {
-        let Some(fn_value) = self.get_varible_all_scope(iden) else {
+        let Some(fn_value) = self.get_variable_all_scope(iden) else {
             return Err(Error::NotFoundVariable(iden.join_dot()));
         };
         let Value::Function(arg_names, body) = fn_value else {

@@ -79,7 +79,7 @@ impl IdentifierNode {
     pub fn join_dot(&self) -> String {
         self.prefixes
             .iter()
-            .map(|s| s.clone())
+            .cloned()
             .chain(std::iter::once(self.name.clone()))
             .collect::<Vec<_>>()
             .join(".")
