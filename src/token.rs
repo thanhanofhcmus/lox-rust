@@ -45,7 +45,6 @@ pub enum Token {
     Then,
     When,
     Case,
-    Module,
     Import,
     As,
 

@@ -29,7 +29,6 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
 fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
-        Token::Module => panic!("module keyword is removed"),
         Token::Import => parse_import(state),
         Token::Print => parse_print(state),
         Token::Identifier => parse_reassignment(state),
