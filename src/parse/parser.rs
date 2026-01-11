@@ -12,6 +12,7 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
     let mut stmts = vec![];
     let mut state = Context::new(input, items);
     while !state.is_at_end() {
+        state.prepare_next();
         let result = parse_stmt(&mut state)?;
         stmts.push(result);
         // try to consume ';'
@@ -46,9 +47,9 @@ fn parse_import(state: &mut Context) -> Result<Statement, ParseError> {
     let path_li = state.consume_token(Token::String)?;
     state.consume_token(Token::As)?;
     let iden_li = state.consume_token(Token::Identifier)?;
-    let name = state.string_from_span(iden_li.span);
+    let name = state.source_from_span(iden_li.span);
     Ok(Statement::Import(ImportNode {
-        path: state.string_from_span(Span::new(path_li.span.start + 1, path_li.span.end - 1)),
+        path: state.source_from_span(Span::new(path_li.span.start + 1, path_li.span.end - 1)),
         iden: IdentifierNode::new_from_name(name, Category::Module),
     }))
 }
@@ -111,7 +112,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
     let id_item = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
-    let name = state.string_from_span(id_item.span);
+    let name = state.source_from_span(id_item.span);
     Ok(Statement::Declare(
         IdentifierNode::new_from_name(name, Category::Value),
         expr,
@@ -130,7 +131,7 @@ fn parse_iden_reassignment(state: &mut Context) -> Result<Statement, ParseError>
     let id_item = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
-    let name = state.string_from_span(id_item.span);
+    let name = state.source_from_span(id_item.span);
     Ok(Statement::ReassignIden(
         IdentifierNode::new_from_name(name, Category::Value),
         expr,
@@ -336,7 +337,7 @@ fn parse_primary(state: &mut Context) -> Result<Expression, ParseError> {
             state.advance();
             Ok(Expression::Str(
                 // remove start '"' and end '"'
-                state.string_from_span(Span::new(li.span.start + 1, li.span.end - 1)),
+                state.source_from_span(Span::new(li.span.start + 1, li.span.end - 1)),
             ))
         }
         Token::Identifier => parse_identifier(state),
@@ -358,7 +359,7 @@ fn parse_identifier(state: &mut Context) -> Result<Expression, ParseError> {
     Ok(Expression::Identifier(IdentifierNode::new_from_vec(
         lex_items
             .into_iter()
-            .map(|li| state.string_from_span(li.span))
+            .map(|li| state.source_from_span(li.span))
             .collect(),
         Category::Unknown,
     )))
@@ -402,7 +403,7 @@ fn parse_function(state: &mut Context) -> Result<Expression, ParseError> {
         get_identifier,
     )?
     .into_iter()
-    .map(|li| state.string_from_span(li.span))
+    .map(|li| state.source_from_span(li.span))
     .collect();
 
     let body;
@@ -421,7 +422,7 @@ fn parse_function(state: &mut Context) -> Result<Expression, ParseError> {
 
 fn parse_number(state: &mut Context) -> Result<Expression, ParseError> {
     let li = state.consume_token(Token::Number)?;
-    let source = state.string_from_span(li.span);
+    let source = state.source_from_span(li.span);
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
         Ok(num) => Ok(Expression::Number(num)),

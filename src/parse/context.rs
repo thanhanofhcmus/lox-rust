@@ -8,6 +8,7 @@ pub struct Context<'a> {
     input: &'a str,
     items: &'a [LexItem],
     curr_pos: usize,
+    // Consider making setter getter for this
     pub is_in_fn: bool,
 }
 
@@ -30,15 +31,17 @@ impl<'a> Context<'a> {
         if li.token != token {
             return Err(ParseError::UnexpectedToken(li.token, li.span, Some(token)));
         }
-        self.curr_pos += 1;
+        self.advance();
         Ok(li)
     }
 
     pub fn advance(&mut self) {
         self.curr_pos += 1;
+        self.prepare_next();
     }
 
     pub fn peek(&mut self, match_tokens: &'static [Token]) -> bool {
+        self.prepare_next();
         self.items
             .get(self.curr_pos)
             .map(|li| match_tokens.contains(&li.token))
@@ -46,6 +49,7 @@ impl<'a> Context<'a> {
     }
 
     pub fn peek_2_token(&mut self, match_tokens: &'static [Token]) -> bool {
+        self.prepare_next();
         self.items
             .get(self.curr_pos + 1)
             .map(|li| match_tokens.contains(&li.token))
@@ -59,7 +63,18 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn string_from_span(&self, span: Span) -> String {
+    pub fn source_from_span(&self, span: Span) -> String {
         span.string_from_source(self.input)
+    }
+
+    pub fn prepare_next(&mut self) {
+        while self
+            .items
+            .get(self.curr_pos)
+            .map(|li| li.token == Token::Comment)
+            .unwrap_or(false)
+        {
+            self.curr_pos += 1;
+        }
     }
 }

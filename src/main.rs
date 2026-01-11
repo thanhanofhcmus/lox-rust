@@ -102,8 +102,7 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
     let expr = match parse::parse(input, &tokens) {
         Ok(list) => list,
         Err(err) => {
-            error!("Parse error: {}", err);
-            trace!("{:?}", err.get_source_start(input));
+            error!("Parse error {:?}: {}", err.get_source_start(input), err);
             return Err(Box::new(err));
         }
     };
