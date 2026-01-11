@@ -1,7 +1,7 @@
-use crate::parse_error::ParseError;
-
 use crate::span::Span;
 use crate::token::Token;
+
+use super::parse_error::ParseError;
 
 static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "and" => Token::And,
@@ -101,6 +101,8 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             '>' => push_with_equal(Token::GreaterEqual, Token::Greater),
             '"' => result.push(lex_string(input, &mut curr_offset)?),
 
+            '#' => result.push(lex_comment(input, &mut curr_offset)),
+
             v if v.is_ascii_digit() => result.push(lex_number(input, &mut curr_offset)?),
             v if is_keyword_or_identifier_char(v) => {
                 result.push(lex_keyword_or_identifier(input, &mut curr_offset))
@@ -123,6 +125,8 @@ fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
         if !(c.is_ascii_digit() || c == '.') {
             break;
         }
+        // TODO: This code does not check if we have number after '.'
+        // This script is currently not throw error `var x = 1.`
         if c == '.' {
             if has_parsed_dot {
                 return Err(ParseError::UnexpectedCharacter(Span::one(*offset)));
@@ -175,4 +179,18 @@ fn lex_keyword_or_identifier(input: &str, offset: &mut usize) -> LexItem {
         Some(&token) => LexItem::new(token, span),
         None => LexItem::new(Token::Identifier, span),
     }
+}
+
+fn lex_comment(input: &str, offset: &mut usize) -> LexItem {
+    let start_offset = *offset;
+
+    while let Some(c) = input.chars().nth(*offset) {
+        // skip until we get a new line
+        if c == '\n' {
+            break;
+        }
+        *offset += 1;
+    }
+
+    LexItem::new(Token::Comment, Span::new(start_offset, *offset))
 }

@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::id::{Category, Id};
+use crate::parse;
 use crate::token::Token;
-use crate::{lex, parse, parse_error};
 use derive_more::Display;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -66,7 +66,7 @@ pub enum Error {
     ReadModuleFailed(String, String, std::io::Error),
 
     #[error("Parse module `{0}` in path `{1}` failed with error {2}")]
-    ParseModuleFailed(String, String, parse_error::ParseError),
+    ParseModuleFailed(String, String, parse::ParseError),
 
     #[error("Interpret module `{0}` in path `{1}` failed with error {2}")]
     InterpretModuleFailed(String, String, Box<Error>),
@@ -356,7 +356,7 @@ impl Interpreter {
         };
 
         // parse the file
-        let tokens = match lex::lex(&content) {
+        let tokens = match parse::lex(&content) {
             Ok(tokens) => tokens,
             Err(err) => return Err(Error::ParseModuleFailed(name, path, err)),
         };

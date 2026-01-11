@@ -1,9 +1,7 @@
 mod ast;
 mod id;
 mod interpreter;
-mod lex;
 mod parse;
-mod parse_error;
 mod span;
 mod token;
 mod vm;
@@ -84,7 +82,7 @@ fn read_from_file(file_path: &str) -> DynResult {
 }
 
 fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
-    let tokens = match lex::lex(input) {
+    let tokens = match parse::lex(input) {
         Ok(list) => list,
         Err(err) => {
             error!("Lex error: {}", err);

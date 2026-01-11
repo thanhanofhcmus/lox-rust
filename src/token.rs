@@ -58,6 +58,8 @@ pub enum Token {
     Colon,
     Semicolon,
 
+    Comment, // a whole comment until the newline
+
     // TODO: remove when implement functions and modules
     Print,
 }
