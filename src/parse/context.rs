@@ -1,17 +1,17 @@
 use crate::span::Span;
 use crate::token::Token;
 
+use super::error::ParseError;
 use super::lex::LexItem;
-use super::parse_error::ParseError;
 
-pub struct ParseContext<'a> {
+pub struct Context<'a> {
     input: &'a str,
     items: &'a [LexItem],
     curr_pos: usize,
     pub is_in_fn: bool,
 }
 
-impl<'a> ParseContext<'a> {
+impl<'a> Context<'a> {
     pub fn new(input: &'a str, items: &'a [LexItem]) -> Self {
         Self {
             input,

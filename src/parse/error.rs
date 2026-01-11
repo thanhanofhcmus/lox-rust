@@ -7,7 +7,7 @@ pub enum ParseError {
     #[error("Unexpected character in position {0}")]
     UnexpectedCharacter(Span),
 
-    #[error("Unexpected token `{0}` at position {1} {}", diag_expect_token(.2))]
+    #[error("Unexpected token `{0}` at position {1} {}", diagnostic_expect_token(.2))]
     UnexpectedToken(Token, Span, Option<Token>),
 
     #[error("String starts at {0} is not closed")]
@@ -41,7 +41,7 @@ impl ParseError {
     }
 }
 
-fn diag_expect_token(o: &Option<Token>) -> String {
+fn diagnostic_expect_token(o: &Option<Token>) -> String {
     match o {
         None => "".to_string(),
         Some(t) => format!(", expected token `{:?}`", t),

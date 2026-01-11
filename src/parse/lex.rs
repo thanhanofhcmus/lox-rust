@@ -1,7 +1,7 @@
 use crate::span::Span;
 use crate::token::Token;
 
-use super::parse_error::ParseError;
+use super::error::ParseError;
 
 static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "and" => Token::And,
