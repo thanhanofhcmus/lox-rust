@@ -39,7 +39,7 @@ var b = true and false;
 b = b or (2 == 10 / 5);
 
 # if statement to do branching
-var n = 1024;
+var n = 4;
 if n % 2 == 0 {
   print("n is even")
 } else {
@@ -47,8 +47,11 @@ if n % 2 == 0 {
 }
 
 # while loop is also supported
+
+print("A");
 var t = 100;
-while t > 100 {
+print("B");
+while t > 95 {
   print(t);
   t = t - 1;
 }
@@ -64,20 +67,26 @@ var next_n_loop_in_four = when {
   case n == 2 -> 3,
   case n == 4 -> 0,
 }
+print(next_n_loop_in_four);
 
 # or you can put any condition expression in it, it will check form the top condition down
-var t = when {
+var when_v = when {
   case x == y and y == z -> "all equal",
   case x == y -> "only x = y",
   case y == z -> "only z = y",
   case x == z -> "only x = z",
   case true -> "nothing equal anything",
 }
+print(when_v);
 
 # ternary expression is created with `cond` - `then` - `else`
 var ter = cond n == 2 then "n is 2" else "n is not 2"
+print(ter);
 
 # functions can be created the and assign the same way variable are created
 
 var add = fn(a, b) { return a + b; };
 var print_times_two = fn(n) { print(n * 2); };
+
+print(add(5, 4));
+print_times_two(12);
