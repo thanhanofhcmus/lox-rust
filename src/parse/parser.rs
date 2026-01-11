@@ -1,5 +1,4 @@
 use crate::ast::*;
-use crate::id::Category;
 
 use super::context::Context;
 use super::error::ParseError;
@@ -49,7 +48,7 @@ fn parse_import(state: &mut Context) -> Result<Statement, ParseError> {
     let name = state.source_from_span(iden_li.span);
     Ok(Statement::Import(ImportNode {
         path: state.source_from_span(Span::new(path_li.span.start + 1, path_li.span.end - 1)),
-        iden: IdentifierNode::new_from_name(name, Category::Module),
+        iden: IdentifierNode::new_from_name(name),
     }))
 }
 
@@ -113,7 +112,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
     let expr = parse_expr(state)?;
     let name = state.source_from_span(id_item.span);
     Ok(Statement::Declare(
-        IdentifierNode::new_from_name(name, Category::Value),
+        IdentifierNode::new_from_name(name),
         expr,
     ))
 }
@@ -132,7 +131,7 @@ fn parse_iden_reassignment(state: &mut Context) -> Result<Statement, ParseError>
     let expr = parse_expr(state)?;
     let name = state.source_from_span(id_item.span);
     Ok(Statement::ReassignIden(
-        IdentifierNode::new_from_name(name, Category::Value),
+        IdentifierNode::new_from_name(name),
         expr,
     ))
 }
@@ -360,7 +359,6 @@ fn parse_identifier(state: &mut Context) -> Result<Expression, ParseError> {
             .into_iter()
             .map(|li| state.source_from_span(li.span))
             .collect(),
-        Category::Unknown,
     )))
 }
 

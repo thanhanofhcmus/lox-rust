@@ -1,7 +1,4 @@
-use crate::{
-    id::{Category, Id},
-    token::Token,
-};
+use crate::{id::Id, token::Token};
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -50,24 +47,21 @@ pub struct IfStmtNode {
 pub struct IdentifierNode {
     pub name: String,
     pub prefixes: Vec<String>,
-    pub category: Category,
 }
 
 impl IdentifierNode {
-    pub fn new_from_name(name: String, category: Category) -> Self {
+    pub fn new_from_name(name: String) -> Self {
         Self {
             name,
             prefixes: vec![],
-            category,
         }
     }
 
-    pub fn new_from_vec(mut parts: Vec<String>, category: Category) -> Self {
+    pub fn new_from_vec(mut parts: Vec<String>) -> Self {
         let name = parts.pop().expect("must have at least one part for name");
         Self {
             name,
             prefixes: parts,
-            category,
         }
     }
 
@@ -86,7 +80,7 @@ impl IdentifierNode {
     }
 
     pub fn id(&self) -> Id {
-        Id::new(self.category, &self.name)
+        Id::new(&self.name)
     }
 }
 

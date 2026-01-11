@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::id::{Category, Id};
+use crate::id::Id;
 use crate::parse;
 use crate::token::Token;
 use derive_more::Display;
@@ -198,7 +198,7 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>) -> Self {
-        let current_module_id = Id::new(Category::Module, CURRENT_MODULE_NAME);
+        let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
         let scopes = vec![Scope::new(0)];
         let mut modules = HashMap::new();
@@ -285,7 +285,7 @@ impl Interpreter {
 
         // For now, we expect a variable from another module is in the form
         // module_name.variable_name (1 dot, 2 parts)
-        let module_id = Id::new(Category::Module, &node.prefixes[0]);
+        let module_id = Id::new(&node.prefixes[0]);
         let module = self.modules.get(&module_id)?;
 
         // This code is allowing code to un-imported module
@@ -588,7 +588,7 @@ impl Interpreter {
         for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
             let value = self.interpret_expr(arg_expr)?;
             self.insert_variable_current_scope(
-                &IdentifierNode::new_from_name(arg_name.clone(), Category::Value),
+                &IdentifierNode::new_from_name(arg_name.clone()),
                 value,
             );
         }
