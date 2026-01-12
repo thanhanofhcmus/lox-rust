@@ -16,16 +16,16 @@ pub struct Function {
 pub enum Value {
     #[display(fmt = "nil")]
     Nil,
-
-    // use ":?" to print the string in quotes
-    #[display(fmt = "{:?}", _0)]
+    #[display(fmt = "{:?}", _0)] // Quotes for strings
     Str(String),
 
+    #[display(fmt = "{}", _0)]
     Number(f64),
 
+    #[display(fmt = "{}", _0)]
     Bool(bool),
 
-    #[display(fmt = "{:?}", _0)]
+    #[display(fmt = "{}", "format_array(_0)")] // Call helper
     Array(Vec<Value>),
 
     #[display(fmt = "function")]
@@ -33,4 +33,14 @@ pub enum Value {
 
     #[display(fmt = "builtin_function")]
     BuiltinFunction(BuiltinFn),
+}
+
+// Helper function to simulate Python's list printing
+fn format_array(values: &[Value]) -> String {
+    let internal = values
+        .iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{}]", internal)
 }
