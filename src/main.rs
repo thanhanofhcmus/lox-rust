@@ -38,13 +38,15 @@ fn repl() -> DynResult {
     let mut rl = DefaultEditor::new()?;
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp = interpreter::Interpreter::new(rc);
+    let mut itp_ctx = interpreter::Environment::new(rc);
+    let mut line: String;
 
     loop {
         match rl.readline("> ") {
-            Ok(line) => {
+            Ok(repl_line) => {
+                line = repl_line;
                 rl.add_history_entry(&line)?;
-                run_stmt(line.trim_end(), &mut itp, true).unwrap_or_else(|e| error!("{}", e));
+                run_stmt(line.trim_end(), &mut itp_ctx, true).unwrap_or_else(|e| error!("{}", e));
             }
             Err(ReadlineError::Eof) => break,
             Err(ReadlineError::Interrupted) => break,
@@ -77,7 +79,7 @@ fn read_from_file(file_path: &str) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp = interpreter::Interpreter::new(rc);
+    let mut itp = interpreter::Environment::new(rc);
     run_stmt(&contents, &mut itp, false)
 }
 
@@ -99,22 +101,26 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
         );
     }
 
-    let expr = match parse::parse(input, &tokens) {
+    let stmt = match parse::parse(input, &tokens) {
         Ok(list) => list,
         Err(err) => {
             error!("Parse error {:?}: {}", err.get_source_start(input), err);
             return Err(Box::new(err));
         }
     };
-    trace!("{:?}", &expr);
+    trace!("{:?}", &stmt);
 
-    Ok(expr)
+    Ok(stmt)
 }
 
-fn run_stmt(input: &str, itp: &mut interpreter::Interpreter, print_result: bool) -> DynResult {
+fn run_stmt<'cl, 'sl>(
+    input: &'sl str,
+    itp_ctx: &'cl mut interpreter::Environment,
+    print_result: bool,
+) -> DynResult {
     let stmt = parse(input)?;
 
-    match itp.interpret(&stmt) {
+    match interpreter::Interpreter::new(itp_ctx, input).interpret(&stmt) {
         Ok(value) => {
             if print_result {
                 info!("{:?}", value)

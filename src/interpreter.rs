@@ -169,13 +169,13 @@ impl Scope {
     }
 }
 
-struct ModuleEnvironment {
+struct Module {
     variables: HashMap<Id, Value>,
     #[allow(unused)]
     id: Id,
 }
 
-impl ModuleEnvironment {
+impl Module {
     fn new(id: Id) -> Self {
         Self {
             variables: HashMap::new(),
@@ -187,22 +187,21 @@ impl ModuleEnvironment {
 const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 20;
 
-pub struct Interpreter {
+pub struct Environment {
     scopes: Vec<Scope>,
-    modules: HashMap<Id, ModuleEnvironment>,
+    modules: HashMap<Id, Module>,
 
     current_module_id: Id,
-
     print_writer: Rc<RefCell<dyn std::io::Write>>,
 }
 
-impl Interpreter {
+impl Environment {
     pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>) -> Self {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
         let scopes = vec![Scope::new(0)];
         let mut modules = HashMap::new();
-        modules.insert(current_module_id, ModuleEnvironment::new(current_module_id));
+        modules.insert(current_module_id, Module::new(current_module_id));
 
         Self {
             scopes,
@@ -214,13 +213,6 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret(&mut self, stmt: &Statement) -> Result<Value, Error> {
-        self.interpret_stmt(stmt)
-            .map(|r| r.value.unwrap_or(Value::Nil))
-    }
-
-    // other functions
-
     fn init_module(&mut self, id: Id) {
         self.current_module_id = id;
         // if we were to allow import in any places, we need to stash the stack
@@ -228,7 +220,7 @@ impl Interpreter {
     }
 
     fn deinit_module(&mut self) {
-        let mut module = ModuleEnvironment::new(self.current_module_id);
+        let mut module = Module::new(self.current_module_id);
         // after a module is parsed, the should only be the "global" scope
         assert!(self.scopes.len() == 1);
         module.variables = std::mem::take(&mut self.get_current_scope_mut().variables);
@@ -301,8 +293,24 @@ impl Interpreter {
         self.get_current_scope_mut()
             .insert_variable(node.id(), value)
     }
+}
 
-    // other functions
+pub struct Interpreter<'cl, 'sl> {
+    environment: &'cl mut Environment,
+    input: &'sl str,
+}
+
+impl<'cl, 'sl> Interpreter<'cl, 'sl> {
+    pub fn new(environment: &'cl mut Environment, input: &'sl str) -> Self {
+        Self { environment, input }
+    }
+
+    pub fn interpret(&mut self, stmt: &'sl Statement) -> Result<Value, Error> {
+        let result = self
+            .interpret_stmt(stmt)
+            .map(|r| r.value.unwrap_or(Value::Nil));
+        result
+    }
 
     fn interpret_stmt(&mut self, stmt: &Statement) -> Result<StmtReturn, Error> {
         match stmt {
@@ -319,9 +327,9 @@ impl Interpreter {
             Statement::While(node) => self.interpret_while_stmt(node),
             Statement::If(node) => self.interpret_if_stmt(node),
             Statement::Block(stmts) => {
-                self.push_scope();
+                self.environment.push_scope();
                 let res = self.interpret_stmt_list(stmts);
-                self.pop_scope();
+                self.environment.pop_scope();
                 res
             }
             Statement::Global(stmts) => self.interpret_stmt_list(stmts),
@@ -336,7 +344,7 @@ impl Interpreter {
 
         // check if we import this yet
         let module_id = node.iden.id();
-        if self.modules.contains_key(&module_id) {
+        if self.environment.modules.contains_key(&module_id) {
             return Ok(StmtReturn::none());
         }
 
@@ -370,14 +378,16 @@ impl Interpreter {
         // we will kind of need to keep track of the current module stack
         // and the current scope stack
         // everything starts from a module
-        self.init_module(module_id);
+        self.environment.init_module(module_id);
 
-        match self.interpret(&statement) {
+        let mut itp = Interpreter::new(self.environment, &content);
+
+        match itp.interpret(&statement) {
             Ok(_) => (),
             Err(err) => return Err(Error::InterpretModuleFailed(name, path, Box::new(err))),
         }
 
-        self.deinit_module();
+        self.environment.deinit_module();
 
         // TODO: detect circular dependency
 
@@ -387,7 +397,7 @@ impl Interpreter {
     fn interpret_print_stmt(&mut self, exprs: &[Expression]) -> Result<StmtReturn, Error> {
         for expr in exprs {
             let value = self.interpret_expr(expr)?;
-            let mut out = self.print_writer.borrow_mut();
+            let mut out = self.environment.print_writer.borrow_mut();
             // TODO: handle error here
             write!(out, "{}", value).unwrap();
         }
@@ -422,11 +432,11 @@ impl Interpreter {
         iden: &IdentifierNode,
         expr: &Expression,
     ) -> Result<StmtReturn, Error> {
-        if self.get_variable_current_scope(iden).is_some() {
+        if self.environment.get_variable_current_scope(iden).is_some() {
             return Err(Error::ReDeclareVariable(iden.join_dot()));
         }
         let value = self.interpret_expr(expr)?;
-        self.insert_variable_current_scope(iden, value);
+        self.environment.insert_variable_current_scope(iden, value);
         Ok(StmtReturn::none())
     }
 
@@ -435,14 +445,14 @@ impl Interpreter {
         iden: &IdentifierNode,
         expr: &Expression,
     ) -> Result<StmtReturn, Error> {
-        if self.get_variable_current_scope(iden).is_none() {
-            return match self.get_variable_all_scope(iden) {
+        if self.environment.get_variable_current_scope(iden).is_none() {
+            return match self.environment.get_variable_all_scope(iden) {
                 Some(_) => Err(Error::VariableReadOnly(iden.join_dot())),
                 None => Err(Error::NotFoundVariable(iden.join_dot())),
             };
         }
         let value = self.interpret_expr(expr)?;
-        self.insert_variable_current_scope(iden, value);
+        self.environment.insert_variable_current_scope(iden, value);
         Ok(StmtReturn::none())
     }
 
@@ -462,7 +472,7 @@ impl Interpreter {
                 node.indexer.to_owned(),
             ));
         };
-        let Some(indexer_arr) = self.get_variable_current_scope_mut(indexer_id) else {
+        let Some(indexer_arr) = self.environment.get_variable_current_scope_mut(indexer_id) else {
             return Err(Error::NotFoundVariable(indexer_id.join_dot()));
         };
         let Value::Array(ref mut arr) = indexer_arr else {
@@ -509,7 +519,7 @@ impl Interpreter {
             Expression::Index(node) => self.interpret_index_expr(node),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Ternary(node) => self.interpret_ternary_expr(node),
-            Expression::Identifier(node) => match self.get_variable_all_scope(node) {
+            Expression::Identifier(node) => match self.environment.get_variable_all_scope(node) {
                 Some(value) => Ok(value.to_owned()),
                 None => Ok(Value::Nil),
             },
@@ -563,7 +573,7 @@ impl Interpreter {
         &mut self,
         FnCallNode { iden, args }: &FnCallNode,
     ) -> Result<Value, Error> {
-        let Some(fn_value) = self.get_variable_all_scope(iden) else {
+        let Some(fn_value) = self.environment.get_variable_all_scope(iden) else {
             return Err(Error::NotFoundVariable(iden.join_dot()));
         };
         let Value::Function(arg_names, body) = fn_value else {
@@ -584,10 +594,10 @@ impl Interpreter {
         // create a new stack for the function call
         // currently, later args can reference sonner args
         // TODO: make this go away
-        self.push_scope();
+        self.environment.push_scope();
         for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
             let value = self.interpret_expr(arg_expr)?;
-            self.insert_variable_current_scope(
+            self.environment.insert_variable_current_scope(
                 &IdentifierNode::new_from_name(arg_name.clone()),
                 value,
             );
@@ -595,7 +605,7 @@ impl Interpreter {
         let result = self
             .interpret_stmt_list(&body)
             .map(|r| r.value.unwrap_or(Value::Nil));
-        self.pop_scope();
+        self.environment.pop_scope();
 
         result
     }
