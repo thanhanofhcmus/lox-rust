@@ -1,11 +1,11 @@
-use crate::{id::Id, token::Token};
+use crate::{id::Id, span::Span, token::Token};
 
 #[derive(Debug, Clone)]
 pub enum Expression {
     Nil,
     Bool(bool),
     Number(f64),
-    Str(String),
+    Str(Span),
     ArrayList(Vec<Expression>),
     ArrayRepeat(Box<ArrayRepeatNode>),
     Ternary(TernaryExprNode),
@@ -45,23 +45,34 @@ pub struct IfStmtNode {
 
 #[derive(Debug, Clone)]
 pub struct IdentifierNode {
-    pub name: String,
-    pub prefixes: Vec<String>,
+    // TODO: maybe create a struct that store these both as parts
+    pub name: Span,
+    pub name_id: Id,
+    pub prefixes: Vec<Span>,
+    pub prefix_ids: Vec<Id>,
 }
 
 impl IdentifierNode {
-    pub fn new_from_name(name: String) -> Self {
+    pub fn new_from_name(name: Span, input: &str) -> Self {
         Self {
             name,
+            name_id: Id::new(name.str_from_source(input)),
             prefixes: vec![],
+            prefix_ids: vec![],
         }
     }
 
-    pub fn new_from_vec(mut parts: Vec<String>) -> Self {
+    pub fn new_from_vec(mut parts: Vec<Span>, input: &str) -> Self {
         let name = parts.pop().expect("must have at least one part for name");
+        let prefix_ids = parts
+            .iter()
+            .map(|s| Id::new(s.str_from_source(input)))
+            .collect();
         Self {
             name,
+            name_id: Id::new(name.str_from_source(input)),
             prefixes: parts,
+            prefix_ids,
         }
     }
 
@@ -69,18 +80,17 @@ impl IdentifierNode {
         self.prefixes.is_empty()
     }
 
-    // TODO: move to use span
-    pub fn join_dot(&self) -> String {
+    pub fn create_name(&self, input: &str) -> String {
         self.prefixes
             .iter()
-            .cloned()
-            .chain(std::iter::once(self.name.clone()))
+            .chain(std::iter::once(&self.name))
+            .map(|span| span.string_from_source(input))
             .collect::<Vec<_>>()
             .join(".")
     }
 
-    pub fn id(&self) -> Id {
-        Id::new(&self.name)
+    pub fn get_id(&self) -> Id {
+        self.name_id
     }
 }
 
@@ -99,7 +109,7 @@ pub struct ArrayRepeatNode {
 
 #[derive(Debug, Clone)]
 pub struct FnDeclNode {
-    pub arg_names: Vec<String>,
+    pub arg_names: Vec<IdentifierNode>,
     pub body: StatementList,
 }
 
@@ -118,7 +128,7 @@ pub struct BinaryOpNode {
 
 #[derive(Debug, Clone)]
 pub struct ImportNode {
-    pub path: String,
+    pub path: Span,
     pub iden: IdentifierNode,
 }
 

@@ -113,11 +113,7 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
     Ok(stmt)
 }
 
-fn run_stmt<'cl, 'sl>(
-    input: &'sl str,
-    itp_ctx: &'cl mut interpreter::Environment,
-    print_result: bool,
-) -> DynResult {
+fn run_stmt(input: &str, itp_ctx: &mut interpreter::Environment, print_result: bool) -> DynResult {
     let stmt = parse(input)?;
 
     match interpreter::Interpreter::new(itp_ctx, input).interpret(&stmt) {

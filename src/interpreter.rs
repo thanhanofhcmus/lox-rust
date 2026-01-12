@@ -89,7 +89,7 @@ pub enum Value {
     Array(Vec<Value>),
 
     #[display(fmt = "function")]
-    Function(Vec<String>, StatementList),
+    Function(Vec<Id>, StatementList),
 }
 
 #[derive(Debug)]
@@ -253,16 +253,16 @@ impl Environment {
     }
 
     fn get_variable_current_scope(&self, node: &IdentifierNode) -> Option<&Value> {
-        self.get_current_scope().get_variable(node.id())
+        self.get_current_scope().get_variable(node.get_id())
     }
 
     fn get_variable_current_scope_mut(&mut self, node: &IdentifierNode) -> Option<&mut Value> {
-        self.get_current_scope_mut().get_variable_mut(node.id())
+        self.get_current_scope_mut().get_variable_mut(node.get_id())
     }
 
     fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<&Value> {
         // check scopes/stacks
-        let id = node.id();
+        let id = node.get_id();
         if let Some(value) = self
             .get_current_scope()
             .get_variable_recursive(id, &self.scopes)
@@ -277,7 +277,7 @@ impl Environment {
 
         // For now, we expect a variable from another module is in the form
         // module_name.variable_name (1 dot, 2 parts)
-        let module_id = Id::new(&node.prefixes[0]);
+        let module_id = node.prefix_ids[0];
         let module = self.modules.get(&module_id)?;
 
         // This code is allowing code to un-imported module
@@ -290,8 +290,11 @@ impl Environment {
         node: &IdentifierNode,
         value: Value,
     ) -> Option<Value> {
-        self.get_current_scope_mut()
-            .insert_variable(node.id(), value)
+        self.insert_variable_current_scope_by_id(node.get_id(), value)
+    }
+
+    fn insert_variable_current_scope_by_id(&mut self, id: Id, value: Value) -> Option<Value> {
+        self.get_current_scope_mut().insert_variable(id, value)
     }
 }
 
@@ -306,10 +309,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     pub fn interpret(&mut self, stmt: &'sl Statement) -> Result<Value, Error> {
-        let result = self
-            .interpret_stmt(stmt)
-            .map(|r| r.value.unwrap_or(Value::Nil));
-        result
+        self.interpret_stmt(stmt)
+            .map(|r| r.value.unwrap_or(Value::Nil))
     }
 
     fn interpret_stmt(&mut self, stmt: &Statement) -> Result<StmtReturn, Error> {
@@ -343,17 +344,17 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
 
         // check if we import this yet
-        let module_id = node.iden.id();
+        let module_id = node.iden.get_id();
         if self.environment.modules.contains_key(&module_id) {
             return Ok(StmtReturn::none());
         }
 
-        let name = node.iden.name.clone();
-        let path = node.path.clone();
+        let name = node.iden.name.string_from_source(self.input);
+        let path = node.path.string_from_source(self.input);
 
         // read the file
         // TODO: move file loader to an interface
-        let file_path = Path::new(&node.path);
+        let file_path = Path::new(&path);
         if !file_path.exists() && !file_path.is_file() {
             return Err(Error::ModuleNotFoundInPath(name, path));
         }
@@ -433,7 +434,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         expr: &Expression,
     ) -> Result<StmtReturn, Error> {
         if self.environment.get_variable_current_scope(iden).is_some() {
-            return Err(Error::ReDeclareVariable(iden.join_dot()));
+            return Err(Error::ReDeclareVariable(iden.create_name(self.input)));
         }
         let value = self.interpret_expr(expr)?;
         self.environment.insert_variable_current_scope(iden, value);
@@ -447,8 +448,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     ) -> Result<StmtReturn, Error> {
         if self.environment.get_variable_current_scope(iden).is_none() {
             return match self.environment.get_variable_all_scope(iden) {
-                Some(_) => Err(Error::VariableReadOnly(iden.join_dot())),
-                None => Err(Error::NotFoundVariable(iden.join_dot())),
+                Some(_) => Err(Error::VariableReadOnly(iden.create_name(self.input))),
+                None => Err(Error::NotFoundVariable(iden.create_name(self.input))),
             };
         }
         let value = self.interpret_expr(expr)?;
@@ -473,7 +474,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ));
         };
         let Some(indexer_arr) = self.environment.get_variable_current_scope_mut(indexer_id) else {
-            return Err(Error::NotFoundVariable(indexer_id.join_dot()));
+            return Err(Error::NotFoundVariable(indexer_id.create_name(self.input)));
         };
         let Value::Array(ref mut arr) = indexer_arr else {
             return Err(Error::ValueUnIndexable(indexer_arr.clone()));
@@ -481,7 +482,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         if arr.len() < idx {
             return Err(Error::ArrayOutOfBound(
-                indexer_id.join_dot(),
+                indexer_id.create_name(self.input),
                 arr.len(),
                 idx,
             ));
@@ -513,7 +514,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         match expr {
             Expression::FnCall(node) => self.interpret_fn_call_expr(node),
             Expression::FnDecl(node) => Ok(Value::Function(
-                node.arg_names.to_owned(),
+                node.arg_names.iter().map(|a| a.get_id()).collect(),
                 node.body.to_owned(),
             )),
             Expression::Index(node) => self.interpret_index_expr(node),
@@ -524,7 +525,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 None => Ok(Value::Nil),
             },
             Expression::Nil => Ok(Value::Nil),
-            Expression::Str(v) => Ok(Value::Str(v.to_string())),
+            Expression::Str(v) => Ok(Value::Str(v.string_from_source(self.input))),
             Expression::Bool(v) => Ok(Value::Bool(*v)),
             Expression::Number(v) => Ok(Value::Number(*v)),
             Expression::ArrayList(exprs) => self.make_array_value(exprs),
@@ -574,33 +575,31 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         FnCallNode { iden, args }: &FnCallNode,
     ) -> Result<Value, Error> {
         let Some(fn_value) = self.environment.get_variable_all_scope(iden) else {
-            return Err(Error::NotFoundVariable(iden.join_dot()));
+            return Err(Error::NotFoundVariable(iden.create_name(self.input)));
         };
-        let Value::Function(arg_names, body) = fn_value else {
+        let Value::Function(arg_ids, body) = fn_value else {
             return Err(Error::ValueNotCallable(fn_value.to_owned()));
         };
 
-        if arg_names.len() != args.len() {
+        if arg_ids.len() != args.len() {
             return Err(Error::WrongNumberOfArgument(
-                iden.join_dot(),
-                arg_names.len(),
+                iden.create_name(self.input),
+                arg_ids.len(),
                 args.len(),
             ));
         }
 
         // TODO: maybe we can borrow instead of clone here
-        let (arg_names, body) = (arg_names.clone(), body.clone());
+        let (arg_ids, body) = (arg_ids.clone(), body.clone());
 
         // create a new stack for the function call
         // currently, later args can reference sonner args
         // TODO: make this go away
         self.environment.push_scope();
-        for (arg_name, arg_expr) in arg_names.iter().zip(args.iter()) {
+        for (arg_id, arg_expr) in arg_ids.iter().zip(args.iter()) {
             let value = self.interpret_expr(arg_expr)?;
-            self.environment.insert_variable_current_scope(
-                &IdentifierNode::new_from_name(arg_name.clone()),
-                value,
-            );
+            self.environment
+                .insert_variable_current_scope_by_id(*arg_id, value);
         }
         let result = self
             .interpret_stmt_list(&body)

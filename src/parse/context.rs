@@ -1,4 +1,3 @@
-use crate::span::Span;
 use crate::token::Token;
 
 use super::error::ParseError;
@@ -20,6 +19,10 @@ impl<'a> Context<'a> {
             curr_pos: 0,
             is_in_fn: false,
         }
+    }
+
+    pub fn get_input(&self) -> &'a str {
+        self.input
     }
 
     pub fn is_at_end(&self) -> bool {
@@ -61,10 +64,6 @@ impl<'a> Context<'a> {
             Some(li) => Ok(li),
             None => Err(ParseError::Eof),
         }
-    }
-
-    pub fn source_from_span(&self, span: Span) -> String {
-        span.string_from_source(self.input)
     }
 
     pub fn prepare_next(&mut self) {
