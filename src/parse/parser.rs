@@ -29,7 +29,6 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Import => parse_import(state),
-        Token::Print => parse_print(state),
         Token::Identifier => parse_reassignment(state),
         Token::Var => parse_declaration(state),
         Token::While => parse_while(state),
@@ -49,12 +48,6 @@ fn parse_import(state: &mut Context) -> Result<Statement, ParseError> {
         path: Span::new(path_li.span.start + 1, path_li.span.end - 1),
         iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
     }))
-}
-
-fn parse_print(state: &mut Context) -> Result<Statement, ParseError> {
-    state.consume_token(Token::Print)?;
-    let exprs = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
-    Ok(Statement::Print(exprs))
 }
 
 fn parse_if(state: &mut Context) -> Result<Statement, ParseError> {

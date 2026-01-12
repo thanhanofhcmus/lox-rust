@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::value::Value;
-use crate::{ast::IdentifierNode, id::Id};
+use crate::{ast::IdentifierNode, id::Id, interpret::predule};
 
 struct Scope {
     variables: HashMap<Id, Value>,
@@ -72,6 +72,7 @@ const SCOPE_SIZE_LIMIT: usize = 20;
 pub struct Environment {
     scopes: Vec<Scope>,
     modules: HashMap<Id, Module>,
+    preludes: HashMap<Id, Value>,
 
     current_module_id: Id,
     print_writer: Rc<RefCell<dyn std::io::Write>>,
@@ -88,6 +89,7 @@ impl Environment {
         Self {
             scopes,
             modules,
+            preludes: predule::create(),
 
             current_module_id,
 
@@ -95,7 +97,7 @@ impl Environment {
         }
     }
 
-    pub fn get_print_writer(&'_ self) -> RefMut<'_, dyn std::io::Write> {
+    pub(super) fn get_print_writer(&'_ self) -> RefMut<'_, dyn std::io::Write> {
         self.print_writer.borrow_mut()
     }
 
@@ -151,8 +153,11 @@ impl Environment {
     }
 
     pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<&Value> {
+        self.get_variable_all_scope_by_id(node.get_id(), &node.prefix_ids)
+    }
+
+    pub fn get_variable_all_scope_by_id(&self, id: Id, prefix_ids: &[Id]) -> Option<&Value> {
         // check scopes/stacks
-        let id = node.get_id();
         if let Some(value) = self
             .get_current_scope()
             .get_variable_recursive(id, &self.scopes)
@@ -160,14 +165,19 @@ impl Environment {
             return Some(value);
         }
 
+        // get from built-in
+        if let Some(value) = self.preludes.get(&id) {
+            return Some(value);
+        }
+
         // No prefixes mean this code is trying to reference values from the trasparent scope only
-        if node.prefixes.is_empty() {
+        if prefix_ids.is_empty() {
             return None;
         }
 
         // For now, we expect a variable from another module is in the form
         // module_name.variable_name (1 dot, 2 parts)
-        let module_id = node.prefix_ids[0];
+        let module_id = prefix_ids[0];
         let module = self.modules.get(&module_id)?;
 
         // This code is allowing code to un-imported module

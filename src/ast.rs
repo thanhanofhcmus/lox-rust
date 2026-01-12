@@ -30,8 +30,6 @@ pub enum Statement {
     ReassignIndex(ReAssignIndexNode),
     Block(StatementList),
     Global(StatementList),
-
-    Print(Vec<Expression>),
 }
 
 pub type StatementList = Vec<Statement>;

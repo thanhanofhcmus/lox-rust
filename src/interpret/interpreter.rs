@@ -2,6 +2,7 @@ use super::environment::Environment;
 use super::error::Error;
 use super::value::Value;
 use crate::ast::*;
+use crate::interpret::value::{self, BuiltinFn, Function};
 use crate::parse;
 use crate::token::Token;
 use std::path::Path;
@@ -42,8 +43,8 @@ impl From<StmtReturn> for Option<Value> {
 }
 
 pub struct Interpreter<'cl, 'sl> {
-    environment: &'cl mut Environment,
-    input: &'sl str,
+    pub(super) environment: &'cl mut Environment,
+    pub(super) input: &'sl str,
 }
 
 impl<'cl, 'sl> Interpreter<'cl, 'sl> {
@@ -59,7 +60,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_stmt(&mut self, stmt: &Statement) -> Result<StmtReturn, Error> {
         match stmt {
             Statement::Import(node) => self.interpret_import_stmt(node),
-            Statement::Print(exprs) => self.interpret_print_stmt(exprs),
             Statement::Declare(name, expr) => self.interpret_declare_stmt(name, expr),
             Statement::ReassignIden(name, expr) => self.interpret_reassign_id_stmt(name, expr),
             Statement::ReassignIndex(node) => self.interpret_reassign_index_stmt(node),
@@ -135,17 +135,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         // TODO: detect circular dependency
 
-        Ok(StmtReturn::none())
-    }
-
-    fn interpret_print_stmt(&mut self, exprs: &[Expression]) -> Result<StmtReturn, Error> {
-        for expr in exprs {
-            let value = self.interpret_expr(expr)?;
-            let mut out = self.environment.get_print_writer();
-            // TODO: handle error here
-            write!(out, "{}", value).unwrap();
-        }
-        println!();
         Ok(StmtReturn::none())
     }
 
@@ -256,10 +245,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
             Expression::FnCall(node) => self.interpret_fn_call_expr(node),
-            Expression::FnDecl(node) => Ok(Value::Function(
-                node.arg_names.iter().map(|a| a.get_id()).collect(),
-                node.body.to_owned(),
-            )),
+            Expression::FnDecl(node) => Ok(Value::Function(Function {
+                arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
+                body: node.body.to_owned(),
+            })),
             Expression::Index(node) => self.interpret_index_expr(node),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Ternary(node) => self.interpret_ternary_expr(node),
@@ -313,43 +302,63 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         index(&indexer_val, &indexee_val)
     }
 
-    fn interpret_fn_call_expr(
-        &mut self,
-        FnCallNode { iden, args }: &FnCallNode,
-    ) -> Result<Value, Error> {
-        let Some(fn_value) = self.environment.get_variable_all_scope(iden) else {
-            return Err(Error::NotFoundVariable(iden.create_name(self.input)));
-        };
-        let Value::Function(arg_ids, body) = fn_value else {
-            return Err(Error::ValueNotCallable(fn_value.to_owned()));
+    fn interpret_fn_call_expr(&mut self, node: &FnCallNode) -> Result<Value, Error> {
+        let Some(fn_value) = self.environment.get_variable_all_scope(&node.iden) else {
+            return Err(Error::NotFoundVariable(node.iden.create_name(self.input)));
         };
 
-        if arg_ids.len() != args.len() {
+        match fn_value {
+            Value::Function(function) => {
+                // TODO: remove this clone
+                let function = function.clone();
+                self.interpret_normal_fn_call_expr(node, &function)
+            }
+            Value::BuiltinFunction(function) => self.intepret_builtin_fn_call_expr(node, *function),
+            _ => Err(Error::ValueNotCallable(fn_value.to_owned())),
+        }
+    }
+
+    fn interpret_normal_fn_call_expr(
+        &mut self,
+        node: &FnCallNode,
+        value::Function { arg_ids, body }: &Function,
+    ) -> Result<Value, Error> {
+        if arg_ids.len() != node.args.len() {
             return Err(Error::WrongNumberOfArgument(
-                iden.create_name(self.input),
+                node.iden.create_name(self.input),
                 arg_ids.len(),
-                args.len(),
+                node.args.len(),
             ));
         }
-
-        // TODO: maybe we can borrow instead of clone here
-        let (arg_ids, body) = (arg_ids.clone(), body.clone());
 
         // create a new stack for the function call
         // currently, later args can reference sonner args
         // TODO: make this go away
         self.environment.push_scope();
-        for (arg_id, arg_expr) in arg_ids.iter().zip(args.iter()) {
+        for (arg_id, arg_expr) in arg_ids.iter().zip(node.args.iter()) {
             let value = self.interpret_expr(arg_expr)?;
             self.environment
                 .insert_variable_current_scope_by_id(*arg_id, value);
         }
         let result = self
-            .interpret_stmt_list(&body)
+            .interpret_stmt_list(body)
             .map(|r| r.value.unwrap_or(Value::Nil));
         self.environment.pop_scope();
 
         result
+    }
+
+    fn intepret_builtin_fn_call_expr(
+        &mut self,
+        node: &FnCallNode,
+        function: BuiltinFn,
+    ) -> Result<Value, Error> {
+        let mut args = vec![];
+        for expr in &node.args {
+            let value = self.interpret_expr(expr)?;
+            args.push(value);
+        }
+        function(self, args)
     }
 
     fn interpret_unary_op(&mut self, expr: &Expression, op: Token) -> Result<Value, Error> {
@@ -485,7 +494,8 @@ fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
 fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Bool(match lhs {
         // TODO: compare function pointer
-        Value::Function(_, _) => false,
+        Value::Function(_) => false,
+        Value::BuiltinFunction(_) => false,
         Value::Nil => false,
         Value::Array(_) => false,
         Value::Bool(l) => match rhs {
