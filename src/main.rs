@@ -1,6 +1,6 @@
 mod ast;
 mod id;
-mod interpreter;
+mod interpret;
 mod parse;
 mod span;
 mod token;
@@ -38,7 +38,7 @@ fn repl() -> DynResult {
     let mut rl = DefaultEditor::new()?;
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp_ctx = interpreter::Environment::new(rc);
+    let mut itp_ctx = interpret::Environment::new(rc);
     let mut line: String;
 
     loop {
@@ -79,7 +79,7 @@ fn read_from_file(file_path: &str) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp = interpreter::Environment::new(rc);
+    let mut itp = interpret::Environment::new(rc);
     run_stmt(&contents, &mut itp, false)
 }
 
@@ -113,10 +113,14 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
     Ok(stmt)
 }
 
-fn run_stmt(input: &str, itp_ctx: &mut interpreter::Environment, print_result: bool) -> DynResult {
+fn run_stmt(
+    input: &str,
+    interpret_env: &mut interpret::Environment,
+    print_result: bool,
+) -> DynResult {
     let stmt = parse(input)?;
 
-    match interpreter::Interpreter::new(itp_ctx, input).interpret(&stmt) {
+    match interpret::Interpreter::new(interpret_env, input).interpret(&stmt) {
         Ok(value) => {
             if print_result {
                 info!("{:?}", value)
