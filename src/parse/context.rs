@@ -21,6 +21,10 @@ impl<'a> Context<'a> {
         }
     }
 
+    pub fn get_current_position(&self) -> usize {
+        self.curr_pos
+    }
+
     pub fn get_input(&self) -> &'a str {
         self.input
     }

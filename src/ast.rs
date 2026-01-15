@@ -6,15 +6,18 @@ pub enum Expression {
     Bool(bool),
     Number(f64),
     Str(Span),
-    ArrayList(Vec<Expression>),
-    ArrayRepeat(Box<ArrayRepeatNode>),
+    ArrayLiteral(ArrayLiteralNode),
     Ternary(TernaryExprNode),
     When(Vec<CaseNode>),
     UnaryOp(Box<Expression>, Token),
     BinaryOp(BinaryOpNode),
+    FnDecl(FnDeclNode),
+
+    Chaining(Vec<ChainingPart>),
+
+    // There 3 might be obsolete
     Identifier(IdentifierNode),
     Index(IndexExprNode),
-    FnDecl(FnDeclNode),
     FnCall(FnCallNode),
 }
 
@@ -100,6 +103,12 @@ pub struct TernaryExprNode {
 }
 
 #[derive(Debug, Clone)]
+pub enum ArrayLiteralNode {
+    List(Vec<Expression>),
+    Repeat(Box<ArrayRepeatNode>),
+}
+
+#[derive(Debug, Clone)]
 pub struct ArrayRepeatNode {
     pub value: Expression,
     pub repeat: Expression,
@@ -115,6 +124,14 @@ pub struct FnDeclNode {
 pub struct FnCallNode {
     pub iden: IdentifierNode,
     pub args: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ChainingPart {
+    Identifier(IdentifierNode),
+    FnCall(FnCallNode),          // Args
+    ArrayIndex(Box<Expression>), // Indexee
+    ArrayLiteral(ArrayLiteralNode),
 }
 
 #[derive(Debug, Clone)]

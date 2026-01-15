@@ -5,6 +5,7 @@ use crate::ast::*;
 use crate::interpret::value::{self, BuiltinFn, Function};
 use crate::parse;
 use crate::token::Token;
+use std::panic;
 use std::path::Path;
 
 const NUMBER_DELTA: f64 = 1e-10;
@@ -260,10 +261,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Expression::Str(v) => Ok(Value::Str(v.string_from_source(self.input))),
             Expression::Bool(v) => Ok(Value::Bool(*v)),
             Expression::Number(v) => Ok(Value::Number(*v)),
-            Expression::ArrayList(exprs) => self.make_array_value(exprs),
-            Expression::ArrayRepeat(node) => self.make_array_repeat(node),
+            Expression::ArrayLiteral(node) => self.interpret_array_literal(node),
             Expression::UnaryOp(expr, op) => self.interpret_unary_op(expr, *op),
             Expression::BinaryOp(node) => self.interpret_binary_op(node),
+            Expression::Chaining(chains) => self.interpret_chaining_expr(chains),
         }
     }
 
@@ -276,24 +277,27 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
-    fn make_array_value(&mut self, exprs: &Vec<Expression>) -> Result<Value, Error> {
-        let mut result = Vec::with_capacity(exprs.len());
-        for expr in exprs {
-            result.push(self.interpret_expr(expr)?);
-        }
-        Ok(Value::Array(result))
-    }
+    fn interpret_array_literal(&mut self, node: &ArrayLiteralNode) -> Result<Value, Error> {
+        match node {
+            ArrayLiteralNode::List(exprs) => {
+                let mut result = Vec::with_capacity(exprs.len());
+                for expr in exprs {
+                    result.push(self.interpret_expr(expr)?);
+                }
+                Ok(Value::Array(result))
+            }
+            ArrayLiteralNode::Repeat(node) => {
+                let value = self.interpret_expr(&node.value)?;
+                let repeat_val = self.interpret_expr(&node.repeat)?;
+                let repeat = is_usize(&repeat_val)?;
 
-    fn make_array_repeat(&mut self, node: &ArrayRepeatNode) -> Result<Value, Error> {
-        let value = self.interpret_expr(&node.value)?;
-        let repeat_val = self.interpret_expr(&node.repeat)?;
-        let repeat = is_usize(&repeat_val)?;
-
-        let mut result = Vec::with_capacity(repeat);
-        for _ in 0..repeat {
-            result.push(value.clone());
+                let mut result = Vec::with_capacity(repeat);
+                for _ in 0..repeat {
+                    result.push(value.clone());
+                }
+                Ok(Value::Array(result))
+            }
         }
-        Ok(Value::Array(result))
     }
 
     fn interpret_index_expr(&mut self, node: &IndexExprNode) -> Result<Value, Error> {
@@ -409,6 +413,62 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(Value::Nil)
     }
 
+    fn interpret_chaining_expr(&mut self, chains: &[ChainingPart]) -> Result<Value, Error> {
+        let Some((first, rest)) = chains.split_first() else {
+            panic!("Chain must have at least one value");
+        };
+        let mut value = self.interpret_chaining_part(first, Value::Nil, true)?;
+        for part in rest {
+            value = self.interpret_chaining_part(part, value, false)?;
+        }
+        Ok(value)
+    }
+
+    fn interpret_chaining_part(
+        &mut self,
+        part: &ChainingPart,
+        current_value: Value,
+        is_first_node: bool,
+    ) -> Result<Value, Error> {
+        match part {
+            ChainingPart::Identifier(node) => {
+                // TODO: make this a ref
+                let value = self
+                    .environment
+                    .get_variable_all_scope(node)
+                    .map(|v| v.to_owned())
+                    .to_owned()
+                    .unwrap_or(Value::Nil);
+
+                Ok(value)
+            }
+            ChainingPart::FnCall(node) => {
+                match current_value {
+                    Value::Function(function) => {
+                        // TODO: remove this clone
+                        let function = function.clone();
+                        self.interpret_normal_fn_call_expr(node, &function)
+                    }
+                    Value::BuiltinFunction(function) => {
+                        self.intepret_builtin_fn_call_expr(node, function)
+                    }
+                    _ => Err(Error::ValueNotCallable(current_value)),
+                }
+            }
+            ChainingPart::ArrayIndex(indexee_expr) => {
+                let indexee = self.interpret_expr(indexee_expr)?;
+                let value = index(&current_value, &indexee)?;
+                Ok(value)
+            }
+            ChainingPart::ArrayLiteral(node) => {
+                if !is_first_node {
+                    panic!("Shoud not get here")
+                }
+                self.interpret_array_literal(node)
+            }
+        }
+    }
+
     fn is_truthy(&mut self, expr: &Expression) -> Result<bool, Error> {
         let cond_value = self.interpret_expr(expr)?;
         let Value::Bool(cond_bin) = cond_value else {
@@ -416,7 +476,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         };
         Ok(cond_bin)
     }
-} // Interpreter
+}
 
 fn compare(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
     let from_ord = |o: std::cmp::Ordering| match op {
@@ -535,6 +595,7 @@ fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
         return Err(Error::ValueUnIndexable(indexer.clone()));
     };
     let idx = prepare_indexee(indexee)?;
+    // This one is return a new value, maybe return a ref instead
     Ok(arr.get(idx).map(Value::to_owned).unwrap_or(Value::Nil))
 }
 
