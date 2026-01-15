@@ -7,6 +7,7 @@ pub enum Expression {
     Number(f64),
     Str(Span),
     ArrayLiteral(ArrayLiteralNode),
+    MapLiteral(MapLiteralNode),
     Ternary(TernaryExprNode),
     When(Vec<CaseNode>),
     UnaryOp(Box<Expression>, Token),
@@ -100,6 +101,17 @@ pub struct TernaryExprNode {
 pub enum ArrayLiteralNode {
     List(Vec<Expression>),
     Repeat(Box<ArrayRepeatNode>),
+}
+
+#[derive(Debug, Clone)]
+pub struct MapLiteralNode {
+    pub nodes: Vec<MapLiteralElementNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MapLiteralElementNode {
+    pub key: Expression,
+    pub value: Expression,
 }
 
 #[derive(Debug, Clone)]

@@ -324,6 +324,7 @@ fn parse_primary(state: &mut Context) -> Result<Expression, ParseError> {
         }
         Token::Number => parse_number(state),
         Token::LSquareParen => Ok(Expression::ArrayLiteral(parse_array_literal_node(state)?)),
+        Token::PercentLPointParent => Ok(Expression::MapLiteral(parse_map_literal_node(state)?)),
         Token::LRoundParen => parse_group(state),
         Token::Fn => parse_function(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
@@ -370,6 +371,25 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, Par
         parse_clause,
     )?;
     Ok(ArrayLiteralNode::List(exprs))
+}
+
+fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode, ParseError> {
+    let nodes = parse_comma_list(
+        state,
+        Token::PercentLPointParent,
+        Token::RPointParen,
+        parse_map_literal_element_node,
+    )?;
+    Ok(MapLiteralNode { nodes })
+}
+
+fn parse_map_literal_element_node(
+    state: &mut Context,
+) -> Result<MapLiteralElementNode, ParseError> {
+    let key = parse_primary(state)?;
+    state.consume_token(Token::RFArrtow)?;
+    let value = parse_clause(state)?;
+    Ok(MapLiteralElementNode { key, value })
 }
 
 fn parse_function(state: &mut Context) -> Result<Expression, ParseError> {

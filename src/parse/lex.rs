@@ -81,7 +81,18 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             '+' => result.push(tok_one(Token::Plus)),
             '*' => result.push(tok_one(Token::Star)),
             '/' => result.push(tok_one(Token::Slash)),
-            '%' => result.push(tok_one(Token::Percentage)),
+
+            '%' => {
+                if is_next_char(input, curr_offset, '{') {
+                    result.push(LexItem::new(
+                        Token::PercentLPointParent,
+                        Span::two(curr_offset),
+                    ));
+                    curr_offset += 1;
+                } else {
+                    result.push(tok_one(Token::Percentage));
+                }
+            }
 
             '-' => {
                 if is_next_char(input, curr_offset, '>') {
@@ -92,7 +103,18 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 }
             }
 
-            '=' => push_with_equal(Token::EqualEqual, Token::Equal),
+            '=' => {
+                if is_next_char(input, curr_offset, '=') {
+                    result.push(LexItem::new(Token::EqualEqual, Span::two(curr_offset)));
+                    curr_offset += 1;
+                } else if is_next_char(input, curr_offset, '>') {
+                    result.push(LexItem::new(Token::RFArrtow, Span::two(curr_offset)));
+                    curr_offset += 1;
+                } else {
+                    result.push(tok_one(Token::Equal));
+                }
+            }
+
             '!' => push_with_equal(Token::BangEqual, Token::Bang),
             '<' => push_with_equal(Token::LessEqual, Token::Less),
             '>' => push_with_equal(Token::GreaterEqual, Token::Greater),

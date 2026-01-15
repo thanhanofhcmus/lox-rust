@@ -7,9 +7,8 @@ There are 3 syntax recursive point that repeat alot
 - `clause` is a simple expression
 
 ```
-stmt          = reassignment | declaration | print | expr | if | while | return | import
+stmt          = reassignment | declaration | expr | if | while | return | import
 import        = "import" UNIX_PATH_STRING "as" IDENTIFIER
-print         = "print" (clause "," ...)*
 if            = "if" clause block ("else" block)?
 declaration   = "var" IDENTIFIER "=" expr
 while         = "while" clause block
@@ -30,10 +29,11 @@ unary         = ("!" | "-")* unary | primary | chaining
 chaining      = identifier | call | index 
 call          = chaining "(" (clause "," ...)* ")"
 index         = (chaining | array_literal) ("[" clause "]")
-primary       = STRING | NUMBER | "true" | "false" | "nil" | group | array_literal | function_decl
+primary       = STRING | NUMBER | "true" | "false" | "nil" | group | array_literal | map_literal | function_decl
 identifier    = (IDENTIFIER "." ...)*
 function_decl = "fn" "(" ( IDENTIFIER "," ... )* ")" (block | expr)
 array_literal = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]"
+map_literal   = "%{" (primary "=>" expr , ...)* "}"
 group         = "(" clause ")"
 
 ```

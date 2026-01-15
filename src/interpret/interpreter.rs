@@ -5,10 +5,9 @@ use crate::ast::*;
 use crate::interpret::value::{self, BuiltinFn, Function};
 use crate::parse;
 use crate::token::Token;
+use std::collections::BTreeMap;
 use std::panic;
 use std::path::Path;
-
-const NUMBER_DELTA: f64 = 1e-10;
 
 #[derive(Debug)]
 struct StmtReturn {
@@ -220,6 +219,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Expression::Bool(v) => Ok(Value::Bool(*v)),
             Expression::Number(v) => Ok(Value::Number(*v)),
             Expression::ArrayLiteral(node) => self.interpret_array_literal(node),
+            Expression::MapLiteral(node) => self.interpret_map_literal(node),
             Expression::UnaryOp(expr, op) => self.interpret_unary_op(expr, *op),
             Expression::BinaryOp(node) => self.interpret_binary_op(node),
             Expression::Chaining(chains) => self.interpret_chaining_expr(chains),
@@ -256,6 +256,16 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 Ok(Value::Array(result))
             }
         }
+    }
+
+    fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
+        let mut m = BTreeMap::new();
+        for kv in &node.nodes {
+            let key = self.interpret_expr(&kv.key)?;
+            let value = self.interpret_expr(&kv.value)?;
+            m.insert(key, value);
+        }
+        Ok(Value::Map(m))
     }
 
     fn interpret_normal_fn_call_expr(
@@ -331,7 +341,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Token::Slash => divide(&lhs, &rhs),
             Token::Percentage => modulo(&lhs, &rhs),
             Token::And | Token::Or => and_or(&lhs, op, &rhs),
-            Token::EqualEqual | Token::BangEqual => is_equal(&lhs, &rhs),
+            Token::EqualEqual | Token::BangEqual => Ok(Value::Bool(lhs == rhs)),
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
                 compare(&lhs, op, &rhs)
             }
@@ -486,28 +496,6 @@ fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     let l = extract_number(lhs, Token::Percentage)?;
     let r = extract_number(rhs, Token::Percentage)?;
     Ok(Value::Number(l % r))
-}
-
-fn is_equal(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    Ok(Value::Bool(match lhs {
-        // TODO: compare function pointer
-        Value::Function(_) => false,
-        Value::BuiltinFunction(_) => false,
-        Value::Nil => false,
-        Value::Array(_) => false,
-        Value::Bool(l) => match rhs {
-            Value::Bool(r) => l == r,
-            _ => false,
-        },
-        Value::Number(l) => match rhs {
-            Value::Number(r) => f64::abs(*l - *r) < NUMBER_DELTA,
-            _ => false,
-        },
-        Value::Str(l) => match rhs {
-            Value::Str(r) => l == r,
-            _ => false,
-        },
-    }))
 }
 
 fn is_usize(value: &Value) -> Result<usize, Error> {

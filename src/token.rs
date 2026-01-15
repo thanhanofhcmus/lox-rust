@@ -2,60 +2,63 @@ use derive_more::Display;
 
 #[derive(Clone, Copy, Debug, Display, PartialEq)]
 pub enum Token {
-    LRoundParen,
-    RRoundParen,
-    LSquareParen,
-    RSquareParen,
-    LPointParen,
-    RPointParen,
+    PercentLPointParent, // %{
 
-    Equal,
-    Bang,
+    LRoundParen,  // (
+    RRoundParen,  // )
+    LSquareParen, // [
+    RSquareParen, // ]
+    LPointParen,  // {
+    RPointParen,  // }
 
-    EqualEqual,
-    BangEqual,
+    Equal, // =
+    Bang,  // !
 
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
+    EqualEqual, // ==
+    BangEqual,  // !=
 
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Percentage,
+    Less,         // <
+    LessEqual,    // <=
+    Greater,      // >
+    GreaterEqual, // >=
 
-    And,
-    Or,
+    Plus,       // +
+    Minus,      // -
+    Star,       // *
+    Slash,      // /
+    Percentage, // %
 
-    RTArrow, // right thin arrow "->"
+    And, // and
+    Or,  // or
 
-    True,
-    False,
-    Nil,
+    RTArrow,  // ->
+    RFArrtow, // =>
 
-    Var,
-    If,
-    Else,
-    While,
-    Fn,
-    Return,
-    Cond,
-    Then,
-    When,
-    Case,
-    Import,
-    As,
+    True,  // true
+    False, // false
+    Nil,   // nil
+
+    Var,    // var
+    If,     // if
+    Else,   // else
+    While,  // while
+    Fn,     // fn
+    Return, // return
+    Cond,   // cond
+    Then,   // then
+    When,   // when
+    Case,   // case
+    Import, // import
+    As,     // as
 
     Identifier,
     Number,
     String,
 
-    Dot,
-    Comma,
-    Colon,
-    Semicolon,
+    Dot,       // .
+    Comma,     // ,
+    Colon,     // :
+    Semicolon, // ;
 
     Comment, // a whole comment until the newline
 }
