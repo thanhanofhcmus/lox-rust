@@ -38,7 +38,7 @@ fn repl() -> DynResult {
     let mut rl = DefaultEditor::new()?;
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp_ctx = interpret::Environment::new(rc);
+    let mut itp_env = interpret::Environment::new(rc);
     let mut line: String;
 
     loop {
@@ -46,7 +46,7 @@ fn repl() -> DynResult {
             Ok(repl_line) => {
                 line = repl_line;
                 rl.add_history_entry(&line)?;
-                run_stmt(line.trim_end(), &mut itp_ctx, true).unwrap_or_else(|e| error!("{}", e));
+                _ = run_stmt(line.trim_end(), &mut itp_env);
             }
             Err(ReadlineError::Eof) => break,
             Err(ReadlineError::Interrupted) => break,
@@ -80,7 +80,7 @@ fn read_from_file(file_path: &str) -> DynResult {
     let contents = std::fs::read_to_string(file_path)?;
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut itp = interpret::Environment::new(rc);
-    run_stmt(&contents, &mut itp, false)
+    run_stmt(&contents, &mut itp)
 }
 
 fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
@@ -113,19 +113,11 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
     Ok(stmt)
 }
 
-fn run_stmt(
-    input: &str,
-    interpret_env: &mut interpret::Environment,
-    print_result: bool,
-) -> DynResult {
+fn run_stmt(input: &str, interpret_env: &mut interpret::Environment) -> DynResult {
     let stmt = parse(input)?;
 
     match interpret::Interpreter::new(interpret_env, input).interpret(&stmt) {
-        Ok(value) => {
-            if print_result {
-                info!("{:?}", value)
-            }
-        }
+        Ok(_) => {}
         Err(err) => {
             error!("Interpreter error: {}", err);
             return Err(Box::new(err));
