@@ -29,12 +29,12 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Import => parse_import(state),
-        Token::Identifier => parse_reassignment(state),
         Token::Var => parse_declaration(state),
         Token::While => parse_while(state),
         Token::If => parse_if(state),
         Token::Return => parse_return(state),
         Token::LPointParen => parse_block(state),
+        Token::Identifier => parse_reassignment_or_expr(state),
         _ => parse_expr(state).map(Statement::Expr),
     }
 }
@@ -108,7 +108,10 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
     ))
 }
 
-fn parse_reassignment(state: &mut Context) -> Result<Statement, ParseError> {
+fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
+    if !state.peek_2_token(&[Token::Equal]) {
+        return parse_expr(state).map(Statement::Expr);
+    }
     let id_item = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;

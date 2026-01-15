@@ -54,6 +54,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     pub fn interpret(&mut self, stmt: &'sl Statement) -> Result<Value, Error> {
+        // dbg!(stmt);
         self.interpret_stmt(stmt)
             .map(|r| r.value.unwrap_or(Value::Nil))
     }
@@ -352,6 +353,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let Some((first, rest)) = chains.split_first() else {
             panic!("Chain must have at least one value");
         };
+        // TODO: we need to make this ref if we want bring back re-assignment ability
         let mut value = self.interpret_chaining_part(first, Value::Nil, true)?;
         for part in rest {
             value = self.interpret_chaining_part(part, value, false)?;
