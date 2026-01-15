@@ -63,7 +63,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Statement::Import(node) => self.interpret_import_stmt(node),
             Statement::Declare(name, expr) => self.interpret_declare_stmt(name, expr),
             Statement::ReassignIden(name, expr) => self.interpret_reassign_id_stmt(name, expr),
-            Statement::ReassignIndex(node) => self.interpret_reassign_index_stmt(node),
             Statement::Return(expr) => self
                 .interpret_expr(expr)
                 .map(StmtReturn::new)
@@ -190,42 +189,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(StmtReturn::none())
     }
 
-    fn interpret_reassign_index_stmt(
-        &mut self,
-        node: &ReAssignIndexNode,
-    ) -> Result<StmtReturn, Error> {
-        let indexee_val = self.interpret_expr(&node.indexee)?;
-        let idx = prepare_indexee(&indexee_val)?;
-
-        let value = self.interpret_expr(&node.expr)?;
-
-        let Expression::Identifier(ref indexer_id) = node.indexer else {
-            // TODO: more concrete error
-            return Err(Error::InvalidExpressionType(
-                "Identifier".to_string(),
-                node.indexer.to_owned(),
-            ));
-        };
-        let Some(indexer_arr) = self.environment.get_variable_current_scope_mut(indexer_id) else {
-            return Err(Error::NotFoundVariable(indexer_id.create_name(self.input)));
-        };
-        let Value::Array(ref mut arr) = indexer_arr else {
-            return Err(Error::ValueUnIndexable(indexer_arr.clone()));
-        };
-
-        if arr.len() < idx {
-            return Err(Error::ArrayOutOfBound(
-                indexer_id.create_name(self.input),
-                arr.len(),
-                idx,
-            ));
-        }
-
-        arr[idx] = value;
-
-        Ok(StmtReturn::none())
-    }
-
     fn interpret_while_stmt(
         &mut self,
         WhileNode { cond, body }: &WhileNode,
@@ -245,18 +208,12 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
-            Expression::FnCall(node) => self.interpret_fn_call_expr(node),
             Expression::FnDecl(node) => Ok(Value::Function(Function {
                 arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
                 body: node.body.to_owned(),
             })),
-            Expression::Index(node) => self.interpret_index_expr(node),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Ternary(node) => self.interpret_ternary_expr(node),
-            Expression::Identifier(node) => match self.environment.get_variable_all_scope(node) {
-                Some(value) => Ok(value.to_owned()),
-                None => Ok(Value::Nil),
-            },
             Expression::Nil => Ok(Value::Nil),
             Expression::Str(v) => Ok(Value::Str(v.string_from_source(self.input))),
             Expression::Bool(v) => Ok(Value::Bool(*v)),
@@ -297,28 +254,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 }
                 Ok(Value::Array(result))
             }
-        }
-    }
-
-    fn interpret_index_expr(&mut self, node: &IndexExprNode) -> Result<Value, Error> {
-        let indexer_val = self.interpret_expr(&node.indexer)?;
-        let indexee_val = self.interpret_expr(&node.indexee)?;
-        index(&indexer_val, &indexee_val)
-    }
-
-    fn interpret_fn_call_expr(&mut self, node: &FnCallNode) -> Result<Value, Error> {
-        let Some(fn_value) = self.environment.get_variable_all_scope(&node.iden) else {
-            return Err(Error::NotFoundVariable(node.iden.create_name(self.input)));
-        };
-
-        match fn_value {
-            Value::Function(function) => {
-                // TODO: remove this clone
-                let function = function.clone();
-                self.interpret_normal_fn_call_expr(node, &function)
-            }
-            Value::BuiltinFunction(function) => self.intepret_builtin_fn_call_expr(node, *function),
-            _ => Err(Error::ValueNotCallable(fn_value.to_owned())),
         }
     }
 

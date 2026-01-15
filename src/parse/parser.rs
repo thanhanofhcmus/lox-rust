@@ -109,14 +109,6 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
 }
 
 fn parse_reassignment(state: &mut Context) -> Result<Statement, ParseError> {
-    if state.peek_2_token(&[Token::Equal]) {
-        parse_iden_reassignment(state)
-    } else {
-        parse_index_reassignment_or_expr(state)
-    }
-}
-
-fn parse_iden_reassignment(state: &mut Context) -> Result<Statement, ParseError> {
     let id_item = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
@@ -124,26 +116,6 @@ fn parse_iden_reassignment(state: &mut Context) -> Result<Statement, ParseError>
         IdentifierNode::new_from_name(id_item.span, state.get_input()),
         expr,
     ))
-}
-
-fn parse_index_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
-    let id = parse_expr(state)?;
-    if state.peek(&[Token::Equal]) {
-        let Expression::Index(index_expr) = id else {
-            // TODO: more concrete error
-            return Err(ParseError::Eof);
-        };
-        let expr = parse_expr(state)?;
-        Ok(Statement::ReassignIndex({
-            ReAssignIndexNode {
-                indexer: *index_expr.indexer,
-                indexee: *index_expr.indexee,
-                expr,
-            }
-        }))
-    } else {
-        Ok(Statement::Expr(id))
-    }
 }
 
 fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
@@ -310,6 +282,7 @@ fn parse_chaining_continue(
         parse_chaining_continue(state, chains)
     } else if state.peek(&[Token::LRoundParen]) {
         // parse function
+        // TODO: make start position span the whole chain
         let start_position = state.get_current_position();
         let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
         let end_position = state.get_current_position();

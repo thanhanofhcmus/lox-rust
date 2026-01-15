@@ -15,7 +15,7 @@ declaration   = "var" IDENTIFIER "=" expr
 while         = "while" clause block
 return        = "return" (expr)?
 block         = "{" (stmt ";")* "}"
-reassignment  = (IDENTIFIER | index) "=" expr
+reassignment  = IDENTIFIER "=" expr
 expr          = clause | ternary | when
 ternary       = "cond" clause "then" clause "else" clause
 when          = "when" "{" ( "case" clause "->" expr "," ... )* "}"

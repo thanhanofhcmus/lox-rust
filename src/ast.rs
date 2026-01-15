@@ -14,11 +14,6 @@ pub enum Expression {
     FnDecl(FnDeclNode),
 
     Chaining(Vec<ChainingPart>),
-
-    // There 3 might be obsolete
-    Identifier(IdentifierNode),
-    Index(IndexExprNode),
-    FnCall(FnCallNode),
 }
 
 #[derive(Debug, Clone)]
@@ -30,7 +25,6 @@ pub enum Statement {
     While(WhileNode),
     Declare(IdentifierNode, Expression),
     ReassignIden(IdentifierNode, Expression),
-    ReassignIndex(ReAssignIndexNode),
     Block(StatementList),
     Global(StatementList),
 }
@@ -156,18 +150,5 @@ pub struct WhileNode {
 #[derive(Debug, Clone)]
 pub struct CaseNode {
     pub cond: Expression,
-    pub expr: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct IndexExprNode {
-    pub indexer: Box<Expression>,
-    pub indexee: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReAssignIndexNode {
-    pub indexer: Expression,
-    pub indexee: Expression,
     pub expr: Expression,
 }
