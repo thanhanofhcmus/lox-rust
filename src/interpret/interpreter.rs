@@ -253,7 +253,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ArrayLiteralNode::Repeat(node) => {
                 let value = self.interpret_expr(&node.value)?;
                 let repeat_val = self.interpret_expr(&node.repeat)?;
-                let repeat = is_usize(&repeat_val)?;
+                let repeat = prepare_usize(&repeat_val)?;
 
                 let mut result = Vec::with_capacity(repeat);
                 for _ in 0..repeat {
@@ -388,7 +388,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                         _ => return Err(Error::ValueNotCallable(value)),
                     }
                 }
-                ChainingPart::ArrayIndex(indexee_expr) => {
+                ChainingPart::Index(indexee_expr) => {
                     let indexee = self.interpret_expr(indexee_expr)?;
                     index(&value, &indexee)?
                 }
@@ -488,7 +488,7 @@ fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
     Ok(Value::Number(l % r))
 }
 
-fn is_usize(value: &Value) -> Result<usize, Error> {
+fn prepare_usize(value: &Value) -> Result<usize, Error> {
     let Value::Number(idx) = value else {
         return Err(Error::ValueMustBeUsize(value.clone()));
     };
@@ -501,17 +501,16 @@ fn is_usize(value: &Value) -> Result<usize, Error> {
     Ok(idx as usize)
 }
 
-fn prepare_indexee(indexee: &Value) -> Result<usize, Error> {
-    is_usize(indexee)
-}
-
 fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
-    let Value::Array(arr) = indexer else {
-        return Err(Error::ValueUnIndexable(indexer.clone()));
-    };
-    let idx = prepare_indexee(indexee)?;
-    // This one is return a new value, maybe return a ref instead
-    Ok(arr.get(idx).map(Value::to_owned).unwrap_or(Value::Nil))
+    match indexer {
+        Value::Array(arr) => {
+            let idx = prepare_usize(indexee)?;
+            // This one is return a new value, maybe return a ref instead
+            Ok(arr.get(idx).map(Value::to_owned).unwrap_or(Value::Nil))
+        }
+        Value::Map(m) => Ok(m.get(indexee).map(Value::to_owned).unwrap_or(Value::Nil)),
+        _ => Err(Error::ValueUnIndexable(indexer.clone())),
+    }
 }
 
 fn extract_number(v: &Value, token: Token) -> Result<f64, Error> {

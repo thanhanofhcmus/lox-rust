@@ -275,7 +275,7 @@ fn parse_chaining(state: &mut Context) -> Result<Expression, ParseError> {
             state.consume_token(Token::LSquareParen)?;
             let indexee = parse_clause(state)?;
             state.consume_token(Token::RSquareParen)?;
-            path.push(ChainingPart::ArrayIndex(Box::new(indexee)));
+            path.push(ChainingPart::Index(Box::new(indexee)));
         } else if state.peek(&[Token::LRoundParen]) {
             // parse function
             // TODO: make start position span the whole chain

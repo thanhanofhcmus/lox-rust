@@ -147,9 +147,9 @@ pub enum ChainingBase {
 
 #[derive(Debug, Clone)]
 pub enum ChainingPart {
-    Identifier(IdentifierNode),  // a.b
-    FnCall(FnCallNode),          // a(b, c)
-    ArrayIndex(Box<Expression>), // a[b + c]
+    Identifier(IdentifierNode), // a.b
+    FnCall(FnCallNode),         // a(b, c)
+    Index(Box<Expression>),     // a[b + c], array or map indexing
 }
 
 #[derive(Debug, Clone)]
