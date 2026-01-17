@@ -54,12 +54,18 @@ pub enum Error {
     #[error("Module `{0}` cannot be found in path `{1}`")]
     ModuleNotFoundInPath(String, String),
 
-    #[error("Reading module `{0}` in path `{1}` failed with error {2}")]
+    #[error("Reading module `{0}` in path `{1}` failed with error: {2}")]
     ReadModuleFailed(String, String, std::io::Error),
 
-    #[error("Parsing module `{0}` in path `{1}` failed with error {2}")]
+    #[error("Parsing module `{0}` in path `{1}` failed with error: {2}")]
     ParseModuleFailed(String, String, ParseError),
 
-    #[error("Interpreting module `{0}` in path `{1}` failed with error {2}")]
+    #[error("Interpreting module `{0}` in path `{1}` failed with error: {2}")]
     InterpretModuleFailed(String, String, Box<Error>),
+
+    #[error("Serialize value `{0}` failed with error: {1}")]
+    SerializeFailed(Value, String),
+
+    #[error("Deserialize value `{0}` failed with error: {1}")]
+    DeserializeFailed(Value, String),
 }

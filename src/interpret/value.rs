@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::BTreeMap};
 
 use derive_more::Display;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{error::Error, interpreter::Interpreter};
 
@@ -14,7 +15,8 @@ pub struct Function {
     pub body: StatementList,
 }
 
-#[derive(Display, Debug, Clone)]
+#[derive(Display, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Value {
     #[display(fmt = "nil")]
     Nil,
@@ -31,12 +33,15 @@ pub enum Value {
     Array(Vec<Value>),
 
     #[display(fmt = "%{}", "format_map(_0)")] // Call helper
+    #[serde(serialize_with = "serialize_map", deserialize_with = "deserialize_map")]
     Map(BTreeMap<Value, Value>),
 
     #[display(fmt = "function")]
+    #[serde(skip)]
     Function(Function),
 
     #[display(fmt = "builtin_function")]
+    #[serde(skip)]
     BuiltinFunction(BuiltinFn),
 }
 
@@ -119,6 +124,39 @@ impl Ord for Value {
             _ => Ordering::Equal,
         }
     }
+}
+
+fn serialize_map<S: Serializer>(
+    m: &BTreeMap<Value, Value>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let string_map = m
+        .iter()
+        .filter_map(|(k, v)| {
+            match v {
+                Value::BuiltinFunction(_) | Value::Function(_) => return None,
+                _ => {}
+            };
+            match k {
+                Value::Str(s) => Some((s, v)),
+                // We can allow other type to be key with to_string here
+                _ => None,
+            }
+        })
+        .collect::<BTreeMap<&String, &Value>>();
+
+    string_map.serialize(serializer)
+}
+
+fn deserialize_map<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<Value, Value>, D::Error> {
+    let string_map = BTreeMap::<String, Value>::deserialize(deserializer)?;
+    let mut value_map = BTreeMap::new();
+    for (k, v) in string_map {
+        value_map.insert(Value::Str(k), v);
+    }
+    Ok(value_map)
 }
 
 // Helper function to simulate Python's list printing

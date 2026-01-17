@@ -1,92 +1,86 @@
-# `hash` for comment
+# --- 1. Variables & Dynamic Types ---
+# Variables are declared with 'var'. Types are determined at runtime.
+var x = 10;                # Number
+var name = "Gemini";       # String
+var is_active = true;      # Boolean
+var empty = nil;           # Null type
 
-# create a new variable with `var`
-var x = 1;
+# Re-assignment to different types is perfectly valid
+x = [1, 2, "mixed"];
+print("x is now an array: ", x);
 
-# print it with `print`
-print(x);
 
-# variable is dynamic, you can set it to another type
-x = "a string";
-print(x);
+# --- 2. Data Structures ---
 
-# these are types supported in this lox
+# Arrays: Ordered, zero-indexed lists
+var list = ["A", "B", "C"];
+print("First element: ", list[0]);
 
-# boolean
-x = true;
-x = false;
+# Maps: Key-Value pairs using the %{ key => value } syntax
+# Supports mixed keys: numbers, strings, etc.
+var user = %{
+    "id" => 1,
+    "name" => "Alice",
+    42 => "The Answer"
+};
+print("User name: ", user["name"]);
 
-# number, with or without decimal
-x = 42;
-x = 1.5432;
 
-# and array
-x = [true, 1, "yes, mixed type in array value"];
+# --- 3. Arithmetic & Logic ---
+var a = 10;
+var b = 3;
 
-# finally, null type
-x = nil;
+var sum = a + b;           # 13
+var quotient = a / b;      # 3.333...
+var remainder = a % b;     # 1
 
-# Here are some simple arithmetic operations
-# adding, subtracting, multiply, division and modulo
-x = 1;
-var y = x + 0.6 # a new variable, yay;
-var z = y / 2;
-var w = z * 10;
-var alpha = w % 2;
+# Boolean logic uses 'and', 'or', and 'not'
+var can_enter = (a > 5) and (name == "VIP");
 
-# you can also do boolean arithmentics
-var b = true and false;
-b = b or (2 == 10 / 5);
 
-# if statement to do branching
-var n = 4;
-if n % 2 == 0 {
-  print("n is even")
+# --- 4. Control Flow ---
+
+# If-Else: Standard branching
+if a % 2 == 0 {
+    print("a is even");
 } else {
-  print("n is odd")
+    print("a is odd");
 }
 
-# while loop is also supported
-
-print("A");
-var t = 100;
-print("B");
-while t > 95 {
-  print(t);
-  t = t - 1;
+# While Loop: Primary iteration tool
+var count = 3;
+while count > 0 {
+    print("Counting down: ", count);
+    count = count - 1;
 }
 
-# for loop is not supported, if you want to do for loop
-# desugar it into a while loop
+# --- 5. Advanced Expressions ---
 
-# but if you have multiple switch condition, you can use `when` - `case` expression
+# 'when' Expression: Evaluates cases top-down and returns a value
+var score = 85;
+var grade = when {
+    case score >= 90 -> "A",
+    case score >= 80 -> "B",
+    case score >= 70 -> "C",
+    case true        -> "F"   # Acts as a default case
+};
+print("Your grade is: ", grade);
 
-var next_n_loop_in_four = when {
-  case n == 0 -> 1,
-  case n == 1 -> 2,
-  case n == 2 -> 3,
-  case n == 4 -> 0,
-}
-print(next_n_loop_in_four);
+# 'cond' Expression: A compact ternary operator
+var status = cond (score > 60) then "Pass" else "Fail"
+print("Status: ", status);
 
-# or you can put any condition expression in it, it will check form the top condition down
-var when_v = when {
-  case x == y and y == z -> "all equal",
-  case x == y -> "only x = y",
-  case y == z -> "only z = y",
-  case x == z -> "only x = z",
-  case true -> "nothing equal anything",
-}
-print(when_v);
 
-# ternary expression is created with `cond` - `then` - `else`
-var ter = cond n == 2 then "n is 2" else "n is not 2"
-print(ter);
+# --- 6. First-Class Functions ---
+# Functions are values. You can assign them to variables.
 
-# functions can be created the and assign the same way variable are created
+var multiply = fn(n, m) {
+    return n * m;
+};
 
-var add = fn(a, b) { return a + b; };
-var print_times_two = fn(n) { print(n * 2); };
+var greet = fn(target) {
+    print("Hello, " + target + "!");
+};
 
-print(add(5, 4));
-print_times_two(12);
+print("Result of 5 * 4: ", multiply(5, 4));
+greet("Developer");
