@@ -30,7 +30,7 @@ pub enum Value {
     #[display(fmt = "{}", "format_array(_0)")] // Call helper
     Array(Vec<Value>),
 
-    #[display(fmt = "{}", "format_map(_0)")] // Call helper
+    #[display(fmt = "%{}", "format_map(_0)")] // Call helper
     Map(BTreeMap<Value, Value>),
 
     #[display(fmt = "function")]
