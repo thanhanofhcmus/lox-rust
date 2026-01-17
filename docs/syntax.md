@@ -1,10 +1,11 @@
 Lox syntax
 
-There are 3 syntax recursive point that repeat alot
+Syntax point
 
 - `stmt` is the top most level
 - `expr` is anything that produces value
 - `clause` is a simple expression
+- `primary` is a primitive value
 
 ```
 stmt          = reassignment | declaration | expr | if | while | return | import
@@ -29,7 +30,7 @@ unary         = ("!" | "-")* unary | chaining
 chaining      = chaining_base (chaining_part)*
 # TODO: review group position here, we put it here to have a higher precedence than unary
 chaining_base = identifier | group | primary  
-chaining_part = "." identifier | "[" clause "]" | "(" (clause "," ... ) ")"
+chaining_part = "." identifier | "[" expr "]" | "(" (expr "," ... ) ")"
 primary       = STRING | NUMBER | "true" | "false" | "nil" | array_literal | map_literal | function_decl
 identifier    = (IDENTIFIER "." ...)*
 function_decl = "fn" "(" ( IDENTIFIER "," ... )* ")" (block | expr)
