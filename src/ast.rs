@@ -1,23 +1,6 @@
 use crate::{id::Id, span::Span, token::Token};
 
 #[derive(Debug, Clone)]
-pub enum Expression {
-    Nil,
-    Bool(bool),
-    Number(f64),
-    Str(Span),
-    ArrayLiteral(ArrayLiteralNode),
-    MapLiteral(MapLiteralNode),
-    Ternary(TernaryExprNode),
-    When(Vec<CaseNode>),
-    UnaryOp(Box<Expression>, Token),
-    BinaryOp(BinaryOpNode),
-    FnDecl(FnDeclNode),
-
-    Chaining(Vec<ChainingPart>),
-}
-
-#[derive(Debug, Clone)]
 pub enum Statement {
     Import(ImportNode),
     Expr(Expression),
@@ -31,6 +14,29 @@ pub enum Statement {
 }
 
 pub type StatementList = Vec<Statement>;
+
+#[derive(Debug, Clone)]
+pub enum Expression {
+    Primary(PrimaryNode),
+
+    Ternary(TernaryExprNode),
+    When(Vec<CaseNode>),
+    UnaryOp(Box<Expression>, Token),
+    BinaryOp(BinaryOpNode),
+
+    Chaining(ChainingNode),
+}
+
+#[derive(Debug, Clone)]
+pub enum PrimaryNode {
+    Nil,
+    Bool(bool),
+    Number(f64),
+    Str(Span),
+    ArrayLiteral(ArrayLiteralNode),
+    MapLiteral(MapLiteralNode),
+    FnDecl(FnDeclNode),
+}
 
 #[derive(Debug, Clone)]
 pub struct IfStmtNode {
@@ -110,7 +116,7 @@ pub struct MapLiteralNode {
 
 #[derive(Debug, Clone)]
 pub struct MapLiteralElementNode {
-    pub key: Expression,
+    pub key: PrimaryNode,
     pub value: Expression,
 }
 
@@ -133,11 +139,23 @@ pub struct FnCallNode {
 }
 
 #[derive(Debug, Clone)]
-pub enum ChainingPart {
+pub enum ChainingBase {
     Identifier(IdentifierNode),
-    FnCall(FnCallNode),          // Args
-    ArrayIndex(Box<Expression>), // Indexee
-    ArrayLiteral(ArrayLiteralNode),
+    Primary(PrimaryNode),
+    Group(Box<Expression>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ChainingPart {
+    Identifier(IdentifierNode),  // a.b
+    FnCall(FnCallNode),          // a(b, c)
+    ArrayIndex(Box<Expression>), // a[b + c]
+}
+
+#[derive(Debug, Clone)]
+pub struct ChainingNode {
+    pub base: ChainingBase,
+    pub path: Vec<ChainingPart>,
 }
 
 #[derive(Debug, Clone)]

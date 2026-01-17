@@ -234,7 +234,7 @@ fn parse_unary(state: &mut Context) -> Result<Expression, ParseError> {
     match li.token {
         Token::Bang => parse_recursive_unary(state, Token::Bang),
         Token::Minus => parse_recursive_unary(state, Token::Minus),
-        _ => parse_chaining_or_primary(state),
+        _ => parse_chaining(state),
     }
 }
 
@@ -250,60 +250,55 @@ fn parse_recursive_unary(
             match_token,
         ))
     } else {
-        parse_chaining_or_primary(state)
+        parse_chaining(state)
     }
 }
 
-fn parse_chaining_or_primary(state: &mut Context) -> Result<Expression, ParseError> {
-    if state.peek(&[Token::Identifier]) {
-        parse_chaining_continue(state, vec![])
-    } else if state.peek(&[Token::LSquareParen]) {
-        let array_literal = parse_array_literal_node(state)?;
-        if state.peek(&[Token::Identifier, Token::LSquareParen, Token::LRoundParen]) {
-            parse_chaining_continue(state, vec![ChainingPart::ArrayLiteral(array_literal)])
-        } else {
-            Ok(Expression::ArrayLiteral(array_literal))
-        }
-    } else {
-        parse_primary(state)
-    }
-}
-
-fn parse_chaining_continue(
-    state: &mut Context,
-    mut chains: Vec<ChainingPart>,
-) -> Result<Expression, ParseError> {
-    if state.peek(&[Token::Identifier]) {
-        let id = parse_identifier_node(state)?;
-        chains.push(ChainingPart::Identifier(id));
-        parse_chaining_continue(state, chains)
-    } else if state.peek(&[Token::LSquareParen]) {
-        state.consume_token(Token::LSquareParen)?;
-        let indexee = parse_clause(state)?;
-        state.consume_token(Token::RSquareParen)?;
-        chains.push(ChainingPart::ArrayIndex(Box::new(indexee)));
-        parse_chaining_continue(state, chains)
+fn parse_chaining(state: &mut Context) -> Result<Expression, ParseError> {
+    let base = if state.peek(&[Token::Identifier]) {
+        let node = parse_identifier_node(state)?;
+        ChainingBase::Identifier(node)
     } else if state.peek(&[Token::LRoundParen]) {
-        // parse function
-        // TODO: make start position span the whole chain
-        let start_position = state.get_current_position();
-        let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
-        let end_position = state.get_current_position();
-        chains.push(ChainingPart::FnCall(FnCallNode {
-            iden: IdentifierNode::new_from_name(
-                Span::new(start_position, end_position),
-                state.get_input(),
-            ),
-            args,
-        }));
-        parse_chaining_continue(state, chains)
+        let node = parse_group(state)?;
+        ChainingBase::Group(Box::new(node))
     } else {
-        assert!(!chains.is_empty());
-        Ok(Expression::Chaining(chains))
+        let node = parse_primary_node(state)?;
+        ChainingBase::Primary(node)
+    };
+
+    let mut path = vec![];
+    loop {
+        if state.peek(&[Token::Identifier]) {
+            let id = parse_identifier_node(state)?;
+            path.push(ChainingPart::Identifier(id));
+        } else if state.peek(&[Token::LSquareParen]) {
+            state.consume_token(Token::LSquareParen)?;
+            let indexee = parse_clause(state)?;
+            state.consume_token(Token::RSquareParen)?;
+            path.push(ChainingPart::ArrayIndex(Box::new(indexee)));
+        } else if state.peek(&[Token::LRoundParen]) {
+            // parse function
+            // TODO: make start position span the whole chain
+            let start_position = state.get_current_position();
+            let args =
+                parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
+            let end_position = state.get_current_position();
+            path.push(ChainingPart::FnCall(FnCallNode {
+                iden: IdentifierNode::new_from_name(
+                    Span::new(start_position, end_position),
+                    state.get_input(),
+                ),
+                args,
+            }));
+        } else {
+            break;
+        }
     }
+
+    Ok(Expression::Chaining(ChainingNode { base, path }))
 }
 
-fn parse_primary(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_primary_node(state: &mut Context) -> Result<PrimaryNode, ParseError> {
     let li = *state.get_curr()?;
     let mut next = |expr| {
         state.advance();
@@ -311,22 +306,21 @@ fn parse_primary(state: &mut Context) -> Result<Expression, ParseError> {
     };
 
     match li.token {
-        Token::Nil => next(Expression::Nil),
-        Token::True => next(Expression::Bool(true)),
-        Token::False => next(Expression::Bool(false)),
+        Token::Nil => next(PrimaryNode::Nil),
+        Token::True => next(PrimaryNode::Bool(true)),
+        Token::False => next(PrimaryNode::Bool(false)),
         Token::String => {
             // Don't use the `next` closure here, the borrow checker will complain
             state.advance();
-            Ok(Expression::Str(
+            Ok(PrimaryNode::Str(
                 // remove start '"' and end '"'
                 Span::new(li.span.start + 1, li.span.end - 1),
             ))
         }
         Token::Number => parse_number(state),
-        Token::LSquareParen => Ok(Expression::ArrayLiteral(parse_array_literal_node(state)?)),
-        Token::PercentLPointParent => Ok(Expression::MapLiteral(parse_map_literal_node(state)?)),
-        Token::LRoundParen => parse_group(state),
-        Token::Fn => parse_function(state),
+        Token::LSquareParen => Ok(PrimaryNode::ArrayLiteral(parse_array_literal_node(state)?)),
+        Token::PercentLPointParent => Ok(PrimaryNode::MapLiteral(parse_map_literal_node(state)?)),
+        Token::Fn => parse_function_decl(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
@@ -386,13 +380,13 @@ fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode, ParseEr
 fn parse_map_literal_element_node(
     state: &mut Context,
 ) -> Result<MapLiteralElementNode, ParseError> {
-    let key = parse_primary(state)?;
+    let key = parse_primary_node(state)?;
     state.consume_token(Token::RFArrtow)?;
     let value = parse_clause(state)?;
     Ok(MapLiteralElementNode { key, value })
 }
 
-fn parse_function(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_function_decl(state: &mut Context) -> Result<PrimaryNode, ParseError> {
     state.consume_token(Token::Fn)?;
     let arg_names = parse_comma_list(
         state,
@@ -415,15 +409,15 @@ fn parse_function(state: &mut Context) -> Result<Expression, ParseError> {
         body = vec![Statement::Return(expr)];
     }
 
-    Ok(Expression::FnDecl(FnDeclNode { arg_names, body }))
+    Ok(PrimaryNode::FnDecl(FnDeclNode { arg_names, body }))
 }
 
-fn parse_number(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_number(state: &mut Context) -> Result<PrimaryNode, ParseError> {
     let li = state.consume_token(Token::Number)?;
     let source = li.span.str_from_source(state.get_input());
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
-        Ok(num) => Ok(Expression::Number(num)),
+        Ok(num) => Ok(PrimaryNode::Number(num)),
     }
 }
 

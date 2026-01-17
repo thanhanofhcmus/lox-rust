@@ -8,9 +8,10 @@ pub fn compile_stmt(vm: &mut VM, stmt: &Statement) -> Result<Vec<Instruction>, E
     }
 }
 
-fn compile_expr(_vm: &mut VM, expr: &Expression) -> Result<Vec<Instruction>, Error> {
-    match expr {
-        Expression::Number(_a) => Ok(vec![]),
-        _ => Err(Error::Compile),
-    }
+fn compile_expr(_vm: &mut VM, _expr: &Expression) -> Result<Vec<Instruction>, Error> {
+    unimplemented!()
+    // match expr {
+    //     Expression::Number(_a) => Ok(vec![]),
+    //     _ => Err(Error::Compile),
+    // }
 }

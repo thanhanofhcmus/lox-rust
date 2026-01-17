@@ -208,21 +208,27 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
-            Expression::FnDecl(node) => Ok(Value::Function(Function {
+            Expression::Primary(node) => self.interpret_primary_expr(node),
+            Expression::When(nodes) => self.interpret_when_expr(nodes),
+            Expression::Ternary(node) => self.interpret_ternary_expr(node),
+            Expression::UnaryOp(expr, op) => self.interpret_unary_op(expr, *op),
+            Expression::BinaryOp(node) => self.interpret_binary_op(node),
+            Expression::Chaining(node) => self.interpret_chaining_expr(node),
+        }
+    }
+
+    fn interpret_primary_expr(&mut self, node: &PrimaryNode) -> Result<Value, Error> {
+        match node {
+            PrimaryNode::Nil => Ok(Value::Nil),
+            PrimaryNode::Str(v) => Ok(Value::Str(v.string_from_source(self.input))),
+            PrimaryNode::Bool(v) => Ok(Value::Bool(*v)),
+            PrimaryNode::Number(v) => Ok(Value::Number(*v)),
+            PrimaryNode::ArrayLiteral(node) => self.interpret_array_literal(node),
+            PrimaryNode::MapLiteral(node) => self.interpret_map_literal(node),
+            PrimaryNode::FnDecl(node) => Ok(Value::Function(Function {
                 arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
                 body: node.body.to_owned(),
             })),
-            Expression::When(nodes) => self.interpret_when_expr(nodes),
-            Expression::Ternary(node) => self.interpret_ternary_expr(node),
-            Expression::Nil => Ok(Value::Nil),
-            Expression::Str(v) => Ok(Value::Str(v.string_from_source(self.input))),
-            Expression::Bool(v) => Ok(Value::Bool(*v)),
-            Expression::Number(v) => Ok(Value::Number(*v)),
-            Expression::ArrayLiteral(node) => self.interpret_array_literal(node),
-            Expression::MapLiteral(node) => self.interpret_map_literal(node),
-            Expression::UnaryOp(expr, op) => self.interpret_unary_op(expr, *op),
-            Expression::BinaryOp(node) => self.interpret_binary_op(node),
-            Expression::Chaining(chains) => self.interpret_chaining_expr(chains),
         }
     }
 
@@ -261,7 +267,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
         let mut m = BTreeMap::new();
         for kv in &node.nodes {
-            let key = self.interpret_expr(&kv.key)?;
+            let key = self.interpret_primary_expr(&kv.key)?;
             let value = self.interpret_expr(&kv.value)?;
             m.insert(key, value);
         }
@@ -359,61 +365,45 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(Value::Nil)
     }
 
-    fn interpret_chaining_expr(&mut self, chains: &[ChainingPart]) -> Result<Value, Error> {
-        let Some((first, rest)) = chains.split_first() else {
-            panic!("Chain must have at least one value");
-        };
+    fn interpret_chaining_expr(&mut self, node: &ChainingNode) -> Result<Value, Error> {
         // TODO: we need to make this ref if we want bring back re-assignment ability
-        let mut value = self.interpret_chaining_part(first, Value::Nil, true)?;
-        for part in rest {
-            value = self.interpret_chaining_part(part, value, false)?;
+        let mut value = match &node.base {
+            ChainingBase::Primary(v) => self.interpret_primary_expr(v)?,
+            ChainingBase::Group(v) => self.interpret_expr(v)?,
+            ChainingBase::Identifier(v) => self.lookup_all_scope(v),
+        };
+        for part in &node.path {
+            value = match part {
+                ChainingPart::Identifier(node) => self.lookup_all_scope(node),
+                ChainingPart::FnCall(node) => {
+                    match value {
+                        Value::Function(function) => {
+                            // TODO: remove this clone
+                            let function = function.clone();
+                            self.interpret_normal_fn_call_expr(node, &function)?
+                        }
+                        Value::BuiltinFunction(function) => {
+                            self.intepret_builtin_fn_call_expr(node, function)?
+                        }
+                        _ => return Err(Error::ValueNotCallable(value)),
+                    }
+                }
+                ChainingPart::ArrayIndex(indexee_expr) => {
+                    let indexee = self.interpret_expr(indexee_expr)?;
+                    index(&value, &indexee)?
+                }
+            }
         }
         Ok(value)
     }
 
-    fn interpret_chaining_part(
-        &mut self,
-        part: &ChainingPart,
-        current_value: Value,
-        is_first_node: bool,
-    ) -> Result<Value, Error> {
-        match part {
-            ChainingPart::Identifier(node) => {
-                // TODO: make this a ref
-                let value = self
-                    .environment
-                    .get_variable_all_scope(node)
-                    .map(|v| v.to_owned())
-                    .to_owned()
-                    .unwrap_or(Value::Nil);
-
-                Ok(value)
-            }
-            ChainingPart::FnCall(node) => {
-                match current_value {
-                    Value::Function(function) => {
-                        // TODO: remove this clone
-                        let function = function.clone();
-                        self.interpret_normal_fn_call_expr(node, &function)
-                    }
-                    Value::BuiltinFunction(function) => {
-                        self.intepret_builtin_fn_call_expr(node, function)
-                    }
-                    _ => Err(Error::ValueNotCallable(current_value)),
-                }
-            }
-            ChainingPart::ArrayIndex(indexee_expr) => {
-                let indexee = self.interpret_expr(indexee_expr)?;
-                let value = index(&current_value, &indexee)?;
-                Ok(value)
-            }
-            ChainingPart::ArrayLiteral(node) => {
-                if !is_first_node {
-                    panic!("Shoud not get here")
-                }
-                self.interpret_array_literal(node)
-            }
-        }
+    fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
+        // TODO: make this a ref
+        self.environment
+            .get_variable_all_scope(node)
+            .map(|v| v.to_owned())
+            .to_owned()
+            .unwrap_or(Value::Nil)
     }
 
     fn is_truthy(&mut self, expr: &Expression) -> Result<bool, Error> {

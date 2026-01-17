@@ -25,11 +25,12 @@ comparison    = term (("<" | "<" | "<=" | ">=") term)*
 term          = factor (("+" | "-") factor)*
 factor        = modulo (("*" | "/") modulo)*
 modulo        = unary ("%" unary)?
-unary         = ("!" | "-")* unary | primary | chaining
-chaining      = identifier | call | index 
-call          = chaining "(" (clause "," ...)* ")"
-index         = (chaining | array_literal) ("[" clause "]")
-primary       = STRING | NUMBER | "true" | "false" | "nil" | group | array_literal | map_literal | function_decl
+unary         = ("!" | "-")* unary | chaining
+chaining      = chaining_base (chaining_part)*
+# TODO: review group position here, we put it here to have a higher precedence than unary
+chaining_base = identifier | group | primary  
+chaining_part = "." identifier | "[" clause "]" | "(" (clause "," ... ) ")"
+primary       = STRING | NUMBER | "true" | "false" | "nil" | array_literal | map_literal | function_decl
 identifier    = (IDENTIFIER "." ...)*
 function_decl = "fn" "(" ( IDENTIFIER "," ... )* ")" (block | expr)
 array_literal = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]"
