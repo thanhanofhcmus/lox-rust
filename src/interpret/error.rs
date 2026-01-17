@@ -5,10 +5,10 @@ use crate::{ast::Expression, parse::ParseError, token::Token};
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Variable or function of name `{0}` has been declared before")]
+    #[error("Variable of name `{0}` has been declared before")]
     ReDeclareVariable(String),
 
-    #[error("Variable or function of name `{0} has not been declared but get re-assigned")]
+    #[error("Variable of name `{0} has not been declared but get re-assigned")]
     NotFoundVariable(String),
 
     #[error("Variable of name `{0}` is readonly in this scope")]
@@ -32,10 +32,10 @@ pub enum Error {
     #[error("Value `{0}` is not a callable")]
     ValueNotCallable(Value),
 
-    #[error("Callable `{0}` accept {1} number of arguments but receive {2}")]
+    #[error("Callable `{0}` accepts {1} number of arguments but received {2}")]
     WrongNumberOfArgument(String, usize, usize),
 
-    #[error("Value `{0}` is not of the type array of map, hence indexable")]
+    #[error("Value `{0}` is not of the type array or map, hance not indexable")]
     ValueUnIndexable(Value),
 
     #[error("Value `{0}` is can not be used as key for array or map")]
@@ -48,7 +48,7 @@ pub enum Error {
     #[error("Expect expression of type `{0}`, have type `{1:?}`")]
     InvalidExpressionType(String, Expression),
 
-    #[error("Array of name `{0}` has length `{1}` but receive index `{2}`")]
+    #[error("Array of name `{0}` has length `{1}` but received index `{2}`")]
     ArrayOutOfBound(String, usize, usize),
 
     #[error("Module `{0}` cannot be found in path `{1}`")]
@@ -57,9 +57,9 @@ pub enum Error {
     #[error("Reading module `{0}` in path `{1}` failed with error {2}")]
     ReadModuleFailed(String, String, std::io::Error),
 
-    #[error("Parse module `{0}` in path `{1}` failed with error {2}")]
+    #[error("Parsing module `{0}` in path `{1}` failed with error {2}")]
     ParseModuleFailed(String, String, ParseError),
 
-    #[error("Interpret module `{0}` in pparse::ath `{1}` failed with error {2}")]
+    #[error("Interpreting module `{0}` in path `{1}` failed with error {2}")]
     InterpretModuleFailed(String, String, Box<Error>),
 }
