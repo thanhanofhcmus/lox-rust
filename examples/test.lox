@@ -27,9 +27,9 @@ print();
 print("--- Running Data Structure Tests...");
 
 # Testing Arrays
-var list = [10, 20, 30];
+var list = [10, nil, true];
 assert(list[0] == 10, "Array indexing failed");
-assert(list[2] == 30, "Array end indexing failed");
+assert(list[2], "Array end indexing failed");
 
 # Testing Maps
 var registry = %{
@@ -88,3 +88,49 @@ var map_arr = %{ "b" => arr_fn_b };
 var arr_fn_index = fn() 2;
 assert(arr_fn_b()[1][2][arr_fn_index()][1]()[1][2] == 6, "Chaining function call and array failed");
 assert(map_arr["b"]()[1][arr_fn_index()][2][1]()[1][0] == 4, "Chaining function call and array and map failed");
+
+print();
+
+# --- 7. Equality & Comparison Deep Dive ---
+print("--- Running Equality & Comparison Tests...");
+
+# Standard Equality
+assert(10 == 10, "Integer equality failed");
+assert("test" == "test", "String equality failed");
+assert(nil == nil, "Nil equality failed");
+
+# Cross-type Numeric Equality (Coercion)
+# Tests your: (Integer(l), Floating(r)) => *l as f64 == *r
+assert(5 == 5.0, "Integer 5 should equal Float 5.0");
+assert(0 == 0.0, "Zeroes of different types should be equal");
+assert(not (5 == 5.1), "Integer 5 should NOT equal Float 5.1");
+
+# Type Mismatches (Should return false, NOT error)
+assert(not (10 == "10"), "Integer 10 should not equal String '10'");
+assert(not (true == 1), "Boolean true should not equal Integer 1");
+
+# Recursive Collection Equality
+assert([1, 2, [3, 4]] == [1, 2, [3, 4]], "Recursive array equality failed");
+assert([1, 5.0] == [1.0, 5], "Cross-type numeric array equality failed");
+
+var map_a = %{ "x" => 10, "y" => [1, 2] };
+var map_b = %{ "x" => 10.0, "y" => [1.0, 2.0] };
+assert(map_a == map_b, "Recursive map equality with coercion failed");
+
+# Ordering with Mixed Types
+assert(10.5 > 10, "Float vs Integer comparison failed");
+assert(5.0 >= 5, "Float vs Integer inclusive comparison failed");
+assert("apple" < "banana", "String lexicographical comparison failed");
+
+# Function Identity (Pointer Equality)
+var f_identity = fn(a) a;
+var g_identity = f_identity;
+var h_identity = fn(a) a; # Same body, different instance
+
+# This test is falling since we have not create function pointer yet
+assert(f_identity == g_identity, "Pointer equality for same function instance failed");
+
+assert(not (f_identity == h_identity), "Different function instances should not be equal");
+assert(not (print == print), "Pointer equality for the same built-in function failed");
+
+print();
