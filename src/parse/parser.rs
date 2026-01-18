@@ -413,9 +413,14 @@ fn parse_function_decl(state: &mut Context) -> Result<PrimaryNode, ParseError> {
 fn parse_number(state: &mut Context) -> Result<PrimaryNode, ParseError> {
     let li = state.consume_token(Token::Number)?;
     let source = li.span.str_from_source(state.get_input());
+
+    if let Ok(num) = source.parse::<i64>() {
+        return Ok(PrimaryNode::Integer(num));
+    }
+
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
-        Ok(num) => Ok(PrimaryNode::Number(num)),
+        Ok(num) => Ok(PrimaryNode::Floating(num)),
     }
 }
 

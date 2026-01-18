@@ -53,7 +53,8 @@ pub enum ClauseNode {
 pub enum PrimaryNode {
     Nil,
     Bool(bool),
-    Number(f64),
+    Integer(i64),
+    Floating(f64),
     Str(Span),
     ArrayLiteral(ArrayLiteralNode),
     MapLiteral(MapLiteralNode),

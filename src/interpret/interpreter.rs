@@ -228,7 +228,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             PrimaryNode::Nil => Ok(Value::Nil),
             PrimaryNode::Str(v) => Ok(Value::Str(v.string_from_source(self.input))),
             PrimaryNode::Bool(v) => Ok(Value::Bool(*v)),
-            PrimaryNode::Number(v) => Ok(Value::Number(*v)),
+            PrimaryNode::Integer(v) => Ok(Value::Integer(*v)),
+            PrimaryNode::Floating(v) => Ok(Value::Floating(*v)),
             PrimaryNode::ArrayLiteral(node) => self.interpret_array_literal(node),
             PrimaryNode::MapLiteral(node) => self.interpret_map_literal(node),
             PrimaryNode::FnDecl(node) => Ok(Value::Function(Function {
@@ -259,7 +260,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ArrayLiteralNode::Repeat(node) => {
                 let value = self.interpret_clause_expr(&node.value)?;
                 let repeat_val = self.interpret_clause_expr(&node.repeat)?;
-                let repeat = prepare_usize(&repeat_val)?;
+                let repeat = to_index(&repeat_val)?;
 
                 let mut result = Vec::with_capacity(repeat);
                 for _ in 0..repeat {
@@ -331,7 +332,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 _ => Err(Error::InvalidOperationOnType(op, res)),
             },
             Token::Minus => match res {
-                Value::Number(v) => Ok(Value::Number(-v)),
+                Value::Floating(v) => Ok(Value::Floating(-v)),
                 _ => Err(Error::InvalidOperationOnType(op, res)),
             },
             _ => Err(Error::UnknownOperation(op)),
@@ -429,13 +430,15 @@ fn compare(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
         Token::GreaterEqual => Ok(Value::Bool(o.is_ge())),
         _ => Err(Error::UnknownOperation(op)),
     };
-    if let (Value::Number(l), Value::Number(r)) = (lhs, rhs) {
-        return from_ord(l.total_cmp(r));
+    use Value::*;
+    match (lhs, rhs) {
+        (Integer(l), Integer(r)) => from_ord(l.cmp(r)),
+        (Floating(l), Integer(r)) => from_ord(l.total_cmp(&(*r as f64))),
+        (Integer(l), Floating(r)) => from_ord((*l as f64).total_cmp(r)),
+        (Floating(l), Floating(r)) => from_ord(l.total_cmp(r)),
+        (Str(l), Str(r)) => from_ord(l.cmp(r)),
+        _ => Err(Error::InvalidOperationOnType(op, lhs.clone())),
     }
-    if let (Value::Str(l), Value::Str(r)) = (lhs, rhs) {
-        return from_ord(l.cmp(r));
-    }
-    Err(Error::InvalidOperationOnType(op, lhs.clone()))
 }
 
 fn and_or(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
@@ -454,75 +457,106 @@ fn and_or(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
 }
 
 fn add(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    match lhs {
-        Value::Number(l) => match rhs {
-            Value::Number(r) => Ok(Value::Number(l + r)),
-            _ => Err(Error::MismatchType(lhs.clone(), rhs.clone())),
-        },
-        Value::Str(l) => match rhs {
-            Value::Str(r) => Ok(Value::Str(l.to_owned() + r)),
-            _ => Err(Error::MismatchType(lhs.clone(), rhs.clone())),
-        },
+    use Value::*;
+    match (lhs, rhs) {
+        (Integer(l), Integer(r)) => Ok(Integer(l + r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l + (*r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) + r)),
+        (Floating(l), Floating(r)) => Ok(Floating(l + r)),
+        (Str(l), Str(r)) => Ok(Str(l.to_owned() + r)),
         _ => Err(Error::InvalidOperationOnType(Token::Plus, lhs.clone())),
     }
 }
 
 fn subtract(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    let l = extract_number(lhs, Token::Minus)?;
-    let r = extract_number(rhs, Token::Minus)?;
-    Ok(Value::Number(l - r))
+    use Value::*;
+    match (lhs, rhs) {
+        (Integer(l), Integer(r)) => Ok(Integer(l - r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l - (*r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) - r)),
+        (Floating(l), Floating(r)) => Ok(Floating(l - r)),
+        _ => Err(Error::InvalidOperationOnType(Token::Minus, lhs.clone())),
+    }
 }
 
 fn times(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    let l = extract_number(lhs, Token::Star)?;
-    let r = extract_number(rhs, Token::Star)?;
-    Ok(Value::Number(l * r))
+    use Value::*;
+    match (lhs, rhs) {
+        (Integer(l), Integer(r)) => Ok(Integer(l * r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l * (*r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) * r)),
+        (Floating(l), Floating(r)) => Ok(Floating(l * r)),
+        _ => Err(Error::InvalidOperationOnType(Token::Star, lhs.clone())),
+    }
 }
 
 fn divide(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    let l = extract_number(lhs, Token::Slash)?;
-    let r = extract_number(rhs, Token::Slash)?;
-    if r == 0.0 {
-        return Err(Error::DivideByZero);
+    use Value::*;
+    match rhs {
+        Integer(v) if *v == 0 => return Err(Error::DivideByZero),
+        Floating(v) if *v == 0.0 => return Err(Error::DivideByZero),
+        _ => {}
     }
-    Ok(Value::Number(l / r))
+    match (lhs, rhs) {
+        (Integer(l), Integer(r)) => {
+            if l % r == 0 {
+                Ok(Integer(l / r))
+            } else {
+                Ok(Floating(*l as f64 / *r as f64))
+            }
+        }
+        (Floating(l), Integer(r)) => Ok(Floating(l / (*r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) / r)),
+        (Floating(l), Floating(r)) => Ok(Floating(l / r)),
+        _ => Err(Error::InvalidOperationOnType(Token::Star, lhs.clone())),
+    }
 }
 
 fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    let l = extract_number(lhs, Token::Percentage)?;
-    let r = extract_number(rhs, Token::Percentage)?;
-    Ok(Value::Number(l % r))
+    use Value::*;
+    match (lhs, rhs) {
+        (Integer(l), Integer(r)) => Ok(Integer(l % r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l % (*r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) % r)),
+        (Floating(l), Floating(r)) => Ok(Floating(l % r)),
+        _ => Err(Error::InvalidOperationOnType(
+            Token::Percentage,
+            lhs.clone(),
+        )),
+    }
 }
 
-fn prepare_usize(value: &Value) -> Result<usize, Error> {
-    let Value::Number(idx) = value else {
-        return Err(Error::ValueMustBeUsize(value.clone()));
-    };
-    let idx = *idx;
-
-    // check if idx is a integer
-    if idx < 0.0 || idx.fract() != 0.0 {
-        return Err(Error::ValueMustBeUsize(value.clone()));
+fn to_index(value: &Value) -> Result<usize, Error> {
+    match value {
+        Value::Integer(i) => {
+            if *i < 0 {
+                return Err(Error::ValueMustBeUsize(value.clone()));
+            }
+            // Try into usize to handle platforms where usize < i64
+            usize::try_from(*i).map_err(|_| Error::ValueMustBeUsize(value.clone()))
+        }
+        Value::Floating(f) => {
+            if *f < 0.0 || f.fract() != 0.0 {
+                return Err(Error::ValueMustBeUsize(value.clone()));
+            }
+            // We use 'as' for the final cast, but check bounds first
+            if *f > usize::MAX as f64 {
+                return Err(Error::ValueMustBeUsize(value.clone()));
+            }
+            Ok(*f as usize)
+        }
+        _ => Err(Error::ValueMustBeUsize(value.clone())),
     }
-    Ok(idx as usize)
 }
 
 fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
     match indexer {
         Value::Array(arr) => {
-            let idx = prepare_usize(indexee)?;
+            let idx = to_index(indexee)?;
             // This one is return a new value, maybe return a ref instead
             Ok(arr.get(idx).map(Value::to_owned).unwrap_or(Value::Nil))
         }
         Value::Map(m) => Ok(m.get(indexee).map(Value::to_owned).unwrap_or(Value::Nil)),
         _ => Err(Error::ValueUnIndexable(indexer.clone())),
-    }
-}
-
-fn extract_number(v: &Value, token: Token) -> Result<f64, Error> {
-    if let Value::Number(n) = v {
-        Ok(*n)
-    } else {
-        Err(Error::InvalidOperationOnType(token, v.clone()))
     }
 }

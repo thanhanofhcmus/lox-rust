@@ -24,8 +24,13 @@ pub enum Value {
     #[display(fmt = "{:?}", _0)] // Quotes for strings
     Str(String),
 
+    // The integer variant must be declared before the floating variant
+    // for serde to try to parse it first
     #[display(fmt = "{}", _0)]
-    Number(f64),
+    Integer(i64),
+
+    #[display(fmt = "{}", _0)]
+    Floating(f64),
 
     #[display(fmt = "{}", _0)]
     Bool(bool),
@@ -47,17 +52,18 @@ pub enum Value {
 }
 
 impl Value {
-    // just for ordering
+    // does not mean anything, just for ordering in a btree
     fn type_rank(&self) -> u8 {
         match self {
             Value::Nil => 0,
             Value::Bool(_) => 1,
-            Value::Number(_) => 2,
-            Value::Str(_) => 3,
-            Value::Array(_) => 4,
-            Value::Map(_) => 5,
-            Value::Function(_) => 6,
-            Value::BuiltinFunction(_) => 7,
+            Value::Integer(_) => 2,
+            Value::Floating(_) => 3,
+            Value::Str(_) => 4,
+            Value::Array(_) => 5,
+            Value::Map(_) => 6,
+            Value::Function(_) => 7,
+            Value::BuiltinFunction(_) => 8,
         }
     }
 }
@@ -72,7 +78,7 @@ impl PartialEq for Value {
             (Bool(l), Bool(r)) => l == r,
             (Str(l), Str(r)) => l == r,
             // TODO: this logic of floating point comparision might be flaky
-            (Number(l), Number(r)) => (*l - *r).abs() < NUMBER_DELTA,
+            (Floating(l), Floating(r)) => (*l - *r).abs() < NUMBER_DELTA,
 
             (Array(l), Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a == b),
             (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
@@ -108,7 +114,7 @@ impl Ord for Value {
             (Nil, Nil) => Ordering::Equal,
             (Bool(a), Bool(b)) => a.cmp(b),
             (Str(a), Str(b)) => a.cmp(b),
-            (Number(a), Number(b)) => {
+            (Floating(a), Floating(b)) => {
                 // Handle f64 comparison (ignoring NaN for simplicity,
                 // or treat NaN as the smallest number)
                 a.partial_cmp(b).unwrap_or(Ordering::Less)
