@@ -65,7 +65,7 @@ var scale = fn(n) n * multiplier;
 assert(scale(5) == 10, "Function call or closure scope failed");
 
 var factorial = fn(n) {
-    if n <= 1 { return 1; };
+    if n <= 1 { return 1; }
     return n * factorial(n - 1);
 };
 assert(factorial(5) == 120, "Recursive function call failed");
@@ -85,4 +85,5 @@ var arr_fn_a = fn() [[1, 2, 3],[4, 5, 6]];
 var fn_arr = [[], [], [0, 0, [0, arr_fn_a]]];
 var arr_fn_b = fn() [[], fn_arr];
 var map_arr = %{ "b" => arr_fn_b };
-assert(map_arr["b"]()[1][2][2][1]()[1][0] == 4, "Chainin function call and index failed");
+assert(arr_fn_b()[1][2][2][1]()[1][0] == 4, "Chaining function call and array failed");
+assert(map_arr["b"]()[1][2][2][1]()[1][0] == 4, "Chaining function call and array and map failed");

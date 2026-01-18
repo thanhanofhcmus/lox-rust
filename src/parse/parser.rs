@@ -90,9 +90,20 @@ fn parse_block(state: &mut Context) -> Result<Statement, ParseError> {
 
 fn parse_block_statement_list(state: &mut Context) -> Result<StatementList, ParseError> {
     state.consume_token(Token::LPointParen)?;
-    let stmts = parse_repeated_with_separator(state, Token::Semicolon, parse_stmt, |t| {
-        t == Token::RPointParen
-    })?;
+
+    let mut stmts = vec![];
+    while !state.peek(&[Token::RPointParen]) {
+        let result = parse_stmt(state)?;
+        match &result {
+            // these statements does not need ';' at the end since they end with blocks
+            Statement::If(_) | Statement::While(_) | Statement::Block(_) => {}
+            _ => {
+                state.consume_token(Token::Semicolon)?;
+            }
+        };
+        stmts.push(result);
+    }
+
     state.consume_token(Token::RPointParen)?;
     Ok(stmts)
 }
