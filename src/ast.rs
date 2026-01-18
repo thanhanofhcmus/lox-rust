@@ -16,14 +16,36 @@ pub enum Statement {
 pub type StatementList = Vec<Statement>;
 
 #[derive(Debug, Clone)]
+pub struct ImportNode {
+    pub path: Span,
+    pub iden: IdentifierNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhileNode {
+    pub cond: ClauseNode,
+    pub body: StatementList,
+}
+
+#[derive(Debug, Clone)]
+pub struct IfStmtNode {
+    pub cond: ClauseNode,
+    pub if_stmts: StatementList,
+    pub else_stmts: Option<StatementList>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
-    Primary(PrimaryNode),
-
     Ternary(TernaryExprNode),
-    When(Vec<CaseNode>),
-    UnaryOp(Box<Expression>, Token),
-    BinaryOp(BinaryOpNode),
+    When(Vec<WhenArmNode>),
+    Clause(ClauseNode),
+}
 
+#[derive(Debug, Clone)]
+pub enum ClauseNode {
+    UnaryOp(Box<ClauseNode>, Token),
+    BinaryOp(BinaryOpNode),
+    Primary(PrimaryNode),
     Chaining(ChainingNode),
 }
 
@@ -39,10 +61,78 @@ pub enum PrimaryNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct IfStmtNode {
-    pub cond: Expression,
-    pub if_stmts: StatementList,
-    pub else_stmts: Option<StatementList>,
+pub struct TernaryExprNode {
+    pub cond: ClauseNode,
+    pub true_clause: ClauseNode,
+    pub false_clause: ClauseNode,
+}
+
+#[derive(Debug, Clone)]
+pub enum ArrayLiteralNode {
+    List(Vec<ClauseNode>),
+    Repeat(Box<ArrayRepeatNode>),
+}
+
+#[derive(Debug, Clone)]
+pub struct MapLiteralNode {
+    pub nodes: Vec<MapLiteralElementNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MapLiteralElementNode {
+    pub key: PrimaryNode,
+    pub value: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrayRepeatNode {
+    pub value: ClauseNode,
+    pub repeat: ClauseNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnDeclNode {
+    pub arg_names: Vec<IdentifierNode>,
+    pub body: StatementList,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnCallNode {
+    pub iden: IdentifierNode,
+    pub args: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ChainingBase {
+    Identifier(IdentifierNode),
+    Primary(PrimaryNode),
+    Group(Box<Expression>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ChainingPart {
+    Identifier(IdentifierNode), // a.b
+    FnCall(FnCallNode),         // a(b, c)
+    Index(Box<Expression>),     // a[b + c], array or map indexing
+}
+
+#[derive(Debug, Clone)]
+pub struct ChainingNode {
+    pub base: ChainingBase,
+    pub path: Vec<ChainingPart>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryOpNode {
+    pub lhs: Box<ClauseNode>,
+    pub op: Token,
+    pub rhs: Box<ClauseNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhenArmNode {
+    pub cond: ClauseNode,
+    pub expr: ClauseNode,
 }
 
 #[derive(Debug, Clone)]
@@ -94,91 +184,4 @@ impl IdentifierNode {
     pub fn get_id(&self) -> Id {
         self.name_id
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct TernaryExprNode {
-    pub cond: Box<Expression>,
-    pub true_expr: Box<Expression>,
-    pub false_expr: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ArrayLiteralNode {
-    List(Vec<Expression>),
-    Repeat(Box<ArrayRepeatNode>),
-}
-
-#[derive(Debug, Clone)]
-pub struct MapLiteralNode {
-    pub nodes: Vec<MapLiteralElementNode>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MapLiteralElementNode {
-    pub key: PrimaryNode,
-    pub value: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct ArrayRepeatNode {
-    pub value: Expression,
-    pub repeat: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct FnDeclNode {
-    pub arg_names: Vec<IdentifierNode>,
-    pub body: StatementList,
-}
-
-#[derive(Debug, Clone)]
-pub struct FnCallNode {
-    pub iden: IdentifierNode,
-    pub args: Vec<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ChainingBase {
-    Identifier(IdentifierNode),
-    Primary(PrimaryNode),
-    Group(Box<Expression>),
-}
-
-#[derive(Debug, Clone)]
-pub enum ChainingPart {
-    Identifier(IdentifierNode), // a.b
-    FnCall(FnCallNode),         // a(b, c)
-    Index(Box<Expression>),     // a[b + c], array or map indexing
-}
-
-#[derive(Debug, Clone)]
-pub struct ChainingNode {
-    pub base: ChainingBase,
-    pub path: Vec<ChainingPart>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BinaryOpNode {
-    pub lhs: Box<Expression>,
-    pub op: Token,
-    pub rhs: Box<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImportNode {
-    pub path: Span,
-    pub iden: IdentifierNode,
-}
-
-#[derive(Debug, Clone)]
-pub struct WhileNode {
-    pub cond: Expression,
-    pub body: StatementList,
-}
-
-#[derive(Debug, Clone)]
-pub struct CaseNode {
-    pub cond: Expression,
-    pub expr: Expression,
 }

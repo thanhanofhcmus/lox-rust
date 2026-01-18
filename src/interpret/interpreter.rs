@@ -208,12 +208,18 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
-            Expression::Primary(node) => self.interpret_primary_expr(node),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Ternary(node) => self.interpret_ternary_expr(node),
-            Expression::UnaryOp(expr, op) => self.interpret_unary_op(expr, *op),
-            Expression::BinaryOp(node) => self.interpret_binary_op(node),
-            Expression::Chaining(node) => self.interpret_chaining_expr(node),
+            Expression::Clause(node) => self.interpret_clause_expr(node),
+        }
+    }
+
+    fn interpret_clause_expr(&mut self, node: &ClauseNode) -> Result<Value, Error> {
+        match node {
+            ClauseNode::Primary(node) => self.interpret_primary_expr(node),
+            ClauseNode::UnaryOp(node, op) => self.interpret_unary_op(node, *op),
+            ClauseNode::BinaryOp(node) => self.interpret_binary_op(node),
+            ClauseNode::Chaining(node) => self.interpret_chaining_expr(node),
         }
     }
 
@@ -235,24 +241,24 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_ternary_expr(&mut self, node: &TernaryExprNode) -> Result<Value, Error> {
         let cond = self.is_truthy(&node.cond)?;
         if cond {
-            self.interpret_expr(&node.true_expr)
+            self.interpret_clause_expr(&node.true_clause)
         } else {
-            self.interpret_expr(&node.false_expr)
+            self.interpret_clause_expr(&node.false_clause)
         }
     }
 
     fn interpret_array_literal(&mut self, node: &ArrayLiteralNode) -> Result<Value, Error> {
         match node {
-            ArrayLiteralNode::List(exprs) => {
-                let mut result = Vec::with_capacity(exprs.len());
-                for expr in exprs {
-                    result.push(self.interpret_expr(expr)?);
+            ArrayLiteralNode::List(clauses) => {
+                let mut result = Vec::with_capacity(clauses.len());
+                for expr in clauses {
+                    result.push(self.interpret_clause_expr(expr)?);
                 }
                 Ok(Value::Array(result))
             }
             ArrayLiteralNode::Repeat(node) => {
-                let value = self.interpret_expr(&node.value)?;
-                let repeat_val = self.interpret_expr(&node.repeat)?;
+                let value = self.interpret_clause_expr(&node.value)?;
+                let repeat_val = self.interpret_clause_expr(&node.repeat)?;
                 let repeat = prepare_usize(&repeat_val)?;
 
                 let mut result = Vec::with_capacity(repeat);
@@ -317,8 +323,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         function(self, args)
     }
 
-    fn interpret_unary_op(&mut self, expr: &Expression, op: Token) -> Result<Value, Error> {
-        let res = self.interpret_expr(expr)?;
+    fn interpret_unary_op(&mut self, node: &ClauseNode, op: Token) -> Result<Value, Error> {
+        let res = self.interpret_clause_expr(node)?;
         match op {
             Token::Bang => match res {
                 Value::Bool(v) => Ok(Value::Bool(!v)),
@@ -336,8 +342,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         &mut self,
         BinaryOpNode { lhs, op, rhs }: &BinaryOpNode,
     ) -> Result<Value, Error> {
-        let lhs = self.interpret_expr(lhs)?;
-        let rhs = self.interpret_expr(rhs)?;
+        let lhs = self.interpret_clause_expr(lhs)?;
+        let rhs = self.interpret_clause_expr(rhs)?;
         let op = *op;
 
         match op {
@@ -355,11 +361,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
-    fn interpret_when_expr(&mut self, cases: &[CaseNode]) -> Result<Value, Error> {
-        for CaseNode { cond, expr } in cases {
+    fn interpret_when_expr(&mut self, cases: &[WhenArmNode]) -> Result<Value, Error> {
+        for WhenArmNode { cond, expr } in cases {
             let bin = self.is_truthy(cond)?;
             if bin {
-                return self.interpret_expr(expr);
+                return self.interpret_clause_expr(expr);
             }
         }
         Ok(Value::Nil)
@@ -406,8 +412,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             .unwrap_or(Value::Nil)
     }
 
-    fn is_truthy(&mut self, expr: &Expression) -> Result<bool, Error> {
-        let cond_value = self.interpret_expr(expr)?;
+    fn is_truthy(&mut self, expr: &ClauseNode) -> Result<bool, Error> {
+        let cond_value = self.interpret_clause_expr(expr)?;
         let Value::Bool(cond_bin) = cond_value else {
             return Err(Error::ConditionNotBool(cond_value));
         };

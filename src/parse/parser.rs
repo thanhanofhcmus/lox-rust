@@ -53,7 +53,7 @@ fn parse_import(state: &mut Context) -> Result<Statement, ParseError> {
 fn parse_if(state: &mut Context) -> Result<Statement, ParseError> {
     state.consume_token(Token::If)?;
 
-    let cond = parse_clause(state)?;
+    let cond = parse_clause_node(state)?;
     let if_stmts = parse_block_statement_list(state)?;
     let mut else_stmts = None;
 
@@ -70,7 +70,7 @@ fn parse_if(state: &mut Context) -> Result<Statement, ParseError> {
 }
 fn parse_while(state: &mut Context) -> Result<Statement, ParseError> {
     state.consume_token(Token::While)?;
-    let cond = parse_clause(state)?;
+    let cond = parse_clause_node(state)?;
     let body = parse_block_statement_list(state)?;
     Ok(Statement::While(WhileNode { cond, body }))
 }
@@ -125,21 +125,21 @@ fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
     match state.get_curr()?.token {
         Token::Cond => parse_ternary(state),
         Token::When => parse_when(state),
-        _ => parse_clause(state),
+        _ => parse_clause_node(state).map(Expression::Clause),
     }
 }
 
 fn parse_ternary(state: &mut Context) -> Result<Expression, ParseError> {
     state.consume_token(Token::Cond)?;
-    let cond = parse_clause(state)?;
+    let cond = parse_clause_node(state)?;
     state.consume_token(Token::Then)?;
-    let true_expr = parse_clause(state)?;
+    let true_clause = parse_clause_node(state)?;
     state.consume_token(Token::Else)?;
-    let false_expr = parse_clause(state)?;
+    let false_clause = parse_clause_node(state)?;
     Ok(Expression::Ternary(TernaryExprNode {
-        cond: Box::new(cond),
-        true_expr: Box::new(true_expr),
-        false_expr: Box::new(false_expr),
+        cond,
+        true_clause,
+        false_clause,
     }))
 }
 
@@ -154,22 +154,22 @@ fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {
     Ok(Expression::When(case_nodes))
 }
 
-fn parse_when_arm(state: &mut Context) -> Result<CaseNode, ParseError> {
-    let cond = parse_clause(state)?;
+fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode, ParseError> {
+    let cond = parse_clause_node(state)?;
     state.consume_token(Token::RTArrow)?;
-    let expr = parse_clause(state)?;
-    Ok(CaseNode { cond, expr })
+    let expr = parse_clause_node(state)?;
+    Ok(WhenArmNode { cond, expr })
 }
 
-fn parse_clause(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_clause_node(state: &mut Context) -> Result<ClauseNode, ParseError> {
     parse_logical(state)
 }
 
-fn parse_logical(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_logical(state: &mut Context) -> Result<ClauseNode, ParseError> {
     parse_recursive_binary(state, &[Token::And, Token::Or], parse_equality)
 }
 
-fn parse_equality(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_equality(state: &mut Context) -> Result<ClauseNode, ParseError> {
     parse_recursive_binary(
         state,
         &[Token::EqualEqual, Token::BangEqual],
@@ -177,7 +177,7 @@ fn parse_equality(state: &mut Context) -> Result<Expression, ParseError> {
     )
 }
 
-fn parse_comparison(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_comparison(state: &mut Context) -> Result<ClauseNode, ParseError> {
     parse_recursive_binary(
         state,
         &[
@@ -190,15 +190,15 @@ fn parse_comparison(state: &mut Context) -> Result<Expression, ParseError> {
     )
 }
 
-fn parse_term(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_term(state: &mut Context) -> Result<ClauseNode, ParseError> {
     parse_recursive_binary(state, &[Token::Plus, Token::Minus], parse_factor)
 }
 
-fn parse_factor(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_factor(state: &mut Context) -> Result<ClauseNode, ParseError> {
     parse_recursive_binary(state, &[Token::Star, Token::Slash], parse_modulo)
 }
 
-fn parse_modulo(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_modulo(state: &mut Context) -> Result<ClauseNode, ParseError> {
     parse_recursive_binary(state, &[Token::Percentage], parse_unary)
 }
 
@@ -206,9 +206,9 @@ fn parse_recursive_binary<F>(
     state: &mut Context,
     match_tokens: &'static [Token],
     lower_fn: F,
-) -> Result<Expression, ParseError>
+) -> Result<ClauseNode, ParseError>
 where
-    F: Fn(&mut Context) -> Result<Expression, ParseError>,
+    F: Fn(&mut Context) -> Result<ClauseNode, ParseError>,
 {
     let mut lhs = lower_fn(state)?;
 
@@ -218,7 +218,7 @@ where
         }
         state.advance();
         let rhs = lower_fn(state)?;
-        lhs = Expression::BinaryOp(BinaryOpNode {
+        lhs = ClauseNode::BinaryOp(BinaryOpNode {
             lhs: Box::new(lhs),
             op: op.token,
             rhs: Box::new(rhs),
@@ -228,7 +228,7 @@ where
     Ok(lhs)
 }
 
-fn parse_unary(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_unary(state: &mut Context) -> Result<ClauseNode, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Bang => parse_recursive_unary(state, Token::Bang),
@@ -240,11 +240,11 @@ fn parse_unary(state: &mut Context) -> Result<Expression, ParseError> {
 fn parse_recursive_unary(
     state: &mut Context,
     match_token: Token,
-) -> Result<Expression, ParseError> {
+) -> Result<ClauseNode, ParseError> {
     let li = state.get_curr()?;
     if li.token == match_token {
         state.advance();
-        Ok(Expression::UnaryOp(
+        Ok(ClauseNode::UnaryOp(
             Box::new(parse_recursive_unary(state, match_token)?),
             match_token,
         ))
@@ -253,7 +253,7 @@ fn parse_recursive_unary(
     }
 }
 
-fn parse_chaining(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_chaining(state: &mut Context) -> Result<ClauseNode, ParseError> {
     let base = if state.peek(&[Token::Identifier]) {
         let node = parse_identifier_node(state)?;
         ChainingBase::Identifier(node)
@@ -272,15 +272,14 @@ fn parse_chaining(state: &mut Context) -> Result<Expression, ParseError> {
             path.push(ChainingPart::Identifier(id));
         } else if state.peek(&[Token::LSquareParen]) {
             state.consume_token(Token::LSquareParen)?;
-            let indexee = parse_clause(state)?;
+            let indexee = parse_expr(state)?;
             state.consume_token(Token::RSquareParen)?;
             path.push(ChainingPart::Index(Box::new(indexee)));
         } else if state.peek(&[Token::LRoundParen]) {
             // parse function
             // TODO: make start position span the whole chain
             let start_position = state.get_current_position();
-            let args =
-                parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_clause)?;
+            let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
             let end_position = state.get_current_position();
             path.push(ChainingPart::FnCall(FnCallNode {
                 iden: IdentifierNode::new_from_name(
@@ -294,7 +293,7 @@ fn parse_chaining(state: &mut Context) -> Result<Expression, ParseError> {
         }
     }
 
-    Ok(Expression::Chaining(ChainingNode { base, path }))
+    Ok(ClauseNode::Chaining(ChainingNode { base, path }))
 }
 
 fn parse_primary_node(state: &mut Context) -> Result<PrimaryNode, ParseError> {
@@ -348,9 +347,9 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, Par
     if state.peek_2_token(&[Token::Colon]) {
         state.consume_token(Token::LSquareParen)?;
         state.consume_token(Token::Colon)?;
-        let value = parse_clause(state)?;
+        let value = parse_clause_node(state)?;
         state.consume_token(Token::Colon)?;
-        let repeat = parse_clause(state)?;
+        let repeat = parse_clause_node(state)?;
         state.consume_token(Token::RSquareParen)?;
         return Ok(ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode {
             repeat,
@@ -361,7 +360,7 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, Par
         state,
         Token::LSquareParen,
         Token::RSquareParen,
-        parse_clause,
+        parse_clause_node,
     )?;
     Ok(ArrayLiteralNode::List(exprs))
 }
@@ -381,7 +380,7 @@ fn parse_map_literal_element_node(
 ) -> Result<MapLiteralElementNode, ParseError> {
     let key = parse_primary_node(state)?;
     state.consume_token(Token::RFArrtow)?;
-    let value = parse_clause(state)?;
+    let value = parse_expr(state)?;
     Ok(MapLiteralElementNode { key, value })
 }
 

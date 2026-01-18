@@ -1,7 +1,7 @@
 use super::value::Value;
 use thiserror::Error;
 
-use crate::{ast::Expression, parse::ParseError, token::Token};
+use crate::{parse::ParseError, token::Token};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -44,9 +44,6 @@ pub enum Error {
 
     #[error("Value `{0}` is not of the type non-negative integer")]
     ValueMustBeUsize(Value),
-
-    #[error("Expect expression of type `{0}`, have type `{1:?}`")]
-    InvalidExpressionType(String, Expression),
 
     #[error("Array of name `{0}` has length `{1}` but received index `{2}`")]
     ArrayOutOfBound(String, usize, usize),
