@@ -29,11 +29,11 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Import => parse_import(state),
-        Token::Var => parse_declaration(state),
         Token::While => parse_while(state),
         Token::If => parse_if(state),
-        Token::Return => parse_return(state),
         Token::LPointParen => parse_block(state),
+        Token::Return => parse_return(state),
+        Token::Var => parse_declaration(state),
         Token::Identifier => parse_reassignment_or_expr(state),
         _ => parse_expr(state).map(Statement::Expr),
     }

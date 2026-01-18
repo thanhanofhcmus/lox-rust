@@ -20,6 +20,7 @@ pub struct Function {
 pub enum Value {
     #[display(fmt = "nil")]
     Nil,
+
     #[display(fmt = "{:?}", _0)] // Quotes for strings
     Str(String),
 
@@ -151,6 +152,7 @@ fn serialize_map<S: Serializer>(
 fn deserialize_map<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<BTreeMap<Value, Value>, D::Error> {
+    // might have performance issue here if the json object is to big
     let string_map = BTreeMap::<String, Value>::deserialize(deserializer)?;
     let mut value_map = BTreeMap::new();
     for (k, v) in string_map {

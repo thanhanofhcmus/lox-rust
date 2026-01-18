@@ -7,7 +7,7 @@
 - Implement more string stuff, multi-line, escape sequence, formatted string
 - Make last expression in a block return the value of the block (like rust)
 - On-deman parsing
-- Implement `map` data structure and
+- Implement `map` data structure and it methods
 - [X] Maybe implement node-id
 - Add tree-sitter
 - Add LSP

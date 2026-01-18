@@ -8,7 +8,7 @@ Syntax point
 - `primary` is a primitive value
 
 ```
-stmt          = reassignment | declaration | expr | if | while | return | import
+stmt          = import | while | if | block | return | declaration | reassignment |  expr
 import        = "import" UNIX_PATH_STRING "as" IDENTIFIER
 if            = "if" clause block ("else" block)?
 declaration   = "var" IDENTIFIER "=" expr
@@ -35,7 +35,6 @@ primary       = STRING | NUMBER | "true" | "false" | "nil" | array_literal | map
 identifier    = (IDENTIFIER "." ...)*
 function_decl = "fn" "(" ( IDENTIFIER "," ... )* ")" (block | expr)
 array_literal = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]"
-map_literal   = "%{" (primary "=>" expr , ...)* "}"
+map_literal   = "%{" (primary "=>" expr , ...)* "}" 
 group         = "(" clause ")"
-
 ```
