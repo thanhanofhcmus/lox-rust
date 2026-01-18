@@ -1,0 +1,78 @@
+# ==========================================
+# TEST SUITE: Core Language Features
+# ==========================================
+
+# --- 1. Arithmetic & Type Promotion ---
+print("--- Running Arithmetic Tests...");
+
+assert(10 + 5 == 15, "Integer addition failed");
+assert(10 / 2 == 5, "Exact division should remain an Integer");
+assert(5 / 2 == 2.5, "Inexact division must promote to Floating");
+assert(10.0 == 10, "Floating and Integer should be equal if values match");
+assert(10.5 > 10, "Floating/Integer comparison failed");
+
+print_raw("");
+
+# --- 2. Boolean Logic ---
+print("--- Running Logic Tests...");
+
+assert(true and true, "Logic 'and' failed");
+assert(true or false, "Logic 'or' failed");
+# assert(not false, "Logic 'not' failed");
+assert(cond (10 > 5) then true else false, "Cond expression failed");
+
+print_raw("");
+
+# --- 3. Data Structures ---
+print("--- Running Data Structure Tests...");
+
+# Testing Arrays
+var list = [10, 20, 30];
+assert(list[0] == 10, "Array indexing failed");
+assert(list[2] == 30, "Array end indexing failed");
+
+# Testing Maps (including the mixed-key support we implemented)
+var registry = %{
+    "name" => "Gemini",
+    100 => "Centurion",
+    true => "Active"
+};
+
+assert(registry["name"] == "Gemini", "Map string key failed");
+assert(registry[100] == "Centurion", "Map integer key failed");
+
+print_raw("");
+
+# --- 4. Control Flow Expressions ---
+print("--- Running Control Flow Tests...");
+
+var score = 85;
+var grade = when {
+    score >= 90 -> "A",
+    score >= 80 -> "B",
+    true        -> "F"
+};
+assert(grade == "B", "When expression failed");
+
+print_raw("");
+
+# --- 5. Function & Scope ---
+print("--- Running Function Tests...");
+
+var multiplier = 2;
+var scale = fn(n) n * multiplier;
+
+assert(scale(5) == 10, "Function call or closure scope failed");
+
+var factorial = fn(n) {
+    if n <= 1 { return 1; };
+    return n * factorial(n - 1);
+};
+assert(factorial(5) == 120, "Recursive function call failed");
+
+
+# --- 6. The "Usize" conversion (Index Testing) ---
+# This tests the 'prepare_usize' logic we wrote in Rust
+var arr = ["zero", "one", "two"];
+var idx = 2.0;
+assert(arr[idx] == "two", "Float-as-integer index conversion failed");

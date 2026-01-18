@@ -356,7 +356,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Token::And | Token::Or => and_or(&lhs, op, &rhs),
             Token::EqualEqual | Token::BangEqual => Ok(Value::Bool(lhs == rhs)),
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
-                compare(&lhs, op, &rhs)
+                ordering(&lhs, op, &rhs)
             }
             _ => Err(Error::UnknownOperation(op)),
         }
@@ -422,7 +422,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 }
 
-fn compare(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
+fn ordering(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
     let from_ord = |o: std::cmp::Ordering| match op {
         Token::Less => Ok(Value::Bool(o.is_lt())),
         Token::LessEqual => Ok(Value::Bool(o.is_le())),

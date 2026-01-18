@@ -10,6 +10,7 @@ pub fn create() -> HashMap<Id, Value> {
 
     preludes.insert(Id::new("print"), Value::BuiltinFunction(print_fn));
     preludes.insert(Id::new("print_raw"), Value::BuiltinFunction(print_raw_fn));
+    preludes.insert(Id::new("assert"), Value::BuiltinFunction(assert_fn));
     preludes.insert(Id::new("from_json"), Value::BuiltinFunction(from_json_fn));
     preludes.insert(Id::new("to_json"), Value::BuiltinFunction(to_json_fn));
 
@@ -46,6 +47,30 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
 
 fn print_raw_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
     print_logic(itp, args, true)
+}
+
+fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+    if args.len() != 2 {
+        return Err(Error::WrongNumberOfArgument("assert".into(), 2, args.len()));
+    }
+
+    let mut args_iter = args.into_iter();
+    let condition = args_iter.next().unwrap();
+    let message_val = args_iter.next().unwrap();
+
+    match condition {
+        Value::Bool(true) => Ok(Value::Nil), // Assertion passed
+        Value::Bool(false) => print_fn(itp, vec![message_val]),
+        _ => {
+            print_fn(
+                itp,
+                vec![Value::Str(
+                    "Assertion check value did not evaluated to boolean".into(),
+                )],
+            )?;
+            print_fn(itp, vec![message_val])
+        }
+    }
 }
 
 fn from_json_fn(_: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {

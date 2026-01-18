@@ -77,7 +77,10 @@ impl PartialEq for Value {
             (Nil, Nil) => true,
             (Bool(l), Bool(r)) => l == r,
             (Str(l), Str(r)) => l == r,
-            // TODO: this logic of floating point comparision might be flaky
+
+            (Integer(l), Integer(r)) => l == r,
+            (Floating(l), Integer(r)) => (l - (*r as f64)) < NUMBER_DELTA,
+            (Integer(l), Floating(r)) => ((*l as f64) - r) < NUMBER_DELTA,
             (Floating(l), Floating(r)) => (*l - *r).abs() < NUMBER_DELTA,
 
             (Array(l), Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a == b),
