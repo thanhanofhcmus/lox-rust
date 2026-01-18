@@ -1,16 +1,22 @@
 use crate::{id::Id, span::Span, token::Token};
 
 #[derive(Debug, Clone)]
+#[allow(clippy::upper_case_acronyms)]
+pub struct AST {
+    pub imports: Vec<ImportNode>,
+    pub global_stmts: StatementList,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
-    Import(ImportNode),
-    Expr(Expression),
-    Return(Expression),
-    If(IfStmtNode),
     While(WhileNode),
+    If(IfStmtNode),
+    Block(StatementList),
     Declare(IdentifierNode, Expression),
     ReassignIden(IdentifierNode, Expression),
-    Block(StatementList),
-    Global(StatementList),
+    Expr(Expression),
+
+    Return(Option<Expression>),
 }
 
 pub type StatementList = Vec<Statement>;

@@ -52,35 +52,34 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Self { environment, input }
     }
 
-    pub fn interpret(&mut self, stmt: &'sl Statement) -> Result<Value, Error> {
-        // dbg!(stmt);
-        self.interpret_stmt(stmt)
+    pub fn interpret(&mut self, ast: &'sl AST) -> Result<Value, Error> {
+        for import in &ast.imports {
+            self.interpret_import_stmt(import)?;
+        }
+
+        self.interpret_stmt_list(&ast.global_stmts)
             .map(|r| r.value.unwrap_or(Value::Nil))
     }
 
     fn interpret_stmt(&mut self, stmt: &Statement) -> Result<StmtReturn, Error> {
         match stmt {
-            Statement::Import(node) => self.interpret_import_stmt(node),
             Statement::Declare(name, expr) => self.interpret_declare_stmt(name, expr),
             Statement::ReassignIden(name, expr) => self.interpret_reassign_id_stmt(name, expr),
-            Statement::Return(expr) => self
-                .interpret_expr(expr)
-                .map(StmtReturn::new)
-                .map(StmtReturn::should_bubble_up),
             Statement::Expr(expr) => self.interpret_expr(expr).map(StmtReturn::new),
             Statement::While(node) => self.interpret_while_stmt(node),
             Statement::If(node) => self.interpret_if_stmt(node),
+            Statement::Return(expr) => self.interpret_return_stmt(expr),
             Statement::Block(stmts) => {
+                // TODO: other scope like while and if and function should push scope as well
                 self.environment.push_scope();
                 let res = self.interpret_stmt_list(stmts);
                 self.environment.pop_scope();
                 res
             }
-            Statement::Global(stmts) => self.interpret_stmt_list(stmts),
         }
     }
 
-    fn interpret_import_stmt(&mut self, node: &ImportNode) -> Result<StmtReturn, Error> {
+    fn interpret_import_stmt(&mut self, node: &ImportNode) -> Result<(), Error> {
         if !node.iden.is_simple() {
             // TODO: move this to the parser part
             panic!("import Identifier must be simple");
@@ -89,7 +88,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // check if we import this yet
         let module_id = node.iden.get_id();
         if self.environment.contains_module(module_id) {
-            return Ok(StmtReturn::none());
+            return Ok(());
         }
 
         let name = node.iden.name.string_from_source(self.input);
@@ -135,7 +134,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         // TODO: detect circular dependency
 
-        Ok(StmtReturn::none())
+        Ok(())
     }
 
     fn interpret_if_stmt(&mut self, node: &IfStmtNode) -> Result<StmtReturn, Error> {
@@ -148,6 +147,19 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 .unwrap_or(Ok(StmtReturn::none()));
         }
         self.interpret_stmt_list(&node.if_stmts)
+    }
+
+    fn interpret_return_stmt(
+        &mut self,
+        return_expr: &Option<Expression>,
+    ) -> Result<StmtReturn, Error> {
+        match return_expr {
+            Some(expr) => self
+                .interpret_expr(expr)
+                .map(StmtReturn::new)
+                .map(StmtReturn::should_bubble_up),
+            None => Ok(StmtReturn::none().should_bubble_up()),
+        }
     }
 
     fn interpret_stmt_list(&mut self, stmts: &[Statement]) -> Result<StmtReturn, Error> {

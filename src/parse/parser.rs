@@ -7,24 +7,53 @@ use super::lex::LexItem;
 use crate::span::Span;
 use crate::token::Token;
 
-pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
-    let mut stmts = vec![];
+pub fn parse(input: &str, items: &[LexItem]) -> Result<AST, ParseError> {
     let mut state = Context::new(input, items);
+    let mut imports = vec![];
+    let mut global_stmts = vec![];
+    let mut is_parsing_import = true;
     while !state.is_at_end() {
+        if state.peek(&[Token::Import]) {
+            if !is_parsing_import {
+                let li = state.get_curr()?;
+                return Err(ParseError::ImportNotAtTheTop(li.span));
+            }
+            let import = parse_import(&mut state)?;
+            imports.push(import);
+            continue;
+        }
+
+        is_parsing_import = false;
+
+        // parse import then parse stmts
         state.prepare_next();
         let result = parse_stmt(&mut state)?;
-        stmts.push(result);
+        global_stmts.push(result);
     }
     match state.get_curr() {
-        Err(_) => Ok(Statement::Global(stmts)),
+        Err(_) => Ok(AST {
+            imports,
+            global_stmts,
+        }),
         Ok(li) => Err(ParseError::Unfinished(li.token, li.span)),
     }
+}
+
+fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
+    state.consume_token(Token::Import)?;
+    let path_li = state.consume_token(Token::String)?;
+    state.consume_token(Token::As)?;
+    let iden_li = state.consume_token(Token::Identifier)?;
+    state.consume_token(Token::Semicolon)?;
+    Ok(ImportNode {
+        path: Span::new(path_li.span.start + 1, path_li.span.end - 1),
+        iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
+    })
 }
 
 fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
-        Token::Import => parse_import(state),
         Token::While => parse_while(state),
         Token::If => parse_if(state),
         Token::LPointParen => parse_block(state),
@@ -33,18 +62,6 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
         Token::Identifier => parse_reassignment_or_expr(state),
         _ => parse_expr_stmt(state),
     }
-}
-
-fn parse_import(state: &mut Context) -> Result<Statement, ParseError> {
-    state.consume_token(Token::Import)?;
-    let path_li = state.consume_token(Token::String)?;
-    state.consume_token(Token::As)?;
-    let iden_li = state.consume_token(Token::Identifier)?;
-    state.consume_token(Token::Semicolon)?;
-    Ok(Statement::Import(ImportNode {
-        path: Span::new(path_li.span.start + 1, path_li.span.end - 1),
-        iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
-    }))
 }
 
 fn parse_if(state: &mut Context) -> Result<Statement, ParseError> {
@@ -77,9 +94,14 @@ fn parse_return(state: &mut Context) -> Result<Statement, ParseError> {
     if !state.is_in_fn {
         return Err(ParseError::UnexpectedReturn(return_li.span));
     }
-    let expr = parse_expr(state)?;
+    let return_expr = if !state.peek(&[Token::Semicolon]) {
+        let expr = parse_expr(state)?;
+        Some(expr)
+    } else {
+        None
+    };
     state.consume_token(Token::Semicolon)?;
-    Ok(Statement::Return(expr))
+    Ok(Statement::Return(return_expr))
 }
 
 fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
@@ -414,7 +436,7 @@ fn parse_function_decl(state: &mut Context) -> Result<PrimaryNode, ParseError> {
         state.is_in_fn = false;
     } else {
         let expr = parse_expr(state)?;
-        body = vec![Statement::Return(expr)];
+        body = vec![Statement::Return(Some(expr))];
     }
 
     Ok(PrimaryNode::FnDecl(FnDeclNode { arg_names, body }))

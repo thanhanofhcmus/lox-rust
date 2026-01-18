@@ -7,6 +7,9 @@ pub enum ParseError {
     #[error("Unexpected character in position {0}")]
     UnexpectedCharacter(Span),
 
+    #[error("Import keyword found not at the top of the unit")]
+    ImportNotAtTheTop(Span),
+
     #[error("Unexpected token `{0}` at position {1} {}", diagnostic_expect_token(.2))]
     UnexpectedToken(Token, Span, Option<Token>),
 
@@ -31,6 +34,7 @@ impl ParseError {
         use ParseError::*;
         match self {
             UnexpectedCharacter(s) => s.to_start_row_col(input),
+            ImportNotAtTheTop(s) => s.to_start_row_col(input),
             UnexpectedToken(_, s, _) => s.to_start_row_col(input),
             UnclosedString(u) => (*u, *u),
             ParseToNumber(s) => s.to_start_row_col(input),

@@ -4,11 +4,10 @@ mod interpret;
 mod parse;
 mod span;
 mod token;
-mod vm;
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::ast::Statement;
+use crate::ast::AST;
 use log::{debug, error, info, trace};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
@@ -27,7 +26,6 @@ fn main() -> DynResult {
     match input.as_str() {
         "-i" => repl(),
         "-f" => read_from_file(args.get(2).expect("must provide file name")),
-        "-vm" => run_vm(),
         _ => panic!("expect a mode"),
     }
 }
@@ -59,22 +57,6 @@ fn repl() -> DynResult {
     Ok(())
 }
 
-fn run_vm() -> DynResult {
-    let mut vm = vm::VM::new();
-
-    loop {
-        let mut line = String::new();
-        std::io::stdin().read_line(&mut line)?;
-
-        if line.trim_end() == "quit" {
-            return Ok(());
-        }
-
-        let stmt = parse(&line)?;
-        vm::compile_and_run(&mut vm, &stmt)?;
-    }
-}
-
 fn read_from_file(file_path: &str) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
@@ -83,7 +65,7 @@ fn read_from_file(file_path: &str) -> DynResult {
     run_stmt(&contents, &mut itp)
 }
 
-fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
+fn parse(input: &str) -> Result<AST, Box<dyn std::error::Error>> {
     let tokens = match parse::lex(input) {
         Ok(list) => list,
         Err(err) => {
@@ -101,16 +83,16 @@ fn parse(input: &str) -> Result<Statement, Box<dyn std::error::Error>> {
         );
     }
 
-    let stmt = match parse::parse(input, &tokens) {
+    let ast = match parse::parse(input, &tokens) {
         Ok(list) => list,
         Err(err) => {
             error!("Parse error {:?}: {}", err.get_source_start(input), err);
             return Err(Box::new(err));
         }
     };
-    trace!("{:?}", &stmt);
+    trace!("{:?}", &ast);
 
-    Ok(stmt)
+    Ok(ast)
 }
 
 fn run_stmt(input: &str, interpret_env: &mut interpret::Environment) -> DynResult {
