@@ -110,7 +110,7 @@ pub enum ChainingBase {
 }
 
 #[derive(Debug, Clone)]
-pub enum ChainingPart {
+pub enum ChainingFollow {
     Identifier(IdentifierNode), // a.b
     FnCall(FnCallNode),         // a(b, c)
     Index(Box<Expression>),     // a[b + c], array or map indexing
@@ -119,7 +119,7 @@ pub enum ChainingPart {
 #[derive(Debug, Clone)]
 pub struct ChainingNode {
     pub base: ChainingBase,
-    pub path: Vec<ChainingPart>,
+    pub follows: Vec<ChainingFollow>,
 }
 
 #[derive(Debug, Clone)]

@@ -265,23 +265,23 @@ fn parse_chaining(state: &mut Context) -> Result<ClauseNode, ParseError> {
         ChainingBase::Primary(node)
     };
 
-    let mut path = vec![];
+    let mut follows = vec![];
     loop {
         if state.peek(&[Token::Identifier]) {
             let id = parse_identifier_node(state)?;
-            path.push(ChainingPart::Identifier(id));
+            follows.push(ChainingFollow::Identifier(id));
         } else if state.peek(&[Token::LSquareParen]) {
             state.consume_token(Token::LSquareParen)?;
             let indexee = parse_expr(state)?;
             state.consume_token(Token::RSquareParen)?;
-            path.push(ChainingPart::Index(Box::new(indexee)));
+            follows.push(ChainingFollow::Index(Box::new(indexee)));
         } else if state.peek(&[Token::LRoundParen]) {
             // parse function
             // TODO: make start position span the whole chain
             let start_position = state.get_current_position();
             let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
             let end_position = state.get_current_position();
-            path.push(ChainingPart::FnCall(FnCallNode {
+            follows.push(ChainingFollow::FnCall(FnCallNode {
                 iden: IdentifierNode::new_from_name(
                     Span::new(start_position, end_position),
                     state.get_input(),
@@ -293,7 +293,7 @@ fn parse_chaining(state: &mut Context) -> Result<ClauseNode, ParseError> {
         }
     }
 
-    Ok(ClauseNode::Chaining(ChainingNode { base, path }))
+    Ok(ClauseNode::Chaining(ChainingNode { base, follows }))
 }
 
 fn parse_primary_node(state: &mut Context) -> Result<PrimaryNode, ParseError> {

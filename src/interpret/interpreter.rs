@@ -378,10 +378,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ChainingBase::Group(v) => self.interpret_expr(v)?,
             ChainingBase::Identifier(v) => self.lookup_all_scope(v),
         };
-        for part in &node.path {
-            value = match part {
-                ChainingPart::Identifier(node) => self.lookup_all_scope(node),
-                ChainingPart::FnCall(node) => {
+        for follow in &node.follows {
+            value = match follow {
+                ChainingFollow::Identifier(node) => self.lookup_all_scope(node),
+                ChainingFollow::FnCall(node) => {
                     match value {
                         Value::Function(function) => {
                             // TODO: remove this clone
@@ -394,7 +394,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                         _ => return Err(Error::ValueNotCallable(value)),
                     }
                 }
-                ChainingPart::Index(indexee_expr) => {
+                ChainingFollow::Index(indexee_expr) => {
                     let indexee = self.interpret_expr(indexee_expr)?;
                     index(&value, &indexee)?
                 }
