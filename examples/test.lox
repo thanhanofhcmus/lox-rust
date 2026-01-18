@@ -11,7 +11,7 @@ assert(5 / 2 == 2.5, "Inexact division must promote to Floating");
 assert(10.0 == 10, "Floating and Integer should be equal if values match");
 assert(10.5 > 10, "Floating/Integer comparison failed");
 
-print_raw("");
+print();
 
 # --- 2. Boolean Logic ---
 print("--- Running Logic Tests...");
@@ -21,7 +21,7 @@ assert(true or false, "Logic 'or' failed");
 assert(not false, "Logic 'not' failed");
 assert(cond (10 > 5) then true else false, "Cond expression failed");
 
-print_raw("");
+print();
 
 # --- 3. Data Structures ---
 print("--- Running Data Structure Tests...");
@@ -41,7 +41,7 @@ var registry = %{
 assert(registry["name"] == "Gemini", "Map string key failed");
 assert(registry[100] == "Centurion", "Map integer key failed");
 
-print_raw("");
+print();
 
 # --- 4. Control Flow Expressions ---
 print("--- Running Control Flow Tests...");
@@ -54,7 +54,7 @@ var grade = when {
 };
 assert(grade == "B", "When expression failed");
 
-print_raw("");
+print_raw();
 
 # --- 5. Function & Scope ---
 print("--- Running Function Tests...");
@@ -76,3 +76,13 @@ assert(factorial(5) == 120, "Recursive function call failed");
 var arr = ["zero", "one", "two"];
 var idx = 2.0;
 assert(arr[idx] == "two", "Float-as-integer index conversion failed");
+
+print();
+
+# --- 6. Chaining
+print("--- Running Chaining Tests...");
+var arr_fn_a = fn() [[1, 2, 3],[4, 5, 6]];
+var fn_arr = [[], [], [0, 0, [0, arr_fn_a]]];
+var arr_fn_b = fn() [[], fn_arr];
+var map_arr = %{ "b" => arr_fn_b };
+assert(map_arr["b"]()[1][2][2][1]()[1][0] == 4, "Chainin function call and index failed");
