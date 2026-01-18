@@ -14,10 +14,6 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<Statement, ParseError> {
         state.prepare_next();
         let result = parse_stmt(&mut state)?;
         stmts.push(result);
-        // try to consume ';'
-        if state.peek(&[Token::Semicolon]) {
-            state.advance();
-        }
     }
     match state.get_curr() {
         Err(_) => Ok(Statement::Global(stmts)),
@@ -35,7 +31,7 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
         Token::Return => parse_return(state),
         Token::Var => parse_declaration(state),
         Token::Identifier => parse_reassignment_or_expr(state),
-        _ => parse_expr(state).map(Statement::Expr),
+        _ => parse_expr_stmt(state),
     }
 }
 
@@ -44,6 +40,7 @@ fn parse_import(state: &mut Context) -> Result<Statement, ParseError> {
     let path_li = state.consume_token(Token::String)?;
     state.consume_token(Token::As)?;
     let iden_li = state.consume_token(Token::Identifier)?;
+    state.consume_token(Token::Semicolon)?;
     Ok(Statement::Import(ImportNode {
         path: Span::new(path_li.span.start + 1, path_li.span.end - 1),
         iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
@@ -81,7 +78,14 @@ fn parse_return(state: &mut Context) -> Result<Statement, ParseError> {
         return Err(ParseError::UnexpectedReturn(return_li.span));
     }
     let expr = parse_expr(state)?;
+    state.consume_token(Token::Semicolon)?;
     Ok(Statement::Return(expr))
+}
+
+fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
+    let expr = parse_expr(state)?;
+    state.consume_token(Token::Semicolon)?;
+    Ok(Statement::Expr(expr))
 }
 
 fn parse_block(state: &mut Context) -> Result<Statement, ParseError> {
@@ -94,13 +98,6 @@ fn parse_block_statement_list(state: &mut Context) -> Result<StatementList, Pars
     let mut stmts = vec![];
     while !state.peek(&[Token::RPointParen]) {
         let result = parse_stmt(state)?;
-        match &result {
-            // these statements does not need ';' at the end since they end with blocks
-            Statement::If(_) | Statement::While(_) | Statement::Block(_) => {}
-            _ => {
-                state.consume_token(Token::Semicolon)?;
-            }
-        };
         stmts.push(result);
     }
 
@@ -113,6 +110,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
     let id_item = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
+    state.consume_token(Token::Semicolon)?;
     Ok(Statement::Declare(
         IdentifierNode::new_from_name(id_item.span, state.get_input()),
         expr,
@@ -121,11 +119,12 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
 
 fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
     if !state.peek_2_token(&[Token::Equal]) {
-        return parse_expr(state).map(Statement::Expr);
+        return parse_expr_stmt(state);
     }
     let id_item = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
+    state.consume_token(Token::Semicolon)?;
     Ok(Statement::ReassignIden(
         IdentifierNode::new_from_name(id_item.span, state.get_input()),
         expr,

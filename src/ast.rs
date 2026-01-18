@@ -62,6 +62,14 @@ pub enum PrimaryNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct BlockExprNode {
+    // other expressions / statements, can have a yeild statement in here
+    stmts: Vec<Statement>,
+    // The last expression of a block must be yeilding
+    last: Expression,
+}
+
+#[derive(Debug, Clone)]
 pub struct TernaryExprNode {
     pub cond: ClauseNode,
     pub true_clause: ClauseNode,

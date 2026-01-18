@@ -127,10 +127,15 @@ var f_identity = fn(a) a;
 var g_identity = f_identity;
 var h_identity = fn(a) a; # Same body, different instance
 
-# This test is falling since we have not create function pointer yet
-assert(f_identity == g_identity, "Pointer equality for same function instance failed");
+var l_identity = print;
+var m_identity = print;
+var n_identity = assert;
 
+# Equal tests are falling since we have not create function pointer yet
+assert(f_identity == g_identity, "Pointer equality for same function instance failed");
 assert(not (f_identity == h_identity), "Different function instances should not be equal");
-assert(not (print == print), "Pointer equality for the same built-in function failed");
+assert(l_identity == m_identity, "Pointer equality for the same built-in function failed");
+assert(l_identity == print, "Pointer equality for the same built-in function failed");
+assert(not (l_identity == n_identity), "Pointer equality for the same built-in function failed");
 
 print();

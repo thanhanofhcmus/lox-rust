@@ -19,8 +19,8 @@ pub enum ParseError {
     #[error("Unexpected `return` keyword outside of function")]
     UnexpectedReturn(Span),
 
-    #[error("Unable to parse the next value because of EOF")]
-    Eof,
+    #[error("Unable to parse the next value because of EOF{}", diagnostic_expect_token(.0))]
+    Eof(Option<Token>),
 
     #[error("Parse have leftover tokens start with {0} at {1}")]
     Unfinished(Token, Span),
@@ -35,7 +35,7 @@ impl ParseError {
             UnclosedString(u) => (*u, *u),
             ParseToNumber(s) => s.to_start_row_col(input),
             UnexpectedReturn(s) => s.to_start_row_col(input),
-            Eof => (0, 0),
+            Eof(_) => (0, 0),
             Unfinished(_, s) => s.to_start_row_col(input),
         }
     }
@@ -43,7 +43,7 @@ impl ParseError {
 
 fn diagnostic_expect_token(o: &Option<Token>) -> String {
     match o {
-        None => "".to_string(),
+        None => String::new(),
         Some(t) => format!(", expected token `{:?}`", t),
     }
 }
