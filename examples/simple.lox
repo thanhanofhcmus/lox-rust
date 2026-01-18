@@ -59,10 +59,10 @@ while count > 0 {
 # 'when' Expression: Evaluates cases top-down and returns a value
 var score = 85;
 var grade = when {
-    case score >= 90 -> "A",
-    case score >= 80 -> "B",
-    case score >= 70 -> "C",
-    case true        -> "F"   # Acts as a default case
+    score >= 90 -> "A",
+    score >= 80 -> "B",
+    score >= 70 -> "C",
+    true        -> "F"   # Acts as a default case
 };
 print("Your grade is: ", grade);
 
@@ -73,6 +73,8 @@ print("Status: ", status);
 
 # --- 6. First-Class Functions ---
 # Functions are values. You can assign them to variables.
+
+var add = fn(a, b) a + b;
 
 var multiply = fn(n, m) {
     return n * m;

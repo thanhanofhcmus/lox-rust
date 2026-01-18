@@ -47,7 +47,6 @@ pub enum Token {
     Cond,   // cond
     Then,   // then
     When,   // when
-    Case,   // case
     Import, // import
     As,     // as
 

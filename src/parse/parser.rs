@@ -149,13 +149,12 @@ fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {
         state,
         Token::LPointParen,
         Token::RPointParen,
-        parse_when_case,
+        parse_when_arm,
     )?;
     Ok(Expression::When(case_nodes))
 }
 
-fn parse_when_case(state: &mut Context) -> Result<CaseNode, ParseError> {
-    state.consume_token(Token::Case)?;
+fn parse_when_arm(state: &mut Context) -> Result<CaseNode, ParseError> {
     let cond = parse_clause(state)?;
     state.consume_token(Token::RTArrow)?;
     let expr = parse_clause(state)?;
