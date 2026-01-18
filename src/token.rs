@@ -12,7 +12,6 @@ pub enum Token {
     RPointParen,  // }
 
     Equal, // =
-    Bang,  // !
 
     EqualEqual, // ==
     BangEqual,  // !=
@@ -30,6 +29,7 @@ pub enum Token {
 
     And, // and
     Or,  // or
+    Not, // not
 
     RTArrow,  // ->
     RFArrtow, // =>

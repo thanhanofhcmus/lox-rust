@@ -6,6 +6,7 @@ use super::error::ParseError;
 static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
     "and" => Token::And,
     "or" => Token::Or,
+    "not" => Token::Not,
 
     "true" => Token::True,
     "false" => Token::False,
@@ -114,7 +115,15 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 }
             }
 
-            '!' => push_with_equal(Token::BangEqual, Token::Bang),
+            '!' => {
+                if is_next_char(input, curr_offset, '=') {
+                    result.push(LexItem::new(Token::BangEqual, Span::two(curr_offset)));
+                    curr_offset += 1;
+                } else {
+                    return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
+                }
+            }
+
             '<' => push_with_equal(Token::LessEqual, Token::Less),
             '>' => push_with_equal(Token::GreaterEqual, Token::Greater),
             '"' => result.push(lex_string(input, &mut curr_offset)?),

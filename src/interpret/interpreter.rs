@@ -327,7 +327,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_unary_op(&mut self, node: &ClauseNode, op: Token) -> Result<Value, Error> {
         let res = self.interpret_clause_expr(node)?;
         match op {
-            Token::Bang => match res {
+            Token::Not => match res {
                 Value::Bool(v) => Ok(Value::Bool(!v)),
                 _ => Err(Error::InvalidOperationOnType(op, res)),
             },

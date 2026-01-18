@@ -231,7 +231,7 @@ where
 fn parse_unary(state: &mut Context) -> Result<ClauseNode, ParseError> {
     let li = state.get_curr()?;
     match li.token {
-        Token::Bang => parse_recursive_unary(state, Token::Bang),
+        Token::Not => parse_recursive_unary(state, Token::Not),
         Token::Minus => parse_recursive_unary(state, Token::Minus),
         _ => parse_chaining(state),
     }
