@@ -54,19 +54,11 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
 fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
-        Token::While => parse_while(state),
         Token::Return => parse_return(state),
         Token::Var => parse_declaration(state),
         Token::Identifier => parse_reassignment_or_expr(state),
         _ => parse_expr_stmt(state),
     }
-}
-
-fn parse_while(state: &mut Context) -> Result<Statement, ParseError> {
-    state.consume_token(Token::While)?;
-    let cond = parse_clause_node(state)?;
-    let body = parse_block_statement_list(state)?;
-    Ok(Statement::While(WhileNode { cond, body }))
 }
 
 fn parse_return(state: &mut Context) -> Result<Statement, ParseError> {
@@ -160,10 +152,18 @@ fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseErr
 fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
     match state.get_curr()?.token {
         Token::When => parse_when(state),
+        Token::While => parse_while(state),
         Token::If => parse_if(state),
         Token::LPointParen => parse_block_node(state).map(Expression::Block),
         _ => parse_clause_node(state).map(Expression::Clause),
     }
+}
+
+fn parse_while(state: &mut Context) -> Result<Expression, ParseError> {
+    state.consume_token(Token::While)?;
+    let cond = parse_clause_node(state)?;
+    let body = parse_block_node(state)?;
+    Ok(Expression::While(WhileNode { cond, body }))
 }
 
 fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {

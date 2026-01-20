@@ -68,7 +68,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Statement::Declare(name, expr) => self.interpret_declare_stmt(name, expr),
             Statement::ReassignIden(name, expr) => self.interpret_reassign_id_stmt(name, expr),
             Statement::Expr(expr) => self.interpret_expr(expr).map(StmtReturn::new),
-            Statement::While(node) => self.interpret_while_stmt(node),
             Statement::Return(expr) => self.interpret_return_stmt(expr),
         }
     }
@@ -183,28 +182,12 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(StmtReturn::none())
     }
 
-    fn interpret_while_stmt(
-        &mut self,
-        WhileNode { cond, body }: &WhileNode,
-    ) -> Result<StmtReturn, Error> {
-        let mut result = StmtReturn::none();
-
-        loop {
-            let bin = self.is_truthy(cond)?;
-            if !bin {
-                break;
-            }
-            result = self.interpret_stmt_list(body)?;
-        }
-
-        Ok(result)
-    }
-
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Clause(node) => self.interpret_clause_expr(node),
             Expression::Block(node) => self.interpret_block_node(node),
+            Expression::While(node) => self.interpret_while_expr(node),
             Expression::IfChain(node) => self.interpret_if_chain_expr(node),
         }
     }
@@ -221,6 +204,25 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         // let stmt_return = self.interpret_stmt(last)?;
         // TODO: maybe use Value::never;
+        Ok(Value::Unit)
+    }
+
+    fn interpret_while_expr(
+        &mut self,
+        WhileNode { cond, body }: &WhileNode,
+    ) -> Result<Value, Error> {
+        loop {
+            let bin = self.is_truthy(cond)?;
+            if !bin {
+                break;
+            }
+            let result = self.interpret_block_node(body)?;
+            // TODO: make this error
+            if let Value::Unit = result {
+                panic!("While node should not return an expression");
+            }
+        }
+
         Ok(Value::Unit)
     }
 

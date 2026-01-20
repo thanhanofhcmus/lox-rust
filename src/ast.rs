@@ -9,7 +9,6 @@ pub struct AST {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    While(WhileNode),
     Declare(IdentifierNode, Expression),
     ReassignIden(IdentifierNode, Expression),
     Expr(Expression),
@@ -32,17 +31,12 @@ pub struct ImportNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct WhileNode {
-    pub cond: ClauseNode,
-    pub body: StatementList,
-}
-
-#[derive(Debug, Clone)]
 pub enum Expression {
     When(Vec<WhenArmNode>),
     Clause(ClauseNode),
     Block(BlockNode),
     IfChain(IfChainNode),
+    While(WhileNode),
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +50,12 @@ pub struct IfChainNode {
 pub struct ElseIfNode {
     pub cond: ClauseNode,
     pub stmts: BlockNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhileNode {
+    pub cond: ClauseNode,
+    pub body: BlockNode,
 }
 
 #[derive(Debug, Clone)]
