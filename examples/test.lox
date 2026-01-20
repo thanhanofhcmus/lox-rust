@@ -19,7 +19,7 @@ print("--- Running Logic Tests...");
 assert(true and true, "Logic 'and' failed");
 assert(true or false, "Logic 'or' failed");
 assert(not false, "Logic 'not' failed");
-assert(cond (10 > 5) then true else false, "Cond expression failed");
+assert(if (10 > 5) { true } else { false }, "If expression failed");
 
 print();
 
@@ -137,5 +137,58 @@ assert(not (f_identity == h_identity), "Different function instances should not 
 assert(l_identity == m_identity, "Pointer equality for the same built-in function failed");
 assert(l_identity == print, "Pointer equality for the same built-in function failed");
 assert(not (l_identity == n_identity), "Pointer equality for the same built-in function failed");
+
+print();
+
+# --- 8. Expression Blocks ---
+print("--- Expression Blocks Tests...");
+
+# 1. Simple Function Implicit Return
+var add_five = fn(n) {
+    var bonus = 5;
+    n + bonus    # No semicolon/return keyword needed
+};
+assert(add_five(10) == 15, "Implicit return in simple function failed");
+
+# 2. If-Else as an Expression
+var condition = true;
+var result = if condition {
+    "it was true"
+} else {
+    "it was false"
+};
+assert(result == "it was true", "If-Else as expression failed");
+
+# 3. Block with multiple side-effects
+var complex_fn = fn() {
+    var a = 10;
+    var b = 20;
+    var c = a + b;
+    print("Side effect: calculating c...");
+    c # This should be the return value
+};
+assert(complex_fn() == 30, "Implicit return with side effects failed");
+
+# 4. Nested Implicit Returns
+# The value from the inner 'if' block becomes the value of the function block
+var nested_implicit = fn(x) {
+    if x > 0 {
+        "positive"
+    } else {
+        "negative"
+    }
+};
+assert(nested_implicit(10) == "positive", "Nested implicit return failed");
+
+# 5. Mixing Implicit and Explicit Return
+# This tests if an explicit 'return' still works correctly
+var early_return = fn(check) {
+    if check {
+        return "early";
+    }
+    "late"
+};
+assert(early_return(true) == "early", "Explicit return inside implicit block failed (early)");
+assert(early_return(false) == "late", "Explicit return inside implicit block failed (late)");
 
 print();
