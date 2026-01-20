@@ -70,13 +70,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Statement::Expr(expr) => self.interpret_expr(expr).map(StmtReturn::new),
             Statement::While(node) => self.interpret_while_stmt(node),
             Statement::Return(expr) => self.interpret_return_stmt(expr),
-            Statement::Block(stmts) => {
-                // TODO: other scope like while and if and function should push scope as well
-                self.environment.push_scope();
-                let res = self.interpret_stmt_list(stmts);
-                self.environment.pop_scope();
-                res
-            }
         }
     }
 

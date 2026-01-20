@@ -10,7 +10,6 @@ pub struct AST {
 #[derive(Debug, Clone)]
 pub enum Statement {
     While(WhileNode),
-    Block(StatementList),
     Declare(IdentifierNode, Expression),
     ReassignIden(IdentifierNode, Expression),
     Expr(Expression),
