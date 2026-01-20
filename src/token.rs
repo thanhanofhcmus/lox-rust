@@ -44,8 +44,6 @@ pub enum Token {
     While,  // while
     Fn,     // fn
     Return, // return
-    Cond,   // cond
-    Then,   // then
     When,   // when
     Import, // import
     As,     // as

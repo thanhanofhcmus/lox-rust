@@ -78,9 +78,6 @@ fn parse_return(state: &mut Context) -> Result<Statement, ParseError> {
 
 fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let expr = parse_expr(state)?;
-    // if state.peek(&[Token::Semicolon]) {
-    //     state.consume_token(Token::Semicolon)?;
-    // }
     Ok(Statement::Expr(expr))
 }
 
@@ -137,7 +134,11 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
 
 fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
     if !state.peek_2_token(&[Token::Equal]) {
-        return parse_expr_stmt(state);
+        let expr = parse_expr_stmt(state)?;
+        if state.peek(&[Token::Semicolon]) {
+            state.consume_token(Token::Semicolon)?;
+        }
+        return Ok(expr);
     }
     let id_item = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
