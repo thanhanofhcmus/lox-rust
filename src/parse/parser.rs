@@ -55,8 +55,6 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::While => parse_while(state),
-        Token::If => parse_if(state),
-        Token::LPointParen => parse_block(state),
         Token::Return => parse_return(state),
         Token::Var => parse_declaration(state),
         Token::Identifier => parse_reassignment_or_expr(state),
@@ -64,24 +62,6 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     }
 }
 
-fn parse_if(state: &mut Context) -> Result<Statement, ParseError> {
-    state.consume_token(Token::If)?;
-
-    let cond = parse_clause_node(state)?;
-    let if_stmts = parse_block_statement_list(state)?;
-    let mut else_stmts = None;
-
-    if state.peek(&[Token::Else]) {
-        state.consume_token(Token::Else)?;
-        else_stmts = Some(parse_block_statement_list(state)?);
-    }
-
-    Ok(Statement::If(IfStmtNode {
-        cond,
-        if_stmts,
-        else_stmts,
-    }))
-}
 fn parse_while(state: &mut Context) -> Result<Statement, ParseError> {
     state.consume_token(Token::While)?;
     let cond = parse_clause_node(state)?;
@@ -106,12 +86,10 @@ fn parse_return(state: &mut Context) -> Result<Statement, ParseError> {
 
 fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let expr = parse_expr(state)?;
-    state.consume_token(Token::Semicolon)?;
+    // if state.peek(&[Token::Semicolon]) {
+    //     state.consume_token(Token::Semicolon)?;
+    // }
     Ok(Statement::Expr(expr))
-}
-
-fn parse_block(state: &mut Context) -> Result<Statement, ParseError> {
-    Ok(Statement::Block(parse_block_statement_list(state)?))
 }
 
 fn parse_block_statement_list(state: &mut Context) -> Result<StatementList, ParseError> {
@@ -125,6 +103,32 @@ fn parse_block_statement_list(state: &mut Context) -> Result<StatementList, Pars
 
     state.consume_token(Token::RPointParen)?;
     Ok(stmts)
+}
+
+fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
+    state.consume_token(Token::LPointParen)?;
+
+    let mut stmts = vec![];
+    let mut last_expr = None;
+    while !state.peek(&[Token::RPointParen]) {
+        let result = parse_stmt(state)?;
+        if let Statement::Expr(expr) = result {
+            if state.peek(&[Token::RPointParen]) {
+                // the expression is the last statement in the chain
+                last_expr = Some(Box::new(expr));
+                break;
+            } else {
+                // normal expr statement with semicolon
+                state.consume_token(Token::Semicolon)?;
+                stmts.push(Statement::Expr(expr));
+            }
+        } else {
+            stmts.push(result);
+        }
+    }
+
+    state.consume_token(Token::RPointParen)?;
+    Ok(BlockNode { stmts, last_expr })
 }
 
 fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
@@ -157,6 +161,8 @@ fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
     match state.get_curr()?.token {
         Token::Cond => parse_ternary(state),
         Token::When => parse_when(state),
+        Token::If => parse_if(state),
+        Token::LPointParen => parse_block_node(state).map(Expression::Block),
         _ => parse_clause_node(state).map(Expression::Clause),
     }
 }
@@ -173,6 +179,42 @@ fn parse_ternary(state: &mut Context) -> Result<Expression, ParseError> {
         true_clause,
         false_clause,
     }))
+}
+
+fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {
+    state.consume_token(Token::If)?;
+
+    let cond = parse_clause_node(state)?;
+    let if_stmts = parse_block_node(state)?;
+
+    let mut else_if_nodes = vec![];
+    let mut else_stmts = None;
+
+    while state.peek(&[Token::Else]) {
+        state.consume_token(Token::Else)?;
+        if state.peek(&[Token::If]) {
+            state.consume_token(Token::If)?;
+            let cond = parse_clause_node(state)?;
+            let if_stmts = parse_block_node(state)?;
+            else_if_nodes.push(ElseIfNode {
+                cond,
+                stmts: if_stmts,
+            });
+        } else {
+            else_stmts = Some(parse_block_node(state)?);
+            break;
+        };
+    }
+    let chains = IfChainNode {
+        if_node: ElseIfNode {
+            cond,
+            stmts: if_stmts,
+        },
+        else_if_nodes,
+        else_stmts,
+    };
+
+    Ok(Expression::IfChain(chains))
 }
 
 fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {

@@ -22,6 +22,12 @@ pub enum Statement {
 pub type StatementList = Vec<Statement>;
 
 #[derive(Debug, Clone)]
+pub struct BlockNode {
+    pub stmts: StatementList,
+    pub last_expr: Option<Box<Expression>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ImportNode {
     pub path: Span,
     pub iden: IdentifierNode,
@@ -45,6 +51,21 @@ pub enum Expression {
     Ternary(TernaryExprNode),
     When(Vec<WhenArmNode>),
     Clause(ClauseNode),
+    Block(BlockNode),
+    IfChain(IfChainNode),
+}
+
+#[derive(Debug, Clone)]
+pub struct IfChainNode {
+    pub if_node: ElseIfNode,
+    pub else_if_nodes: Vec<ElseIfNode>,
+    pub else_stmts: Option<BlockNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ElseIfNode {
+    pub cond: ClauseNode,
+    pub stmts: BlockNode,
 }
 
 #[derive(Debug, Clone)]
@@ -65,14 +86,6 @@ pub enum PrimaryNode {
     ArrayLiteral(ArrayLiteralNode),
     MapLiteral(MapLiteralNode),
     FnDecl(FnDeclNode),
-}
-
-#[derive(Debug, Clone)]
-pub struct BlockExprNode {
-    // other expressions / statements, can have a yeild statement in here
-    stmts: Vec<Statement>,
-    // The last expression of a block must be yeilding
-    last: Expression,
 }
 
 #[derive(Debug, Clone)]

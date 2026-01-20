@@ -21,6 +21,9 @@ pub enum Value {
     #[display(fmt = "nil")]
     Nil,
 
+    #[display(fmt = "()")]
+    Unit,
+
     #[display(fmt = "{:?}", _0)] // Quotes for strings
     Str(String),
 
@@ -64,6 +67,7 @@ impl Value {
             Value::Map(_) => 6,
             Value::Function(_) => 7,
             Value::BuiltinFunction(_) => 8,
+            Value::Unit => 10,
         }
     }
 }
@@ -74,6 +78,10 @@ impl PartialEq for Value {
         const NUMBER_DELTA: f64 = 1e-10;
 
         match (self, other) {
+            // TODO
+            (Unit, _) => panic!("compare where lhs is unit"),
+            (_, Unit) => panic!("compare where rhs is unit"),
+
             (Nil, Nil) => true,
             (Bool(l), Bool(r)) => l == r,
             (Str(l), Str(r)) => l == r,
@@ -114,6 +122,10 @@ impl Ord for Value {
         }
 
         match (self, other) {
+            // TODO
+            (Unit, _) => panic!("ordering where lhs is unit"),
+            (_, Unit) => panic!("ordering where rhs is unit"),
+
             (Nil, Nil) => Ordering::Equal,
             (Bool(a), Bool(b)) => a.cmp(b),
             (Str(a), Str(b)) => a.cmp(b),

@@ -223,7 +223,42 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Ternary(node) => self.interpret_ternary_expr(node),
             Expression::Clause(node) => self.interpret_clause_expr(node),
+            Expression::Block(node) => self.interpret_block_node(node),
+            Expression::IfChain(node) => self.interpret_if_chain_expr(node),
         }
+    }
+
+    fn interpret_block_node(&mut self, node: &BlockNode) -> Result<Value, Error> {
+        // need return statement
+        for stmt in &node.stmts {
+            // TODO: handle return statement
+            _ = self.interpret_stmt(stmt)?;
+        }
+        if let Some(expr) = &node.last_expr {
+            return self.interpret_expr(expr);
+        }
+
+        // let stmt_return = self.interpret_stmt(last)?;
+        // TODO: maybe use Value::never;
+        Ok(Value::Unit)
+    }
+
+    fn interpret_if_chain_expr(&mut self, node: &IfChainNode) -> Result<Value, Error> {
+        let cond = self.is_truthy(&node.if_node.cond)?;
+        if cond {
+            return self.interpret_block_node(&node.if_node.stmts);
+        }
+        for else_if_node in &node.else_if_nodes {
+            let cond = self.is_truthy(&else_if_node.cond)?;
+            if cond {
+                return self.interpret_block_node(&else_if_node.stmts);
+            }
+        }
+        let Some(else_stmts) = &node.else_stmts else {
+            // Maybe return Value::Never or Value::Unit, not a nil
+            return Ok(Value::Nil);
+        };
+        self.interpret_block_node(else_stmts)
     }
 
     fn interpret_clause_expr(&mut self, node: &ClauseNode) -> Result<Value, Error> {
