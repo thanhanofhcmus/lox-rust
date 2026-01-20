@@ -54,44 +54,15 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
 fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let li = state.get_curr()?;
     match li.token {
-        Token::Return => parse_return(state),
         Token::Var => parse_declaration(state),
         Token::Identifier => parse_reassignment_or_expr(state),
         _ => parse_expr_stmt(state),
     }
 }
 
-fn parse_return(state: &mut Context) -> Result<Statement, ParseError> {
-    let return_li = state.consume_token(Token::Return)?;
-    if !state.is_in_fn {
-        return Err(ParseError::UnexpectedReturn(return_li.span));
-    }
-    let return_expr = if !state.peek(&[Token::Semicolon]) {
-        let expr = parse_expr(state)?;
-        Some(expr)
-    } else {
-        None
-    };
-    state.consume_token(Token::Semicolon)?;
-    Ok(Statement::Return(return_expr))
-}
-
 fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     let expr = parse_expr(state)?;
     Ok(Statement::Expr(expr))
-}
-
-fn parse_block_statement_list(state: &mut Context) -> Result<StatementList, ParseError> {
-    state.consume_token(Token::LPointParen)?;
-
-    let mut stmts = vec![];
-    while !state.peek(&[Token::RPointParen]) {
-        let result = parse_stmt(state)?;
-        stmts.push(result);
-    }
-
-    state.consume_token(Token::RPointParen)?;
-    Ok(stmts)
 }
 
 fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
@@ -152,12 +123,28 @@ fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseErr
 
 fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
     match state.get_curr()?.token {
+        Token::Return => parse_return(state),
         Token::When => parse_when(state),
         Token::While => parse_while(state),
         Token::If => parse_if(state),
         Token::LPointParen => parse_block_node(state).map(Expression::Block),
         _ => parse_clause_node(state).map(Expression::Clause),
     }
+}
+
+fn parse_return(state: &mut Context) -> Result<Expression, ParseError> {
+    let return_li = state.consume_token(Token::Return)?;
+    if !state.is_in_fn {
+        return Err(ParseError::UnexpectedReturn(return_li.span));
+    }
+    let return_expr = if !state.peek(&[Token::Semicolon]) {
+        let expr = parse_expr(state)?;
+        Some(Box::new(expr))
+    } else {
+        None
+    };
+    state.consume_token(Token::Semicolon)?;
+    Ok(Expression::Return(return_expr))
 }
 
 fn parse_while(state: &mut Context) -> Result<Expression, ParseError> {
@@ -460,11 +447,14 @@ fn parse_function_decl(state: &mut Context) -> Result<PrimaryNode, ParseError> {
 
     if state.peek(&[Token::LPointParen]) {
         state.is_in_fn = true;
-        body = parse_block_statement_list(state)?;
+        body = parse_block_node(state)?;
         state.is_in_fn = false;
     } else {
         let expr = parse_expr(state)?;
-        body = vec![Statement::Return(Some(expr))];
+        body = BlockNode {
+            stmts: vec![],
+            last_expr: Some(Box::new(expr)),
+        };
     }
 
     Ok(PrimaryNode::FnDecl(FnDeclNode { arg_names, body }))

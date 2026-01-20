@@ -59,16 +59,21 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         // dbg!(&ast.global_stmts);
 
-        self.interpret_stmt_list(&ast.global_stmts)
-            .map(|r| r.value.unwrap_or(Value::Nil))
+        for stmt in &ast.global_stmts {
+            let ret = self.interpret_stmt(stmt)?;
+            if ret.should_bubble_up {
+                return Ok(ret.value.unwrap_or(Value::Unit));
+            }
+        }
+
+        Ok(Value::Unit)
     }
 
-    fn interpret_stmt(&mut self, stmt: &Statement) -> Result<StmtReturn, Error> {
+    fn interpret_stmt(&mut self, stmt: &Statement) -> Result<ValueReturn, Error> {
         match stmt {
             Statement::Declare(name, expr) => self.interpret_declare_stmt(name, expr),
             Statement::ReassignIden(name, expr) => self.interpret_reassign_id_stmt(name, expr),
-            Statement::Expr(expr) => self.interpret_expr(expr).map(StmtReturn::new),
-            Statement::Return(expr) => self.interpret_return_stmt(expr),
+            Statement::Expr(expr) => self.interpret_expr(expr).map(ValueReturn::new),
         }
     }
 
@@ -130,29 +135,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(())
     }
 
-    fn interpret_return_stmt(
-        &mut self,
-        return_expr: &Option<Expression>,
-    ) -> Result<StmtReturn, Error> {
-        match return_expr {
-            Some(expr) => self
-                .interpret_expr(expr)
-                .map(StmtReturn::new)
-                .map(StmtReturn::should_bubble_up),
-            None => Ok(StmtReturn::none().should_bubble_up()),
-        }
-    }
-
-    fn interpret_stmt_list(&mut self, stmts: &[Statement]) -> Result<StmtReturn, Error> {
-        for stmt in stmts {
-            let ret = self.interpret_stmt(stmt)?;
-            if ret.should_bubble_up {
-                return Ok(ret);
-            }
-        }
-        Ok(StmtReturn::none())
-    }
-
     fn interpret_declare_stmt(
         &mut self,
         iden: &IdentifierNode,
@@ -184,6 +166,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
+            Expression::Return(expr) => self.interpret_return_expr(expr),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
             Expression::Clause(node) => self.interpret_clause_expr(node),
             Expression::Block(node) => self.interpret_block_node(node),
@@ -192,8 +175,24 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
+    fn interpret_return_expr(
+        &mut self,
+        return_expr: &Option<Box<Expression>>,
+    ) -> Result<Value, Error> {
+        match return_expr {
+            Some(expr) => self.interpret_expr(expr),
+            None => Ok(Value::Unit),
+        }
+        // match return_expr {
+        //     Some(expr) => self
+        //         .interpret_expr(expr)
+        //         .map(ValueReturn::new)
+        //         .map(ValueReturn::should_bubble_up),
+        //     None => Ok(ValueReturn::none().should_bubble_up()),
+        // }
+    }
+
     fn interpret_block_node(&mut self, node: &BlockNode) -> Result<Value, Error> {
-        // need return statement
         for stmt in &node.stmts {
             // TODO: handle return statement
             _ = self.interpret_stmt(stmt)?;
@@ -202,8 +201,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             return self.interpret_expr(expr);
         }
 
-        // let stmt_return = self.interpret_stmt(last)?;
-        // TODO: maybe use Value::never;
         Ok(Value::Unit)
     }
 
@@ -323,9 +320,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             self.environment
                 .insert_variable_current_scope_by_id(*arg_id, value);
         }
-        let result = self
-            .interpret_stmt_list(body)
-            .map(|r| r.value.unwrap_or(Value::Nil));
+        let result = self.interpret_block_node(body);
         self.environment.pop_scope();
 
         result
@@ -574,7 +569,10 @@ fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
         Value::Array(arr) => {
             let idx = to_index(indexee)?;
             // This one is return a new value, maybe return a ref instead
-            Ok(arr.get(idx).map(Value::to_owned).unwrap_or(Value::Nil))
+            match arr.get(idx) {
+                None => Err(Error::ArrayOutOfBound("TODO".to_string(), arr.len(), idx)),
+                Some(v) => Ok(v.to_owned()),
+            }
         }
         Value::Map(m) => Ok(m.get(indexee).map(Value::to_owned).unwrap_or(Value::Nil)),
         _ => Err(Error::ValueUnIndexable(indexer.clone())),

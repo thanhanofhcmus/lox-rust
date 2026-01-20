@@ -5,14 +5,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{error::Error, interpreter::Interpreter};
 
-use crate::{ast::StatementList, id::Id};
+use crate::{ast::BlockNode, id::Id};
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
 
 #[derive(Debug, Clone)]
 pub struct Function {
     pub arg_ids: Vec<Id>,
-    pub body: StatementList,
+    pub body: BlockNode,
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize)]

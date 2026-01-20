@@ -12,8 +12,6 @@ pub enum Statement {
     Declare(IdentifierNode, Expression),
     ReassignIden(IdentifierNode, Expression),
     Expr(Expression),
-
-    Return(Option<Expression>),
 }
 
 pub type StatementList = Vec<Statement>;
@@ -37,6 +35,7 @@ pub enum Expression {
     Block(BlockNode),
     IfChain(IfChainNode),
     While(WhileNode),
+    Return(Option<Box<Expression>>),
 }
 
 #[derive(Debug, Clone)]
@@ -104,7 +103,7 @@ pub struct ArrayRepeatNode {
 #[derive(Debug, Clone)]
 pub struct FnDeclNode {
     pub arg_names: Vec<IdentifierNode>,
-    pub body: StatementList,
+    pub body: BlockNode,
 }
 
 #[derive(Debug, Clone)]
