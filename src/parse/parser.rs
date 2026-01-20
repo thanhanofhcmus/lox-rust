@@ -27,8 +27,14 @@ pub fn parse(input: &str, items: &[LexItem]) -> Result<AST, ParseError> {
 
         // parse import then parse stmts
         state.prepare_next();
-        let result = parse_stmt(&mut state)?;
-        global_stmts.push(result);
+        let stmt = parse_stmt(&mut state)?;
+        match &stmt {
+            Statement::Expr(Expression::Return(_)) | Statement::Expr(Expression::Clause(_)) => {
+                state.consume_token(Token::Semicolon)?;
+            }
+            _ => {}
+        }
+        global_stmts.push(stmt);
     }
     match state.get_curr() {
         Err(_) => Ok(AST {
@@ -60,11 +66,6 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     }
 }
 
-fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
-    let expr = parse_expr(state)?;
-    Ok(Statement::Expr(expr))
-}
-
 fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
     state.consume_token(Token::LPointParen)?;
 
@@ -72,23 +73,37 @@ fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
     let mut last_expr = None;
     while !state.peek(&[Token::RPointParen]) {
         let result = parse_stmt(state)?;
-        if let Statement::Expr(expr) = result {
-            if state.peek(&[Token::RPointParen]) {
-                // the expression is the last statement in the chain
+
+        // we are facing the end of this block,
+        if state.peek(&[Token::RPointParen]) {
+            // last parsed statement might be an expression with no semicolor
+            if let Statement::Expr(expr) = result {
+                // the last parsed statement is an expression, make it a return expr
                 last_expr = Some(Box::new(expr));
                 break;
             } else {
-                // normal expr statement with semicolon
-                state.consume_token(Token::Semicolon)?;
-                stmts.push(Statement::Expr(expr));
+                // the last parsed statement is just a normal staement
+                stmts.push(result);
             }
         } else {
+            // not the last statement, make sure to consume semicolon from non-block expression
+            match &result {
+                Statement::Expr(Expression::Return(_)) | Statement::Expr(Expression::Clause(_)) => {
+                    state.consume_token(Token::Semicolon)?;
+                }
+                _ => {}
+            }
             stmts.push(result);
         }
     }
 
     state.consume_token(Token::RPointParen)?;
     Ok(BlockNode { stmts, last_expr })
+}
+
+fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
+    let expr = parse_expr(state)?;
+    Ok(Statement::Expr(expr))
 }
 
 fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
@@ -106,9 +121,6 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
 fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
     if !state.peek_2_token(&[Token::Equal]) {
         let expr = parse_expr_stmt(state)?;
-        if state.peek(&[Token::Semicolon]) {
-            state.consume_token(Token::Semicolon)?;
-        }
         return Ok(expr);
     }
     let id_item = state.consume_token(Token::Identifier)?;
@@ -325,12 +337,11 @@ fn parse_chaining(state: &mut Context) -> Result<ClauseNode, ParseError> {
         } else if state.peek(&[Token::LRoundParen]) {
             // parse function
             // TODO: make start position span the whole chain
-            let start_position = state.get_current_position();
             let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
-            let end_position = state.get_current_position();
             follows.push(ChainingFollow::FnCall(FnCallNode {
                 iden: IdentifierNode::new_from_name(
-                    Span::new(start_position, end_position),
+                    // TODO: this span is wrong, also should not get from get_current_position
+                    Span::new(0, 0),
                     state.get_input(),
                 ),
                 args,
