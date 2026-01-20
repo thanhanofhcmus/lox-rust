@@ -256,8 +256,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             }
         }
         let Some(else_stmts) = &node.else_stmts else {
-            // Maybe return Value::Never or Value::Unit, not a nil
-            return Ok(Value::Nil);
+            return Ok(Value::Unit);
         };
         self.interpret_block_node(else_stmts)
     }
