@@ -61,7 +61,6 @@ pub struct WhileNode {
 pub enum ClauseNode {
     UnaryOp(Box<ClauseNode>, Token),
     BinaryOp(BinaryOpNode),
-    Primary(PrimaryNode),
     Chaining(ChainingNode),
 }
 

@@ -20,8 +20,8 @@ pub enum Error {
     #[error("Value `{1}` does not accept operator `{0}`")]
     InvalidOperationOnType(Token, Value),
 
-    #[error("`{0}` and `{1} do not share the same type")]
-    MismatchType(Value, Value),
+    #[error("Type `{1}` and type `{2} canot perform operation `{0}` ")]
+    MismatchType(Token, Value, Value),
 
     #[error("Condition evaluated to `{0}` which is not a boolean value")]
     ConditionNotBool(Value),
@@ -45,8 +45,8 @@ pub enum Error {
     #[error("Value `{0}` is not of the type non-negative integer")]
     ValueMustBeUsize(Value),
 
-    #[error("Array of name `{0}` has length `{1}` but received index `{2}`")]
-    ArrayOutOfBound(String, usize, usize),
+    #[error("Arrayhas length `{0}` but received index `{1}`")]
+    ArrayOutOfBound(usize, usize),
 
     #[error("Module `{0}` cannot be found in path `{1}`")]
     ModuleNotFoundInPath(String, String),

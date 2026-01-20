@@ -10,12 +10,12 @@ use std::panic;
 use std::path::Path;
 
 #[derive(Debug)]
-struct StmtReturn {
+struct ValueReturn {
     value: Option<Value>,
     should_bubble_up: bool,
 }
 
-impl StmtReturn {
+impl ValueReturn {
     fn new(value: Value) -> Self {
         Self {
             value: Some(value),
@@ -33,12 +33,6 @@ impl StmtReturn {
     fn should_bubble_up(mut self) -> Self {
         self.should_bubble_up = true;
         self
-    }
-}
-
-impl From<StmtReturn> for Option<Value> {
-    fn from(ret: StmtReturn) -> Self {
-        ret.value
     }
 }
 
@@ -139,20 +133,20 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         &mut self,
         iden: &IdentifierNode,
         expr: &Expression,
-    ) -> Result<StmtReturn, Error> {
+    ) -> Result<ValueReturn, Error> {
         if self.environment.get_variable_current_scope(iden).is_some() {
             return Err(Error::ReDeclareVariable(iden.create_name(self.input)));
         }
         let value = self.interpret_expr(expr)?;
         self.environment.insert_variable_current_scope(iden, value);
-        Ok(StmtReturn::none())
+        Ok(ValueReturn::none())
     }
 
     fn interpret_reassign_id_stmt(
         &mut self,
         iden: &IdentifierNode,
         expr: &Expression,
-    ) -> Result<StmtReturn, Error> {
+    ) -> Result<ValueReturn, Error> {
         if self.environment.get_variable_current_scope(iden).is_none() {
             return match self.environment.get_variable_all_scope(iden) {
                 Some(_) => Err(Error::VariableReadOnly(iden.create_name(self.input))),
@@ -161,7 +155,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
         let value = self.interpret_expr(expr)?;
         self.environment.insert_variable_current_scope(iden, value);
-        Ok(StmtReturn::none())
+        Ok(ValueReturn::none())
     }
 
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
@@ -242,7 +236,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_clause_expr(&mut self, node: &ClauseNode) -> Result<Value, Error> {
         match node {
-            ClauseNode::Primary(node) => self.interpret_primary_expr(node),
             ClauseNode::UnaryOp(node, op) => self.interpret_unary_op(node, *op),
             ClauseNode::BinaryOp(node) => self.interpret_binary_op(node),
             ClauseNode::Chaining(node) => self.interpret_chaining_expr(node),
@@ -479,7 +472,7 @@ fn add(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
         (Integer(l), Floating(r)) => Ok(Floating((*l as f64) + r)),
         (Floating(l), Floating(r)) => Ok(Floating(l + r)),
         (Str(l), Str(r)) => Ok(Str(l.to_owned() + r)),
-        _ => Err(Error::InvalidOperationOnType(Token::Plus, lhs.clone())),
+        _ => Err(Error::MismatchType(Token::Plus, lhs.clone(), rhs.clone())),
     }
 }
 
@@ -490,7 +483,7 @@ fn subtract(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
         (Floating(l), Integer(r)) => Ok(Floating(l - (*r as f64))),
         (Integer(l), Floating(r)) => Ok(Floating((*l as f64) - r)),
         (Floating(l), Floating(r)) => Ok(Floating(l - r)),
-        _ => Err(Error::InvalidOperationOnType(Token::Minus, lhs.clone())),
+        _ => Err(Error::MismatchType(Token::Minus, lhs.clone(), rhs.clone())),
     }
 }
 
@@ -501,7 +494,7 @@ fn times(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
         (Floating(l), Integer(r)) => Ok(Floating(l * (*r as f64))),
         (Integer(l), Floating(r)) => Ok(Floating((*l as f64) * r)),
         (Floating(l), Floating(r)) => Ok(Floating(l * r)),
-        _ => Err(Error::InvalidOperationOnType(Token::Star, lhs.clone())),
+        _ => Err(Error::MismatchType(Token::Star, lhs.clone(), rhs.clone())),
     }
 }
 
@@ -523,7 +516,7 @@ fn divide(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
         (Floating(l), Integer(r)) => Ok(Floating(l / (*r as f64))),
         (Integer(l), Floating(r)) => Ok(Floating((*l as f64) / r)),
         (Floating(l), Floating(r)) => Ok(Floating(l / r)),
-        _ => Err(Error::InvalidOperationOnType(Token::Star, lhs.clone())),
+        _ => Err(Error::MismatchType(Token::Slash, lhs.clone(), rhs.clone())),
     }
 }
 
@@ -534,9 +527,10 @@ fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
         (Floating(l), Integer(r)) => Ok(Floating(l % (*r as f64))),
         (Integer(l), Floating(r)) => Ok(Floating((*l as f64) % r)),
         (Floating(l), Floating(r)) => Ok(Floating(l % r)),
-        _ => Err(Error::InvalidOperationOnType(
-            Token::Percentage,
+        _ => Err(Error::MismatchType(
+            Token::PercentLPointParent,
             lhs.clone(),
+            rhs.clone(),
         )),
     }
 }
@@ -570,7 +564,7 @@ fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
             let idx = to_index(indexee)?;
             // This one is return a new value, maybe return a ref instead
             match arr.get(idx) {
-                None => Err(Error::ArrayOutOfBound("TODO".to_string(), arr.len(), idx)),
+                None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
                 Some(v) => Ok(v.to_owned()),
             }
         }
