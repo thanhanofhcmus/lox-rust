@@ -159,26 +159,11 @@ fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseErr
 
 fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
     match state.get_curr()?.token {
-        Token::Cond => parse_ternary(state),
         Token::When => parse_when(state),
         Token::If => parse_if(state),
         Token::LPointParen => parse_block_node(state).map(Expression::Block),
         _ => parse_clause_node(state).map(Expression::Clause),
     }
-}
-
-fn parse_ternary(state: &mut Context) -> Result<Expression, ParseError> {
-    state.consume_token(Token::Cond)?;
-    let cond = parse_clause_node(state)?;
-    state.consume_token(Token::Then)?;
-    let true_clause = parse_clause_node(state)?;
-    state.consume_token(Token::Else)?;
-    let false_clause = parse_clause_node(state)?;
-    Ok(Expression::Ternary(TernaryExprNode {
-        cond,
-        true_clause,
-        false_clause,
-    }))
 }
 
 fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {

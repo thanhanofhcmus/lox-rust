@@ -57,6 +57,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             self.interpret_import_stmt(import)?;
         }
 
+        // dbg!(&ast.global_stmts);
+
         self.interpret_stmt_list(&ast.global_stmts)
             .map(|r| r.value.unwrap_or(Value::Nil))
     }
@@ -221,7 +223,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_expr(&mut self, expr: &Expression) -> Result<Value, Error> {
         match expr {
             Expression::When(nodes) => self.interpret_when_expr(nodes),
-            Expression::Ternary(node) => self.interpret_ternary_expr(node),
             Expression::Clause(node) => self.interpret_clause_expr(node),
             Expression::Block(node) => self.interpret_block_node(node),
             Expression::IfChain(node) => self.interpret_if_chain_expr(node),
@@ -283,15 +284,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
                 body: node.body.to_owned(),
             })),
-        }
-    }
-
-    fn interpret_ternary_expr(&mut self, node: &TernaryExprNode) -> Result<Value, Error> {
-        let cond = self.is_truthy(&node.cond)?;
-        if cond {
-            self.interpret_clause_expr(&node.true_clause)
-        } else {
-            self.interpret_clause_expr(&node.false_clause)
         }
     }
 

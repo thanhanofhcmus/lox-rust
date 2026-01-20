@@ -48,7 +48,6 @@ pub struct IfStmtNode {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Ternary(TernaryExprNode),
     When(Vec<WhenArmNode>),
     Clause(ClauseNode),
     Block(BlockNode),
@@ -86,13 +85,6 @@ pub enum PrimaryNode {
     ArrayLiteral(ArrayLiteralNode),
     MapLiteral(MapLiteralNode),
     FnDecl(FnDeclNode),
-}
-
-#[derive(Debug, Clone)]
-pub struct TernaryExprNode {
-    pub cond: ClauseNode,
-    pub true_clause: ClauseNode,
-    pub false_clause: ClauseNode,
 }
 
 #[derive(Debug, Clone)]
