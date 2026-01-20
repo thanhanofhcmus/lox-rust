@@ -10,7 +10,6 @@ pub struct AST {
 #[derive(Debug, Clone)]
 pub enum Statement {
     While(WhileNode),
-    If(IfStmtNode),
     Block(StatementList),
     Declare(IdentifierNode, Expression),
     ReassignIden(IdentifierNode, Expression),
@@ -37,13 +36,6 @@ pub struct ImportNode {
 pub struct WhileNode {
     pub cond: ClauseNode,
     pub body: StatementList,
-}
-
-#[derive(Debug, Clone)]
-pub struct IfStmtNode {
-    pub cond: ClauseNode,
-    pub if_stmts: StatementList,
-    pub else_stmts: Option<StatementList>,
 }
 
 #[derive(Debug, Clone)]

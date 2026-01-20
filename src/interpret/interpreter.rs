@@ -69,7 +69,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Statement::ReassignIden(name, expr) => self.interpret_reassign_id_stmt(name, expr),
             Statement::Expr(expr) => self.interpret_expr(expr).map(StmtReturn::new),
             Statement::While(node) => self.interpret_while_stmt(node),
-            Statement::If(node) => self.interpret_if_stmt(node),
             Statement::Return(expr) => self.interpret_return_stmt(expr),
             Statement::Block(stmts) => {
                 // TODO: other scope like while and if and function should push scope as well
@@ -137,18 +136,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // TODO: detect circular dependency
 
         Ok(())
-    }
-
-    fn interpret_if_stmt(&mut self, node: &IfStmtNode) -> Result<StmtReturn, Error> {
-        let cond = self.is_truthy(&node.cond)?;
-        if !cond {
-            return node
-                .else_stmts
-                .as_ref()
-                .map(|stmts| self.interpret_stmt_list(stmts))
-                .unwrap_or(Ok(StmtReturn::none()));
-        }
-        self.interpret_stmt_list(&node.if_stmts)
     }
 
     fn interpret_return_stmt(
