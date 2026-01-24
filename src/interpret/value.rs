@@ -96,7 +96,7 @@ impl PartialEq for Value {
 
             (Function(l), Function(r)) => l == r,
 
-            (BuiltinFunction(l), BuiltinFunction(r)) => std::ptr::eq(l, r),
+            (BuiltinFunction(l), BuiltinFunction(r)) => std::ptr::fn_addr_eq(*l, *r),
 
             _ => false,
         }
