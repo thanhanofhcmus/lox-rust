@@ -8,7 +8,7 @@ use super::{error::Error, interpreter::Interpreter};
 use crate::{
     ast::BlockNode,
     id::Id,
-    interpret::gc::{GcHandle, Heap},
+    interpret::{gc::GcHandle, Environment},
 };
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
@@ -96,7 +96,7 @@ impl Value {
         }
     }
 
-    pub fn deep_eq(&self, other: &Self, heap: &Heap) -> bool {
+    pub fn deep_eq(&self, other: &Self, env: &Environment) -> bool {
         if self.is_scalar_type() && other.is_scalar_type() {
             return self.shallow_eq(other);
         }
@@ -107,8 +107,23 @@ impl Value {
         match (self, other) {
             // TODO: get value from the heap for GC equal
             (Str(l), Str(r)) => l == r,
-            (Array(l), Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a == b),
-            (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
+            (Array(l), Array(r)) => {
+                l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a.deep_eq(b, env))
+            }
+            (Map(l), Map(r)) => {
+                if l.len() != r.len() {
+                    return false;
+                }
+                for (l_key, l_value) in l.iter() {
+                    let Some(r_value) = r.get(l_key) else {
+                        return false;
+                    };
+                    if !l_value.deep_eq(r_value, env) {
+                        return false;
+                    }
+                }
+                true
+            }
             _ => false,
         }
     }

@@ -410,7 +410,9 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Token::Slash => divide(&lhs_val, &rhs_val),
             Token::Percentage => modulo(&lhs_val, &rhs_val),
             Token::And | Token::Or => and_or(&lhs_val, op, &rhs_val),
-            Token::EqualEqual | Token::BangEqual => Ok(Value::Bool(lhs_val == rhs_val)),
+            Token::EqualEqual | Token::BangEqual => {
+                self.interpret_cmp(&lhs_val, op, &rhs_val).map(Value::Bool)
+            }
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
                 ordering(&lhs_val, op, &rhs_val)
             }
@@ -451,6 +453,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             }
         }
         Ok(value)
+    }
+
+    fn interpret_cmp(&self, lhs: &Value, op: Token, rhs: &Value) -> Result<bool, Error> {
+        let cmp = lhs.deep_eq(rhs, self.environment);
+        Ok(cmp == (op == Token::EqualEqual))
     }
 
     fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
