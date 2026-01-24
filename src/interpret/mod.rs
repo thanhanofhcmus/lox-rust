@@ -1,5 +1,6 @@
 mod environment;
 mod error;
+mod gc;
 mod interpreter;
 mod predule;
 mod value;

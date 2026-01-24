@@ -5,7 +5,14 @@ use std::{
 };
 
 use super::value::Value;
-use crate::{ast::IdentifierNode, id::Id, interpret::predule};
+use crate::{
+    ast::IdentifierNode,
+    id::Id,
+    interpret::{
+        gc::{GcHandle, GcObject, Heap},
+        predule,
+    },
+};
 
 struct Scope {
     variables: HashMap<Id, Value>,
@@ -55,6 +62,7 @@ struct Module {
     variables: HashMap<Id, Value>,
     #[allow(unused)]
     id: Id,
+    // todo functions
 }
 
 impl Module {
@@ -70,6 +78,7 @@ const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 20;
 
 pub struct Environment {
+    heap: Heap,
     scopes: Vec<Scope>,
     modules: HashMap<Id, Module>,
     preludes: HashMap<Id, Value>,
@@ -87,6 +96,7 @@ impl Environment {
         modules.insert(current_module_id, Module::new(current_module_id));
 
         Self {
+            heap: Heap::new(),
             scopes,
             modules,
             preludes: predule::create(),
@@ -116,6 +126,8 @@ impl Environment {
         // after a module is parsed, the should only be the "global" scope
         assert!(self.scopes.len() == 1);
         module.variables = std::mem::take(&mut self.get_current_scope_mut().variables);
+
+        // TOOD: handle heap
 
         self.modules.insert(self.current_module_id, module);
     }
@@ -195,5 +207,13 @@ impl Environment {
 
     pub fn insert_variable_current_scope_by_id(&mut self, id: Id, value: Value) -> Option<Value> {
         self.get_current_scope_mut().insert_variable(id, value)
+    }
+
+    pub fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {
+        self.heap.allocate(object)
+    }
+
+    pub fn get_gc_object(&mut self, handle: GcHandle) -> Option<&GcObject> {
+        self.heap.get(handle)
     }
 }

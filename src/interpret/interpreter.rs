@@ -2,7 +2,8 @@ use super::environment::Environment;
 use super::error::Error;
 use super::value::Value;
 use crate::ast::*;
-use crate::interpret::value::{self, BuiltinFn, Function};
+use crate::interpret::gc::{GcHandle, GcObject};
+use crate::interpret::value::{BuiltinFn, Function};
 use crate::parse;
 use crate::token::Token;
 use std::collections::BTreeMap;
@@ -264,10 +265,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let res = self.interpret_map_literal(node)?;
                 return Ok(ValueReturn::new(res));
             }
-            PrimaryNode::FnDecl(node) => Value::Function(Function {
-                arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
-                body: node.body.to_owned(),
-            }),
+            PrimaryNode::FnDecl(node) => {
+                let res = self.interpret_fn_decl(node)?;
+                return Ok(ValueReturn::new(res));
+            }
         };
         Ok(ValueReturn::new(val))
     }
@@ -310,11 +311,36 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(Value::Map(m))
     }
 
+    fn interpret_fn_decl(&mut self, node: &FnDeclNode) -> Result<Value, Error> {
+        let object = GcObject::Function(Function {
+            arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
+            body: node.body.to_owned(),
+        });
+
+        let handle = self.environment.insert_gc_object(object);
+
+        Ok(Value::Function(handle))
+    }
+
     fn interpret_normal_fn_call_expr(
         &mut self,
         node: &FnCallNode,
-        value::Function { arg_ids, body }: &Function,
+        handle: GcHandle,
+        // value::Function { arg_ids, body }: &Function,
     ) -> Result<Value, Error> {
+        let Some(value) = self.environment.get_gc_object(handle) else {
+            // TODO:
+            return Err(Error::NotFoundVariable("TODO".to_string()));
+        };
+
+        let GcObject::Function(func) = value else {
+            // TODO:
+            return Err(Error::ValueNotCallable(Value::Unit));
+        };
+
+        // TODO:
+        let Function { arg_ids, body } = func.clone();
+
         if arg_ids.len() != node.args.len() {
             return Err(Error::WrongNumberOfArgument(
                 node.iden.create_name(self.input),
@@ -333,7 +359,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 .insert_variable_current_scope_by_id(*arg_id, res);
         }
 
-        let result = self.interpret_block_node(body);
+        let result = self.interpret_block_node(&body);
         self.environment.pop_scope();
 
         // Convert the ValueReturn back to a raw Value.
@@ -412,11 +438,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             value = match follow {
                 ChainingFollow::Identifier(node) => self.lookup_all_scope(node),
                 ChainingFollow::FnCall(node) => match value {
-                    Value::Function(function) => {
-                        // TODO: remove this clone
-                        let function = function.clone();
-                        self.interpret_normal_fn_call_expr(node, &function)?
-                    }
+                    Value::Function(handle) => self.interpret_normal_fn_call_expr(node, handle)?,
                     Value::BuiltinFunction(function) => {
                         self.intepret_builtin_fn_call_expr(node, function)?
                     }

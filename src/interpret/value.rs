@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{error::Error, interpreter::Interpreter};
 
-use crate::{ast::BlockNode, id::Id};
+use crate::{ast::BlockNode, id::Id, interpret::gc::GcHandle};
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
 
@@ -47,7 +47,7 @@ pub enum Value {
 
     #[display(fmt = "function")]
     #[serde(skip)]
-    Function(Function),
+    Function(GcHandle),
 
     #[display(fmt = "builtin_function")]
     #[serde(skip)]
@@ -94,8 +94,7 @@ impl PartialEq for Value {
             (Array(l), Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a == b),
             (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
 
-            // TODO: fix this
-            (Function(_l), Function(_r)) => false,
+            (Function(l), Function(r)) => l == r,
 
             (BuiltinFunction(l), BuiltinFunction(r)) => std::ptr::eq(l, r),
 
