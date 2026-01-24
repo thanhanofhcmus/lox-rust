@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::interpret::value::{Function, Value};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GcHandle(usize);
 
 #[derive(Debug, Clone)]

@@ -5,7 +5,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{error::Error, interpreter::Interpreter};
 
-use crate::{ast::BlockNode, id::Id, interpret::gc::GcHandle};
+use crate::{
+    ast::BlockNode,
+    id::Id,
+    interpret::gc::{GcHandle, Heap},
+};
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
 
@@ -24,9 +28,6 @@ pub enum Value {
     #[display(fmt = "()")]
     Unit,
 
-    #[display(fmt = "{:?}", _0)] // Quotes for strings
-    Str(String),
-
     // The integer variant must be declared before the floating variant
     // for serde to try to parse it first
     #[display(fmt = "{}", _0)]
@@ -37,6 +38,9 @@ pub enum Value {
 
     #[display(fmt = "{}", _0)]
     Bool(bool),
+
+    #[display(fmt = "{:?}", _0)] // Quotes for strings
+    Str(String),
 
     #[display(fmt = "{}", "format_array(_0)")] // Call helper
     Array(Vec<Value>),
@@ -70,10 +74,50 @@ impl Value {
             Value::Unit => 10,
         }
     }
-}
 
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
+    pub fn is_scalar_type(&self) -> bool {
+        matches!(self, Value::Nil | Value::Unit | Value::Bool(_) | Value::Integer(_) | Value::Floating(_) if {
+            true
+        })
+    }
+
+    pub fn is_function_type(&self) -> bool {
+        matches!(self, Value::Function(_) | Value::BuiltinFunction(_) if {
+            true
+        })
+    }
+
+    pub fn function_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // 2 functions are considireded equals if they point to the same `blueprint`
+            (Value::Function(l), Value::Function(r)) => l == r,
+            (Value::BuiltinFunction(l), Value::BuiltinFunction(r)) => std::ptr::fn_addr_eq(*l, *r),
+            _ => false,
+        }
+    }
+
+    pub fn deep_eq(&self, other: &Self, heap: &Heap) -> bool {
+        if self.is_scalar_type() && other.is_scalar_type() {
+            return self.shallow_eq(other);
+        }
+        if self.is_function_type() && other.is_function_type() {
+            return self.function_eq(other);
+        }
+        use Value::*;
+        match (self, other) {
+            // TODO: get value from the heap for GC equal
+            (Str(l), Str(r)) => l == r,
+            (Array(l), Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a == b),
+            (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
+            _ => false,
+        }
+    }
+
+    pub fn shallow_eq(&self, other: &Self) -> bool {
+        if self.is_function_type() && other.is_function_type() {
+            return self.function_eq(other);
+        }
+
         use Value::*;
         const NUMBER_DELTA: f64 = 1e-10;
 
@@ -84,22 +128,25 @@ impl PartialEq for Value {
 
             (Nil, Nil) => true,
             (Bool(l), Bool(r)) => l == r,
-            (Str(l), Str(r)) => l == r,
 
             (Integer(l), Integer(r)) => l == r,
             (Floating(l), Integer(r)) => (l - (*r as f64)).abs() < NUMBER_DELTA,
             (Integer(l), Floating(r)) => ((*l as f64) - r).abs() < NUMBER_DELTA,
             (Floating(l), Floating(r)) => (*l - *r).abs() < NUMBER_DELTA,
 
+            (Str(l), Str(r)) => l == r,
+
             (Array(l), Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a == b),
             (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
 
-            (Function(l), Function(r)) => l == r,
-
-            (BuiltinFunction(l), BuiltinFunction(r)) => std::ptr::fn_addr_eq(*l, *r),
-
             _ => false,
         }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.shallow_eq(other)
     }
 }
 
@@ -129,16 +176,12 @@ impl Ord for Value {
             (Bool(a), Bool(b)) => a.cmp(b),
             (Str(a), Str(b)) => a.cmp(b),
             (Floating(a), Floating(b)) => {
-                // Handle f64 comparison (ignoring NaN for simplicity,
-                // or treat NaN as the smallest number)
+                // Handle f64 comparison (ignoring NaN for simplicity, or treat NaN as the smallest number)
                 a.partial_cmp(b).unwrap_or(Ordering::Less)
             }
             (Array(a), Array(b)) => a.cmp(b),
             (Map(a), Map(b)) => a.cmp(b),
-            (Function(_a), Function(_)) => {
-                // (a as *const _).cmp(&(b as *const _))
-                Ordering::Less
-            }
+            (Function(a), Function(b)) => a.cmp(b),
             (BuiltinFunction(a), BuiltinFunction(b)) => {
                 (a as *const BuiltinFn).cmp(&(b as *const BuiltinFn))
             }
