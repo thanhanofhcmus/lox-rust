@@ -34,6 +34,13 @@ impl ValueReturn {
         self.value.unwrap_or(Value::Unit)
     }
 
+    fn get_or_error(self) -> Result<Value, Error> {
+        match self.value {
+            Some(v) => Ok(v),
+            None => Err(Error::UseUnitValue),
+        }
+    }
+
     fn should_bubble_up(mut self) -> Self {
         self.should_bubble_up = true;
         self
@@ -136,7 +143,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             return Ok(res);
         }
 
-        let val = res.get_or_unit();
+        let val = res.get_or_error()?;
         self.environment.insert_variable_current_scope(iden, val);
         Ok(ValueReturn::none())
     }
@@ -157,7 +164,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             return Ok(res);
         }
 
-        let val = res.get_or_unit();
+        let val = res.get_or_error()?;
         self.environment.insert_variable_current_scope(iden, val);
         Ok(ValueReturn::none())
     }
@@ -273,7 +280,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                     let res = self.interpret_clause_expr(expr)?;
                     // Even in literals, we must check if an expression bubbled a return
                     // though usually return isn't allowed here syntactically.
-                    result.push(res.get_or_unit());
+                    result.push(res.get_or_error()?);
                 }
                 Ok(Value::Array(result))
             }
@@ -281,8 +288,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let val_res = self.interpret_clause_expr(&node.value)?;
                 let rep_res = self.interpret_clause_expr(&node.repeat)?;
 
-                let value = val_res.get_or_unit();
-                let repeat = to_index(&rep_res.get_or_unit())?;
+                let value = val_res.get_or_error()?;
+                let repeat = to_index(&rep_res.get_or_error()?)?;
 
                 let mut result = Vec::with_capacity(repeat);
                 for _ in 0..repeat {
@@ -296,8 +303,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
         let mut m = BTreeMap::new();
         for kv in &node.nodes {
-            let key = self.interpret_primary_expr(&kv.key)?.get_or_unit();
-            let value = self.interpret_expr(&kv.value)?.get_or_unit();
+            let key = self.interpret_primary_expr(&kv.key)?.get_or_error()?;
+            let value = self.interpret_expr(&kv.value)?.get_or_error()?;
             m.insert(key, value);
         }
         Ok(Value::Map(m))
@@ -321,9 +328,9 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // TODO: make this go away
         self.environment.push_scope();
         for (arg_id, arg_expr) in arg_ids.iter().zip(node.args.iter()) {
-            let res = self.interpret_expr(arg_expr)?;
+            let res = self.interpret_expr(arg_expr)?.get_or_error()?;
             self.environment
-                .insert_variable_current_scope_by_id(*arg_id, res.get_or_unit());
+                .insert_variable_current_scope_by_id(*arg_id, res);
         }
 
         let result = self.interpret_block_node(body);
@@ -341,14 +348,14 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     ) -> Result<Value, Error> {
         let mut args = vec![];
         for expr in &node.args {
-            let res = self.interpret_expr(expr)?;
-            args.push(res.get_or_unit());
+            let res = self.interpret_expr(expr)?.get_or_error()?;
+            args.push(res);
         }
         function(self, args)
     }
 
     fn interpret_unary_op(&mut self, node: &ClauseNode, op: Token) -> Result<Value, Error> {
-        let res = self.interpret_clause_expr(node)?.get_or_unit();
+        let res = self.interpret_clause_expr(node)?.get_or_error()?;
         match op {
             Token::Not => match res {
                 Value::Bool(v) => Ok(Value::Bool(!v)),
@@ -366,8 +373,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         &mut self,
         BinaryOpNode { lhs, op, rhs }: &BinaryOpNode,
     ) -> Result<Value, Error> {
-        let lhs_val = self.interpret_clause_expr(lhs)?.get_or_unit();
-        let rhs_val = self.interpret_clause_expr(rhs)?.get_or_unit();
+        let lhs_val = self.interpret_clause_expr(lhs)?.get_or_error()?;
+        let rhs_val = self.interpret_clause_expr(rhs)?.get_or_error()?;
         let op = *op;
 
         match op {
@@ -397,8 +404,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_chaining_expr(&mut self, node: &ChainingNode) -> Result<Value, Error> {
         // TODO: we need to make this ref if we want bring back re-assignment ability
         let mut value = match &node.base {
-            ChainingBase::Primary(v) => self.interpret_primary_expr(v)?.get_or_unit(),
-            ChainingBase::Group(v) => self.interpret_expr(v)?.get_or_unit(),
+            ChainingBase::Primary(v) => self.interpret_primary_expr(v)?.get_or_error()?,
+            ChainingBase::Group(v) => self.interpret_expr(v)?.get_or_error()?,
             ChainingBase::Identifier(v) => self.lookup_all_scope(v),
         };
         for follow in &node.follows {
@@ -416,7 +423,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                     _ => return Err(Error::ValueNotCallable(value)),
                 },
                 ChainingFollow::Index(indexee_expr) => {
-                    let indexee = self.interpret_expr(indexee_expr)?.get_or_unit();
+                    let indexee = self.interpret_expr(indexee_expr)?.get_or_error()?;
                     index(&value, &indexee)?
                 }
             }
@@ -435,7 +442,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn is_truthy(&mut self, expr: &ClauseNode) -> Result<bool, Error> {
         let res = self.interpret_clause_expr(expr)?;
-        let cond_value = res.get_or_unit();
+        let cond_value = res.get_or_error()?;
         let Value::Bool(cond_bin) = cond_value else {
             return Err(Error::ConditionNotBool(cond_value));
         };
