@@ -31,29 +31,37 @@ pub enum Value {
     Unit,
 
     #[display("{}", _0)]
+    #[debug("Integer({})", _0)]
     Integer(i64),
 
     #[display("{}", _0)]
+    #[debug("Floating({})", _0)]
     Floating(f64),
 
     #[display("{}", _0)]
+    #[debug("Bool({})", _0)]
     Bool(bool),
 
     // TODO: Error crate needs display method and is using this format
     // we need to make error print the actual value or maybe keep printing String like this
-    #[display("String({:?})", _0)]
+    #[display("string({:?})", _0)]
+    #[debug("String({:?})", _0)]
     Str(GcHandle),
 
-    #[display("Array({:?})", _0)]
+    #[display("array({:?})", _0)]
+    #[debug("Array({:?})", _0)]
     Array(GcHandle),
 
-    #[display("Map({:?})", _0)]
+    #[display("map({:?})", _0)]
+    #[debug("Map({:?})", _0)]
     Map(GcHandle),
 
-    #[display("function{:?}", _0)]
+    #[display("function({:?})", _0)]
+    #[debug("Function({:?})", _0)]
     Function(GcHandle),
 
     #[display("builtin_function")]
+    #[debug("BuitinFunction({:?})", _0)]
     BuiltinFunction(BuiltinFn),
 }
 
