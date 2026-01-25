@@ -83,12 +83,12 @@ impl SerialValue {
                 env.insert_array_variable(arr)
             }
             SerialValue::Map(m) => {
-                let mut vsm = BTreeMap::new();
+                let mut map = BTreeMap::new();
                 for (k, v) in m {
                     let v_sv = SerialValue::hydrate(v, env)?;
-                    vsm.insert(k, v_sv);
+                    map.insert(k, v_sv);
                 }
-                env.insert_map_variable(vsm)
+                env.insert_map_variable(map)
             }
         };
         Ok(v)

@@ -41,16 +41,16 @@ pub enum Value {
 
     // TODO: Error crate needs display method and is using this format
     // we need to make error print the actual value or maybe keep printing String like this
-    #[display("String({:?})", _0)] // Quotes for strings
+    #[display("String({:?})", _0)]
     Str(GcHandle),
 
     #[display("Array({:?})", _0)]
     Array(GcHandle),
 
-    #[display("Map({:?})", _0)] // Call helper
+    #[display("Map({:?})", _0)]
     Map(GcHandle),
 
-    #[display("function")]
+    #[display("function{:?}", _0)]
     Function(GcHandle),
 
     #[display("builtin_function")]
@@ -166,7 +166,7 @@ impl Value {
             (Str(l), Str(r)) => l == r,
 
             (Array(l), Array(r)) => l == r,
-            // (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
+            (Map(l), Map(r)) => l == r,
             _ => false,
         }
     }

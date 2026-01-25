@@ -67,6 +67,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         for stmt in &ast.global_stmts {
             let ret = self.interpret_stmt(stmt)?;
             // At the global level, we catch the bubble and return the value
+            // TODO: This is not valid, return should not be in the top level
             if ret.should_bubble_up {
                 return Ok(ret.get_or_unit());
             }
@@ -201,25 +202,25 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_block_node(&mut self, node: &BlockNode) -> Result<ValueReturn, Error> {
-        self.environment.push_scope();
-        // TODO: find a cleaner what to defer pop scope
+        // we cannot push_scope and then pop_scope here
+        // since if a variable is create outside of an if-else or while scope
+        // we want it to be not-readonly here
+        // but we still want gc to delete values created in this scope
+        // when the scope ends
+        // TODO: find a better way for scope
 
         for stmt in &node.stmts {
             let res = self.interpret_stmt(stmt)?;
             if res.should_bubble_up {
-                self.environment.pop_scope();
+                // self.environment.pop_scope();
                 return Ok(res);
             }
         }
 
-        let result = match &node.last_expr {
+        match &node.last_expr {
             Some(expr) => self.interpret_expr(expr),
             None => Ok(ValueReturn::none()),
-        };
-
-        self.environment.pop_scope();
-
-        result
+        }
     }
 
     fn interpret_while_expr(
@@ -272,22 +273,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             PrimaryNode::Bool(v) => Value::Bool(*v),
             PrimaryNode::Integer(v) => Value::Integer(*v),
             PrimaryNode::Floating(v) => Value::Floating(*v),
-            PrimaryNode::Str(v) => {
-                let res = self.interpret_string_literal(*v)?;
-                return Ok(ValueReturn::new(res));
-            }
-            PrimaryNode::ArrayLiteral(node) => {
-                let res = self.interpret_array_literal(node)?;
-                return Ok(ValueReturn::new(res));
-            }
-            PrimaryNode::MapLiteral(node) => {
-                let res = self.interpret_map_literal(node)?;
-                return Ok(ValueReturn::new(res));
-            }
-            PrimaryNode::FnDecl(node) => {
-                let res = self.interpret_fn_decl(node)?;
-                return Ok(ValueReturn::new(res));
-            }
+            PrimaryNode::Str(v) => self.interpret_string_literal(*v)?,
+            PrimaryNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
+            PrimaryNode::MapLiteral(node) => self.interpret_map_literal(node)?,
+            PrimaryNode::FnDecl(node) => self.interpret_fn_decl(node)?,
         };
         Ok(ValueReturn::new(val))
     }

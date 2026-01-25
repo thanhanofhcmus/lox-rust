@@ -1,12 +1,9 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     ops::{AddAssign, SubAssign},
 };
 
-use crate::interpret::{
-    helper_values::MapKey,
-    value::{Array, Function, Value},
-};
+use crate::interpret::value::{Array, Function, VMap, Value};
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[debug("GcHandle({_0})")]
@@ -38,7 +35,7 @@ pub enum GcObject {
     Array(Array),
 
     // TODO: maybe make the key a gc entrance
-    Map(BTreeMap<MapKey, Value>),
+    Map(VMap),
 
     Function(Function),
 }
