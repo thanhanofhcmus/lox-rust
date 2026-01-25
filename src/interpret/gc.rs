@@ -1,7 +1,18 @@
-use crate::interpret::value::Function;
+use std::{
+    fmt,
+    ops::{AddAssign, SubAssign},
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+use crate::interpret::value::{Array, Function, Value};
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GcHandle(usize);
+
+impl fmt::Debug for GcHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("GcHandle({})", self.0))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum GcObject {
@@ -10,8 +21,7 @@ pub enum GcObject {
     Array(Array),
 
     // TODO: maybe make the key a gc entrance
-    Map(BTreeMap<Value, Value>),
-
+    // Map(BTreeMap<Value, Value>),
     Function(Function),
 }
 
@@ -25,8 +35,11 @@ impl GcObject {
     }
 }
 
+#[derive(Debug)]
 struct HeapEntry {
     object: GcObject,
+
+    /// for CoW
     ref_count: usize,
     is_marked_for_delete: bool,
 }
@@ -41,6 +54,7 @@ impl HeapEntry {
     }
 }
 
+#[derive(Debug)]
 pub struct Heap {
     slots: Vec<Option<HeapEntry>>,
     free_list: Vec<usize>,

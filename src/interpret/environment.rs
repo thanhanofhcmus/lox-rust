@@ -1,6 +1,7 @@
 use std::{
     cell::{RefCell, RefMut},
     collections::HashMap,
+    fmt,
     rc::Rc,
 };
 
@@ -16,6 +17,7 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
 struct Scope {
     variables: HashMap<Id, Value>,
     index: usize,
@@ -56,6 +58,7 @@ impl Scope {
     }
 }
 
+#[derive(Debug)]
 struct Module {
     variables: HashMap<Id, Value>,
     #[allow(unused)]
@@ -83,6 +86,19 @@ pub struct Environment {
 
     current_module_id: Id,
     print_writer: Rc<RefCell<dyn std::io::Write>>,
+}
+
+impl fmt::Debug for Environment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Environment")
+            .field("heap", &self.heap)
+            .field("scopes", &self.scopes)
+            .field("modules", &self.modules)
+            .field("preludes", &self.preludes)
+            .field("current_module_id", &self.current_module_id)
+            // .field("print_writer", &self.print_writer)
+            .finish()
+    }
 }
 
 impl Environment {
