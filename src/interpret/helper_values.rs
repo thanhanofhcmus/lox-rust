@@ -48,11 +48,12 @@ impl SerialValue {
                 }
                 SerialValue::Array(vs)
             }
-            Value::Map(m) => {
-                let mut vsm = BTreeMap::new();
-                for (k, v) in m {
-                    let v_sv = SerialValue::convert_from_value(v, env)?;
-                    vsm.insert(k, v_sv);
+            Value::Map(handle) => {
+                let map = env.get_map(handle)?;
+                let mut vsm = BTreeMap::<MapKey, SerialValue>::new();
+                for (k, v) in map {
+                    let v_sv = SerialValue::convert_from_value(*v, env)?;
+                    vsm.insert(k.clone(), v_sv);
                 }
                 SerialValue::Map(vsm)
             }
@@ -87,7 +88,7 @@ impl SerialValue {
                     let v_sv = SerialValue::hydrate(v, env)?;
                     vsm.insert(k, v_sv);
                 }
-                Value::Map(vsm)
+                env.insert_map_variable(vsm)
             }
         };
         Ok(v)

@@ -1,9 +1,13 @@
 use std::{
+    collections::BTreeMap,
     fmt,
     ops::{AddAssign, SubAssign},
 };
 
-use crate::interpret::value::{Array, Function, Value};
+use crate::interpret::{
+    helper_values::MapKey,
+    value::{Array, Function, Value},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GcHandle(usize);
@@ -21,7 +25,8 @@ pub enum GcObject {
     Array(Array),
 
     // TODO: maybe make the key a gc entrance
-    // Map(BTreeMap<Value, Value>),
+    Map(BTreeMap<MapKey, Value>),
+
     Function(Function),
 }
 
@@ -30,6 +35,7 @@ impl GcObject {
         match self {
             GcObject::Str(_) => "String",
             GcObject::Array(_) => "Array",
+            GcObject::Map(_) => "Map",
             GcObject::Function(_) => "Function",
         }
     }
@@ -115,8 +121,14 @@ impl Heap {
 
         match &entry.object {
             GcObject::Str(_) | GcObject::Function(_) => { /* do nothing */ }
-            GcObject::Array(values) => {
-                for value in values.clone() {
+            GcObject::Array(arr) => {
+                for value in arr.clone() {
+                    self.recursive_ref_update(value, is_increase);
+                }
+            }
+            GcObject::Map(map) => {
+                // TODO: recursive update for map key as well
+                for (_, value) in map.clone() {
                     self.recursive_ref_update(value, is_increase);
                 }
             }

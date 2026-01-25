@@ -13,7 +13,7 @@ use crate::{
         error::Error,
         gc::{GcHandle, GcObject, Heap},
         predule,
-        value::Array,
+        value::{Array, Map},
     },
 };
 
@@ -264,23 +264,44 @@ impl Environment {
     }
 
     pub fn get_array(&self, handle: GcHandle) -> Result<&Array, Error> {
-        let Some(l_obj) = self.get_gc_object(handle) else {
+        let Some(obj) = self.get_gc_object(handle) else {
             return Err(Error::NotFoundGcObject(handle));
         };
-        let GcObject::Array(str) = l_obj else {
+        let GcObject::Array(arr) = obj else {
             return Err(Error::WrongTypeGcObject(
                 handle,
-                l_obj.type_name().to_string(),
+                obj.type_name().to_string(),
                 // TODO: fix this when we split Kind and Value enum
                 GcObject::Array(Array::new()).type_name().to_string(),
             ));
         };
-        Ok(str)
+        Ok(arr)
     }
 
     pub fn insert_array_variable(&mut self, arr: Array) -> Value {
         let object = GcObject::Array(arr);
         let handle = self.insert_gc_object(object);
         Value::Array(handle)
+    }
+
+    pub fn get_map(&self, handle: GcHandle) -> Result<&Map, Error> {
+        let Some(obj) = self.get_gc_object(handle) else {
+            return Err(Error::NotFoundGcObject(handle));
+        };
+        let GcObject::Map(map) = obj else {
+            return Err(Error::WrongTypeGcObject(
+                handle,
+                obj.type_name().to_string(),
+                // TODO: fix this when we split Kind and Value enum
+                GcObject::Map(Map::new()).type_name().to_string(),
+            ));
+        };
+        Ok(map)
+    }
+
+    pub fn insert_map_variable(&mut self, map: Map) -> Value {
+        let object = GcObject::Map(map);
+        let handle = self.insert_gc_object(object);
+        Value::Map(handle)
     }
 }

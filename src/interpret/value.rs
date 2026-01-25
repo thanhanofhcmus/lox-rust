@@ -20,7 +20,9 @@ pub struct Function {
 
 pub type Array = Vec<Value>;
 
-#[derive(Display, Debug, Clone)]
+pub type Map = BTreeMap<MapKey, Value>;
+
+#[derive(Display, Debug, Clone, Copy)]
 pub enum Value {
     #[display(fmt = "nil")]
     Nil,
@@ -42,11 +44,11 @@ pub enum Value {
     #[display(fmt = "String({:?})", _0)] // Quotes for strings
     Str(GcHandle),
 
-    #[display(fmt = "Array({:?}", _0)]
+    #[display(fmt = "Array({:?})", _0)]
     Array(GcHandle),
 
-    #[display(fmt = "%{}", "format_map(_0)")] // Call helper
-    Map(BTreeMap<MapKey, Value>),
+    #[display(fmt = "Map({:?})", _0)] // Call helper
+    Map(GcHandle),
 
     #[display(fmt = "function")]
     Function(GcHandle),
@@ -119,12 +121,14 @@ impl Value {
                 }
                 Ok(true)
             }
-            (Map(l), Map(r)) => {
-                if l.len() != r.len() {
-                    return Ok(false);
+            (Map(l_handle), Map(r_handle)) => {
+                if l_handle == r_handle {
+                    return Ok(true);
                 }
-                for (l_key, l_value) in l.iter() {
-                    let Some(r_value) = r.get(l_key) else {
+                let l_map = env.get_map(*l_handle)?;
+                let r_map = env.get_map(*r_handle)?;
+                for (l_key, l_value) in l_map.iter() {
+                    let Some(r_value) = r_map.get(l_key) else {
                         return Ok(false);
                     };
                     if !(l_value.deep_eq(r_value, env)?) {
@@ -190,29 +194,28 @@ impl Value {
                 for value in arr {
                     value.write_display(env, w)?;
                     // TODO: for the last value, do not write `,`
-                    w.write_all(b",").map_err(convert)?;
+                    w.write_all(b", ").map_err(convert)?;
                 }
                 w.write_all(b"]").map_err(convert)?;
 
                 Ok(())
             }
-            Value::Map(m) => {
-                let s = format_map(m);
-                w.write_all(s.as_bytes()).map_err(convert)
+            Value::Map(handle) => {
+                let map = env.get_map(*handle)?;
+                w.write_all(b"%{").map_err(convert)?;
+                for (k, v) in map {
+                    write!(w, "{}", k).map_err(convert)?;
+                    // TODO: for the last value, do not write `,`
+                    w.write_all(b" => ").map_err(convert)?;
+                    v.write_display(env, w)?;
+                    w.write_all(b", ").map_err(convert)?;
+                }
+                w.write_all(b"}").map_err(convert)?;
+
+                Ok(())
             }
             Value::Function(_) => write!(w, "function").map_err(convert),
             Value::BuiltinFunction(_) => write!(w, "builtin_function").map_err(convert),
         }
     }
-}
-
-// Helper function to simulate Python's list printing
-fn format_map(values: &BTreeMap<MapKey, Value>) -> String {
-    let internal = values
-        .iter()
-        //TODO: fix display
-        .map(|(k, v)| format!("{} => {}", k, v))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("{{{}}}", internal)
 }

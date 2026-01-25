@@ -4,11 +4,10 @@ use super::value::Value;
 use crate::ast::*;
 use crate::interpret::gc::{GcHandle, GcObject};
 use crate::interpret::helper_values::MapKey;
-use crate::interpret::value::{BuiltinFn, Function};
+use crate::interpret::value::{BuiltinFn, Function, Map};
 use crate::parse;
 use crate::span::Span;
 use crate::token::Token;
-use std::collections::BTreeMap;
 use std::panic;
 use std::path::Path;
 
@@ -328,14 +327,14 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
-        let mut m = BTreeMap::new();
+        let mut map = Map::new();
         for kv in &node.nodes {
             let raw_key = self.interpret_primary_expr(&kv.key)?.get_or_error()?;
             let key = MapKey::convert_from_value(raw_key, self.environment)?;
             let value = self.interpret_expr(&kv.value)?.get_or_error()?;
-            m.insert(key, value);
+            map.insert(key, value);
         }
-        Ok(Value::Map(m))
+        Ok(self.environment.insert_map_variable(map))
     }
 
     fn interpret_fn_decl(&mut self, node: &FnDeclNode) -> Result<Value, Error> {
@@ -518,9 +517,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                     Some(v) => Ok(v.to_owned()),
                 }
             }
-            Value::Map(m) => {
+            Value::Map(handle) => {
                 let map_key = MapKey::convert_from_value(indexee.to_owned(), self.environment)?;
-                let value = m.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil);
+                let map = self.environment.get_map(*handle)?;
+                let value = map.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil);
                 // dbg!(&map_key, &value);
                 Ok(value)
             }
