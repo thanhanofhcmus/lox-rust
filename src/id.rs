@@ -1,9 +1,7 @@
-use std::{
-    fmt,
-    hash::{DefaultHasher, Hash, Hasher},
-};
+use std::hash::{DefaultHasher, Hash, Hasher};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[debug("Id({_0})")]
 pub struct Id(u64);
 
 impl Id {
@@ -13,11 +11,5 @@ impl Id {
         let full_hash = hasher.finish();
 
         Id(full_hash)
-    }
-}
-
-impl fmt::Debug for Id {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("Id({})", self.0))
     }
 }

@@ -97,19 +97,19 @@ impl SerialValue {
 
 #[derive(Display, Debug, Clone)]
 pub enum MapKey {
-    #[display(fmt = "nil")]
+    #[display("nil")]
     Nil,
 
     // TODO: number will be considered the same if they are use in the same map
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Integer(i64),
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Floating(f64),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Bool(bool),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Str(String),
 }
 

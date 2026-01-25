@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 thiserror = { version = "1.0.51" }
-derive_more = { version = "0.99.17" }
+derive_more = { version = "2.1.1", features = ["full"] }
 phf = { version = "0.11", features = ["macros"] }
 log = { version = "0.4" }
 env_logger = { version = "0.10.1" }

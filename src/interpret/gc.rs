@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    fmt,
     ops::{AddAssign, SubAssign},
 };
 
@@ -9,14 +8,9 @@ use crate::interpret::{
     value::{Array, Function, Value},
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[debug("GcHandle({_0})")]
 pub struct GcHandle(usize);
-
-impl fmt::Debug for GcHandle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("GcHandle({})", self.0))
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum GcObject {

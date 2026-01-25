@@ -22,38 +22,38 @@ pub type Array = Vec<Value>;
 
 pub type VMap = BTreeMap<MapKey, Value>;
 
-#[derive(Display, Debug, Clone, Copy)]
+#[derive(Display, derive_more::Debug, Clone, Copy)]
 pub enum Value {
-    #[display(fmt = "nil")]
+    #[display("nil")]
     Nil,
 
-    #[display(fmt = "()")]
+    #[display("()")]
     Unit,
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Integer(i64),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Floating(f64),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Bool(bool),
 
     // TODO: Error crate needs display method and is using this format
     // we need to make error print the actual value or maybe keep printing String like this
-    #[display(fmt = "String({:?})", _0)] // Quotes for strings
+    #[display("String({:?})", _0)] // Quotes for strings
     Str(GcHandle),
 
-    #[display(fmt = "Array({:?})", _0)]
+    #[display("Array({:?})", _0)]
     Array(GcHandle),
 
-    #[display(fmt = "Map({:?})", _0)] // Call helper
+    #[display("Map({:?})", _0)] // Call helper
     Map(GcHandle),
 
-    #[display(fmt = "function")]
+    #[display("function")]
     Function(GcHandle),
 
-    #[display(fmt = "builtin_function")]
+    #[display("builtin_function")]
     BuiltinFunction(BuiltinFn),
 }
 

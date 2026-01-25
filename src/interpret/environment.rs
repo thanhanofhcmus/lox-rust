@@ -1,7 +1,6 @@
 use std::{
     cell::{RefCell, RefMut},
     collections::HashMap,
-    fmt,
     rc::Rc,
 };
 
@@ -78,27 +77,22 @@ impl Module {
 const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 20;
 
+#[derive(derive_more::Debug)]
 pub struct Environment {
     heap: Heap,
+
     scopes: Vec<Scope>,
+
     modules: HashMap<Id, Module>,
+
+    #[debug(skip)]
     preludes: HashMap<Id, Value>,
 
+    #[debug(skip)]
     current_module_id: Id,
-    print_writer: Rc<RefCell<dyn std::io::Write>>,
-}
 
-impl fmt::Debug for Environment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Environment")
-            .field("heap", &self.heap)
-            .field("scopes", &self.scopes)
-            .field("modules", &self.modules)
-            // .field("current_module_id", &self.current_module_id)
-            // .field("preludes", &self.preludes)
-            // .field("print_writer", &self.print_writer)
-            .finish()
-    }
+    #[debug(skip)]
+    print_writer: Rc<RefCell<dyn std::io::Write>>,
 }
 
 impl Environment {

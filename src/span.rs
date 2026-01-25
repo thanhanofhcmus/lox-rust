@@ -1,7 +1,7 @@
 use derive_more::Display;
 
 #[derive(Debug, Clone, Copy, Display)]
-#[display(fmt = "[{}:{}]", start, end)]
+#[display("[{}:{}]", start, end)]
 pub struct Span {
     // inclusive range
     pub start: usize,
