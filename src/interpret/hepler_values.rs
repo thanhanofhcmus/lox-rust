@@ -7,7 +7,7 @@ use crate::interpret::{error::Error, value::Value, Environment};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum SerializableValue {
+pub enum SerialValue {
     Nil,
 
     // The integer variant must be declared before the floating variant
@@ -20,40 +20,40 @@ pub enum SerializableValue {
 
     Str(String),
 
-    Array(Vec<SerializableValue>),
+    Array(Vec<SerialValue>),
 
     #[serde(serialize_with = "serialize_map", deserialize_with = "deserialize_map")]
-    Map(BTreeMap<MapKey, SerializableValue>),
+    Map(BTreeMap<MapKey, SerialValue>),
 }
 
-impl SerializableValue {
+impl SerialValue {
     pub fn convert_from_value(value: Value, env: &Environment) -> Result<Self, Error> {
         let v = match value {
-            Value::Nil => SerializableValue::Nil,
-            Value::Integer(v) => SerializableValue::Integer(v),
-            Value::Floating(v) => SerializableValue::Floating(v),
-            Value::Bool(v) => SerializableValue::Bool(v),
+            Value::Nil => SerialValue::Nil,
+            Value::Integer(v) => SerialValue::Integer(v),
+            Value::Floating(v) => SerialValue::Floating(v),
+            Value::Bool(v) => SerialValue::Bool(v),
 
             Value::Str(handle) => {
                 let s = env.get_string(handle)?;
-                SerializableValue::Str(s.clone())
+                SerialValue::Str(s.clone())
             }
 
             Value::Array(values) => {
                 let mut vs = Vec::with_capacity(values.len());
                 for v in values {
-                    let sv = SerializableValue::convert_from_value(v, env)?;
+                    let sv = SerialValue::convert_from_value(v, env)?;
                     vs.push(sv);
                 }
-                SerializableValue::Array(vs)
+                SerialValue::Array(vs)
             }
             Value::Map(m) => {
                 let mut vsm = BTreeMap::new();
                 for (k, v) in m {
-                    let v_sv = SerializableValue::convert_from_value(v, env)?;
+                    let v_sv = SerialValue::convert_from_value(v, env)?;
                     vsm.insert(k, v_sv);
                 }
-                SerializableValue::Map(vsm)
+                SerialValue::Map(vsm)
             }
 
             Value::Unit | Value::Function(_) | Value::BuiltinFunction(_) => {
@@ -65,25 +65,25 @@ impl SerializableValue {
 
     pub fn hydrate(self, env: &mut Environment) -> Result<Value, Error> {
         let v = match self {
-            SerializableValue::Nil => Value::Nil,
-            SerializableValue::Integer(v) => Value::Integer(v),
-            SerializableValue::Floating(v) => Value::Floating(v),
-            SerializableValue::Bool(v) => Value::Bool(v),
+            SerialValue::Nil => Value::Nil,
+            SerialValue::Integer(v) => Value::Integer(v),
+            SerialValue::Floating(v) => Value::Floating(v),
+            SerialValue::Bool(v) => Value::Bool(v),
 
-            SerializableValue::Str(v) => env.insert_string_variable(v),
+            SerialValue::Str(v) => env.insert_string_variable(v),
 
-            SerializableValue::Array(values) => {
+            SerialValue::Array(values) => {
                 let mut vs = Vec::with_capacity(values.len());
                 for v in values {
-                    let sv = SerializableValue::hydrate(v, env)?;
+                    let sv = SerialValue::hydrate(v, env)?;
                     vs.push(sv);
                 }
                 Value::Array(vs)
             }
-            SerializableValue::Map(m) => {
+            SerialValue::Map(m) => {
                 let mut vsm = BTreeMap::new();
                 for (k, v) in m {
-                    let v_sv = SerializableValue::hydrate(v, env)?;
+                    let v_sv = SerialValue::hydrate(v, env)?;
                     vsm.insert(k, v_sv);
                 }
                 Value::Map(vsm)
@@ -198,7 +198,7 @@ impl Ord for MapKey {
 }
 
 fn serialize_map<S: Serializer>(
-    m: &BTreeMap<MapKey, SerializableValue>,
+    m: &BTreeMap<MapKey, SerialValue>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     let string_map = m
@@ -210,16 +210,16 @@ fn serialize_map<S: Serializer>(
                 _ => None,
             }
         })
-        .collect::<BTreeMap<&String, &SerializableValue>>();
+        .collect::<BTreeMap<&String, &SerialValue>>();
 
     string_map.serialize(serializer)
 }
 
 fn deserialize_map<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<BTreeMap<MapKey, SerializableValue>, D::Error> {
+) -> Result<BTreeMap<MapKey, SerialValue>, D::Error> {
     // might have performance issue here if the json object is to big
-    let string_map = BTreeMap::<String, SerializableValue>::deserialize(deserializer)?;
+    let string_map = BTreeMap::<String, SerialValue>::deserialize(deserializer)?;
     let mut value_map = BTreeMap::new();
     for (k, v) in string_map {
         value_map.insert(MapKey::Str(k), v);

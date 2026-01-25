@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     id::Id,
-    interpret::{error::Error, hepler_values::SerializableValue, interpreter, value::Value},
+    interpret::{error::Error, hepler_values::SerialValue, interpreter, value::Value},
 };
 
 pub fn create() -> HashMap<Id, Value> {
@@ -25,7 +25,7 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
             let s = itp.environment.get_string(*handle)?;
             write!(print_writer, "{}", s).unwrap();
         } else {
-            write!(print_writer, "{}", value).unwrap();
+            value.write_display(itp.environment, &mut *print_writer)?;
         }
     }
     writeln!(print_writer).unwrap();
@@ -65,10 +65,10 @@ fn from_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
         return Ok(Value::Nil);
     };
     let s = itp.environment.get_string(*handle)?;
-    let serializable_value = serde_json::from_str::<SerializableValue>(s)
+    let serial_value = serde_json::from_str::<SerialValue>(s)
         .map_err(|e| Error::DeserializeFailed(value.clone(), e.to_string()))?;
 
-    let value = serializable_value.hydrate(itp.environment)?;
+    let value = serial_value.hydrate(itp.environment)?;
 
     Ok(value)
 }
@@ -79,8 +79,7 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
     }
     let value = &args[0];
 
-    let serializable_value =
-        SerializableValue::convert_from_value(value.to_owned(), itp.environment)?;
+    let serial_value = SerialValue::convert_from_value(value.to_owned(), itp.environment)?;
 
     // maybe also throw error here
     let is_print_pretty = args
@@ -89,9 +88,9 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
         .unwrap_or(false);
 
     let result = if is_print_pretty {
-        serde_json::to_string_pretty(&serializable_value)
+        serde_json::to_string_pretty(&serial_value)
     } else {
-        serde_json::to_string(&serializable_value)
+        serde_json::to_string(&serial_value)
     };
     match result {
         Ok(v) => Ok(itp.environment.insert_string_variable(v)),

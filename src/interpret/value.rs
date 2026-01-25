@@ -35,9 +35,9 @@ pub enum Value {
     #[display(fmt = "{}", _0)]
     Bool(bool),
 
-    // TODO: reimplement fmt, this display does not mean anything
-    //  we have to check for special case when displaying strings
-    #[display(fmt = "{:?}", _0)] // Quotes for strings
+    // TODO: Error crate needs display method and is using this format
+    // we need to make error print the actual value or maybe keep printing String like this
+    #[display(fmt = "String({:?})", _0)] // Quotes for strings
     Str(GcHandle),
 
     #[display(fmt = "{}", "format_array(_0)")] // Call helper
@@ -149,6 +149,38 @@ impl Value {
 
             _ => false,
         }
+    }
+
+    pub fn write_display<Writer: std::io::Write>(
+        &self,
+        env: &Environment,
+        mut w: Writer,
+    ) -> Result<(), Error> {
+        let resutl = match self {
+            Value::Nil => write!(w, "nil"),
+            Value::Unit => write!(w, "()"),
+            Value::Integer(v) => write!(w, "{}", *v),
+            Value::Floating(v) => write!(w, "{}", *v),
+            Value::Bool(v) => write!(w, "{}", *v),
+            Value::Str(handle) => {
+                let s = env.get_string(*handle)?;
+                w.write_all(s.as_bytes())
+            }
+            Value::Array(values) => {
+                let s = format_array(values);
+                w.write_all(s.as_bytes())
+            }
+            Value::Map(m) => {
+                let s = format_map(m);
+                w.write_all(s.as_bytes())
+            }
+            Value::Function(_) => write!(w, "function"),
+            Value::BuiltinFunction(_) => write!(w, "builtin_function"),
+        };
+
+        resutl.map_err(|e| Error::WriteFailed(self.clone(), e))?;
+
+        Ok(())
     }
 }
 

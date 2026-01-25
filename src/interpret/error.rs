@@ -68,6 +68,9 @@ pub enum Error {
     #[error("Deserialize value `{0}` failed with error: {1}")]
     DeserializeFailed(Value, String),
 
+    #[error("Write value `{0}` failed with error: {1}")]
+    WriteFailed(Value, std::io::Error),
+
     #[error("Value of type unit `()` should not be used")]
     UseUnitValue,
 
