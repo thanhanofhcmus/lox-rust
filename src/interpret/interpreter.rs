@@ -521,7 +521,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let map_key = MapKey::convert_from_value(indexee.to_owned(), self.environment)?;
                 let map = self.environment.get_map(handle)?;
                 let value = map.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil);
-                // dbg!(&map_key, &value);
                 Ok(value)
             }
             _ => Err(Error::ValueUnIndexable(indexer)),

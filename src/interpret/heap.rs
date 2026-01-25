@@ -170,19 +170,18 @@ impl Heap {
     }
 
     pub fn sweep(&mut self) {
-        for entry in self.slots.iter_mut() {
+        for (index, entry) in self.slots.iter_mut().enumerate() {
             if entry
                 .as_ref()
                 .map(|e| e.is_marked_for_delete)
                 .unwrap_or(false)
             {
                 entry.take();
+                self.free_list.push(index);
             }
         }
-        // move all Some element to the top
-        self.slots.sort_by_key(|e| e.is_none());
-        let first_none_dex = self.slots.partition_point(|e| e.is_some());
-        self.free_list = (first_none_dex..self.slots.len()).rev().collect();
+        self.free_list.sort();
+        self.free_list.reverse();
     }
 
     /// Move the GcObject to the heap

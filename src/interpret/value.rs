@@ -63,6 +63,7 @@ impl Value {
             Value::Str(handle) => Some(handle),
             Value::Array(handle) => Some(handle),
             Value::Function(handle) => Some(handle),
+            Value::Map(handle) => Some(handle),
             _ => None,
         }
     }

@@ -76,6 +76,7 @@ impl Module {
 
 const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 20;
+const GC_TRIGGER_POINT: usize = 100;
 
 #[derive(derive_more::Debug)]
 pub struct Environment {
@@ -228,8 +229,16 @@ impl Environment {
     }
 
     pub fn insert_variable_current_scope_by_id(&mut self, id: Id, value: Value) -> Option<Value> {
+        let result = self.get_current_scope_mut().insert_variable(id, value);
         self.heap.shallow_copy_value(value);
-        self.get_current_scope_mut().insert_variable(id, value)
+
+        if self.heap.get_stats().number_of_used_objects >= GC_TRIGGER_POINT {
+            let root_values = self.collect_all_variables();
+            self.heap.mark(root_values);
+            self.heap.sweep();
+        }
+
+        result
     }
 
     pub fn replace_variable_current_scope(
@@ -299,7 +308,6 @@ impl Environment {
             return Err(Error::WrongTypeGcObject(
                 handle,
                 obj.get_kind(),
-                // TODO: fix this when we split Kind and Value enum
                 GcKind::Map,
             ));
         };
