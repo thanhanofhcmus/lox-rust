@@ -81,11 +81,12 @@ impl Heap {
     }
 
     pub fn shallow_copy_value(&mut self, value: &Value) -> Value {
+        // check if this is an lvalue, if yes, then promote it to not be lvale anymore
         self.recursive_ref_update(value.clone(), true);
         value.clone()
     }
 
-    pub fn dispose_value(&mut self, value: Value) {
+    pub fn shallow_dispose_value(&mut self, value: Value) {
         self.recursive_ref_update(value.clone(), false);
     }
 

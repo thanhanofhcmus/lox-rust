@@ -151,7 +151,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // how do we know if res is a new expr (rvalue) or an lvalue?
 
         let val = res.get_or_error()?;
-        let val = self.environment.shallow_copy_value(val);
         self.environment.insert_variable_current_scope(iden, val);
         Ok(ValueReturn::none())
     }
@@ -176,7 +175,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         // TODO: parform deep copy mutation
 
-        self.environment.insert_variable_current_scope(iden, val);
+        self.environment.replace_variable_current_scope(iden, val);
         Ok(ValueReturn::none())
     }
 
@@ -383,7 +382,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         self.environment.push_scope();
         for (arg_id, arg_expr) in arg_ids.iter().zip(node.args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
-            let res = self.environment.shallow_copy_value(res);
             self.environment
                 .insert_variable_current_scope_by_id(*arg_id, res);
         }

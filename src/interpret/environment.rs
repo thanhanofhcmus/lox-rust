@@ -94,8 +94,8 @@ impl fmt::Debug for Environment {
             .field("heap", &self.heap)
             .field("scopes", &self.scopes)
             .field("modules", &self.modules)
-            .field("preludes", &self.preludes)
-            .field("current_module_id", &self.current_module_id)
+            // .field("current_module_id", &self.current_module_id)
+            // .field("preludes", &self.preludes)
             // .field("print_writer", &self.print_writer)
             .finish()
     }
@@ -157,7 +157,7 @@ impl Environment {
     pub fn pop_scope(&mut self) {
         let last_scope = self.scopes.pop().expect("Scope underflow");
         for (_, value) in last_scope.variables {
-            self.heap.dispose_value(value);
+            self.heap.shallow_dispose_value(value);
         }
     }
 
@@ -219,12 +219,19 @@ impl Environment {
     }
 
     pub fn insert_variable_current_scope_by_id(&mut self, id: Id, value: Value) -> Option<Value> {
+        self.heap.shallow_copy_value(&value);
         self.get_current_scope_mut().insert_variable(id, value)
     }
 
-    pub fn shallow_copy_value(&mut self, value: Value) -> Value {
-        self.heap.shallow_copy_value(&value);
-        value
+    pub fn replace_variable_current_scope(
+        &mut self,
+        node: &IdentifierNode,
+        value: Value,
+    ) -> Option<Value> {
+        if let Some(old_value) = self.get_variable_current_scope(node) {
+            self.heap.shallow_dispose_value(old_value.clone());
+        };
+        self.insert_variable_current_scope(node, value)
     }
 
     pub fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {

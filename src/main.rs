@@ -34,6 +34,7 @@ fn repl() -> DynResult {
     info!("Running in REPL mode");
 
     let mut rl = DefaultEditor::new()?;
+    rl.add_history_entry("_dbg_state();")?;
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut itp_env = interpret::Environment::new(rc);
