@@ -7,7 +7,7 @@ use super::{error::Error, interpreter::Interpreter};
 use crate::{
     ast::BlockNode,
     id::Id,
-    interpret::{gc::GcHandle, helper_values::MapKey, Environment},
+    interpret::{heap::GcHandle, helper_values::MapKey, Environment},
 };
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;

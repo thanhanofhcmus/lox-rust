@@ -79,6 +79,7 @@ pub struct HeapStats {
     pub slots_size: usize,
     pub free_list_size: usize,
     pub number_of_total_objects: usize,
+    pub number_of_used_objects: usize,
     pub number_of_objects_to_delete: usize,
     pub total_objects_stats: HashMap<GcKind, usize>,
     pub objects_to_delete_stats: HashMap<GcKind, usize>,
@@ -103,6 +104,7 @@ impl Heap {
         let free_list_size = self.free_list.len();
 
         let mut number_of_total_objects = 0;
+        let mut number_of_used_objects = 0;
         let mut number_of_objects_to_delete = 0;
 
         let mut total_objects_stats = HashMap::new();
@@ -120,6 +122,8 @@ impl Heap {
                     .entry(kind)
                     .or_insert(0)
                     .add_assign(1);
+            } else {
+                number_of_used_objects += 1;
             }
         }
 
@@ -127,6 +131,7 @@ impl Heap {
             slots_size,
             free_list_size,
             number_of_total_objects,
+            number_of_used_objects,
             number_of_objects_to_delete,
             total_objects_stats,
             objects_to_delete_stats,

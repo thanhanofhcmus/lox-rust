@@ -2,7 +2,7 @@ use super::environment::Environment;
 use super::error::Error;
 use super::value::Value;
 use crate::ast::*;
-use crate::interpret::gc::{GcHandle, GcObject};
+use crate::interpret::heap::{GcHandle, GcObject};
 use crate::interpret::helper_values::MapKey;
 use crate::interpret::value::{BuiltinFn, Function, VMap};
 use crate::parse;

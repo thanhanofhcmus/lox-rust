@@ -1,6 +1,6 @@
 mod environment;
 mod error;
-mod gc;
+mod heap;
 mod helper_values;
 mod interpreter;
 mod predule;

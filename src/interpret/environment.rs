@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     interpret::{
         error::Error,
-        gc::{GcHandle, GcKind, GcObject, Heap},
+        heap::{GcHandle, GcKind, GcObject, Heap},
         predule,
         value::{Array, VMap},
     },

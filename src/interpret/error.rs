@@ -2,7 +2,7 @@ use super::value::Value;
 use thiserror::Error;
 
 use crate::{
-    interpret::gc::{GcHandle, GcKind},
+    interpret::heap::{GcHandle, GcKind},
     parse::ParseError,
     token::Token,
 };
