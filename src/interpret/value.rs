@@ -20,7 +20,7 @@ pub struct Function {
 
 pub type Array = Vec<Value>;
 
-pub type Map = BTreeMap<MapKey, Value>;
+pub type VMap = BTreeMap<MapKey, Value>;
 
 #[derive(Display, Debug, Clone, Copy)]
 pub enum Value {
@@ -187,24 +187,32 @@ impl Value {
                 let arr = env.get_array(handle)?;
                 w.write_all(b"[").map_err(convert)?;
 
-                for value in arr {
-                    value.write_display(env, w)?;
-                    // TODO: for the last value, do not write `,`
-                    w.write_all(b", ").map_err(convert)?;
+                if let Some((last, rest)) = arr.split_last() {
+                    for value in rest {
+                        value.write_display(env, w)?;
+                        w.write_all(b", ").map_err(convert)?;
+                    }
+                    last.write_display(env, w)?;
                 }
+
                 w.write_all(b"]").map_err(convert)?;
 
                 Ok(())
             }
             Value::Map(handle) => {
-                let map = env.get_map(handle)?;
+                let map: &VMap = env.get_map(handle)?;
+
+                let mut entries = map.iter();
+
                 w.write_all(b"%{").map_err(convert)?;
-                for (k, v) in map {
-                    write!(w, "{}", k).map_err(convert)?;
-                    // TODO: for the last value, do not write `,`
-                    w.write_all(b" => ").map_err(convert)?;
-                    v.write_display(env, w)?;
-                    w.write_all(b", ").map_err(convert)?;
+                if let Some((first_key, first_value)) = entries.next() {
+                    write!(w, "{} => ", first_key).map_err(convert)?;
+                    first_value.write_display(env, w)?;
+
+                    for (k, v) in entries {
+                        write!(w, ", {} => ", k).map_err(convert)?;
+                        v.write_display(env, w)?;
+                    }
                 }
                 w.write_all(b"}").map_err(convert)?;
 

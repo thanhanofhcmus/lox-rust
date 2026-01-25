@@ -13,7 +13,7 @@ use crate::{
         error::Error,
         gc::{GcHandle, GcObject, Heap},
         predule,
-        value::{Array, Map},
+        value::{Array, VMap},
     },
 };
 
@@ -284,7 +284,7 @@ impl Environment {
         Value::Array(handle)
     }
 
-    pub fn get_map(&self, handle: GcHandle) -> Result<&Map, Error> {
+    pub fn get_map(&self, handle: GcHandle) -> Result<&VMap, Error> {
         let Some(obj) = self.get_gc_object(handle) else {
             return Err(Error::NotFoundGcObject(handle));
         };
@@ -293,13 +293,13 @@ impl Environment {
                 handle,
                 obj.type_name().to_string(),
                 // TODO: fix this when we split Kind and Value enum
-                GcObject::Map(Map::new()).type_name().to_string(),
+                GcObject::Map(VMap::new()).type_name().to_string(),
             ));
         };
         Ok(map)
     }
 
-    pub fn insert_map_variable(&mut self, map: Map) -> Value {
+    pub fn insert_map_variable(&mut self, map: VMap) -> Value {
         let object = GcObject::Map(map);
         let handle = self.insert_gc_object(object);
         Value::Map(handle)
