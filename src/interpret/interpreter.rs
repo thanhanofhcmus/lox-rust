@@ -315,11 +315,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let rep_res = self.interpret_clause_expr(&node.repeat)?;
 
                 let value = val_res.get_or_error()?;
-                let repeat = to_index(&rep_res.get_or_error()?)?;
+                let repeat = to_index(rep_res.get_or_error()?)?;
 
                 let mut arr = Vec::with_capacity(repeat);
                 for _ in 0..repeat {
-                    arr.push(value.clone());
+                    arr.push(value);
                 }
                 Ok(self.environment.insert_array_variable(arr))
             }
@@ -431,16 +431,16 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         match op {
             Token::Plus => self.interpret_add(lhs_val, rhs_val),
-            Token::Minus => subtract(&lhs_val, &rhs_val),
-            Token::Star => times(&lhs_val, &rhs_val),
-            Token::Slash => divide(&lhs_val, &rhs_val),
-            Token::Percentage => modulo(&lhs_val, &rhs_val),
-            Token::And | Token::Or => and_or(&lhs_val, op, &rhs_val),
+            Token::Minus => subtract(lhs_val, rhs_val),
+            Token::Star => times(lhs_val, rhs_val),
+            Token::Slash => divide(lhs_val, rhs_val),
+            Token::Percentage => modulo(lhs_val, rhs_val),
+            Token::And | Token::Or => and_or(lhs_val, op, rhs_val),
             Token::EqualEqual | Token::BangEqual => {
                 self.interpret_cmp(lhs_val, op, rhs_val).map(Value::Bool)
             }
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
-                ordering(&lhs_val, op, &rhs_val)
+                ordering(lhs_val, op, rhs_val)
             }
             _ => Err(Error::UnknownOperation(op)),
         }
@@ -474,7 +474,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 },
                 ChainingFollow::Index(indexee_expr) => {
                     let indexee = self.interpret_expr(indexee_expr)?.get_or_error()?;
-                    self.intepret_index_expr(&value, &indexee)?
+                    self.intepret_index_expr(value, indexee)?
                 }
             }
         }
@@ -506,11 +506,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             .insert_string_variable(l_str.to_owned() + r_str))
     }
 
-    fn intepret_index_expr(&mut self, indexer: &Value, indexee: &Value) -> Result<Value, Error> {
+    fn intepret_index_expr(&mut self, indexer: Value, indexee: Value) -> Result<Value, Error> {
         match indexer {
             Value::Array(handle) => {
                 let idx = to_index(indexee)?;
-                let arr = self.environment.get_array(*handle)?;
+                let arr = self.environment.get_array(handle)?;
                 // This one is return a new value, maybe return a ref instead
                 match arr.get(idx) {
                     None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
@@ -519,12 +519,12 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             }
             Value::Map(handle) => {
                 let map_key = MapKey::convert_from_value(indexee.to_owned(), self.environment)?;
-                let map = self.environment.get_map(*handle)?;
+                let map = self.environment.get_map(handle)?;
                 let value = map.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil);
                 // dbg!(&map_key, &value);
                 Ok(value)
             }
-            _ => Err(Error::ValueUnIndexable(indexer.clone())),
+            _ => Err(Error::ValueUnIndexable(indexer)),
         }
     }
 
@@ -547,7 +547,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 }
 
-fn ordering(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
+fn ordering(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
     let from_ord = |o: std::cmp::Ordering| match op {
         Token::Less => Ok(Value::Bool(o.is_lt())),
         Token::LessEqual => Ok(Value::Bool(o.is_le())),
@@ -557,21 +557,23 @@ fn ordering(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
     };
     use Value::*;
     match (lhs, rhs) {
-        (Integer(l), Integer(r)) => from_ord(l.cmp(r)),
-        (Floating(l), Integer(r)) => from_ord(l.total_cmp(&(*r as f64))),
-        (Integer(l), Floating(r)) => from_ord((*l as f64).total_cmp(r)),
-        (Floating(l), Floating(r)) => from_ord(l.total_cmp(r)),
-        (Str(l), Str(r)) => from_ord(l.cmp(r)),
-        _ => Err(Error::InvalidOperationOnType(op, lhs.clone())),
+        (Integer(l), Integer(r)) => from_ord(l.cmp(&r)),
+        (Floating(l), Integer(r)) => from_ord(l.total_cmp(&(r as f64))),
+        (Integer(l), Floating(r)) => from_ord((l as f64).total_cmp(&r)),
+        (Floating(l), Floating(r)) => from_ord(l.total_cmp(&r)),
+
+        // TODO: fix this
+        (Str(l), Str(r)) => from_ord(l.cmp(&r)),
+        _ => Err(Error::InvalidOperationOnType(op, lhs)),
     }
 }
 
-fn and_or(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
-    let &Value::Bool(l) = lhs else {
-        return Err(Error::InvalidOperationOnType(op, lhs.clone()));
+fn and_or(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
+    let Value::Bool(l) = lhs else {
+        return Err(Error::InvalidOperationOnType(op, lhs));
     };
-    let &Value::Bool(r) = rhs else {
-        return Err(Error::InvalidOperationOnType(op, rhs.clone()));
+    let Value::Bool(r) = rhs else {
+        return Err(Error::InvalidOperationOnType(op, rhs));
     };
 
     match op {
@@ -581,33 +583,33 @@ fn and_or(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
     }
 }
 
-fn subtract(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
+fn subtract(lhs: Value, rhs: Value) -> Result<Value, Error> {
     use Value::*;
     match (lhs, rhs) {
         (Integer(l), Integer(r)) => Ok(Integer(l - r)),
-        (Floating(l), Integer(r)) => Ok(Floating(l - (*r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) - r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l - (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((l as f64) - r)),
         (Floating(l), Floating(r)) => Ok(Floating(l - r)),
-        _ => Err(Error::MismatchType(Token::Minus, lhs.clone(), rhs.clone())),
+        _ => Err(Error::MismatchType(Token::Minus, lhs, rhs)),
     }
 }
 
-fn times(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
+fn times(lhs: Value, rhs: Value) -> Result<Value, Error> {
     use Value::*;
     match (lhs, rhs) {
         (Integer(l), Integer(r)) => Ok(Integer(l * r)),
-        (Floating(l), Integer(r)) => Ok(Floating(l * (*r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) * r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l * (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((l as f64) * r)),
         (Floating(l), Floating(r)) => Ok(Floating(l * r)),
-        _ => Err(Error::MismatchType(Token::Star, lhs.clone(), rhs.clone())),
+        _ => Err(Error::MismatchType(Token::Star, lhs, rhs)),
     }
 }
 
-fn divide(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
+fn divide(lhs: Value, rhs: Value) -> Result<Value, Error> {
     use Value::*;
     match rhs {
-        Integer(v) if *v == 0 => return Err(Error::DivideByZero),
-        Floating(v) if *v == 0.0 => return Err(Error::DivideByZero),
+        Integer(0) => return Err(Error::DivideByZero),
+        Floating(0.0) => return Err(Error::DivideByZero),
         _ => {}
     }
     match (lhs, rhs) {
@@ -615,50 +617,46 @@ fn divide(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
             if l % r == 0 {
                 Ok(Integer(l / r))
             } else {
-                Ok(Floating(*l as f64 / *r as f64))
+                Ok(Floating(l as f64 / r as f64))
             }
         }
-        (Floating(l), Integer(r)) => Ok(Floating(l / (*r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) / r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l / (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((l as f64) / r)),
         (Floating(l), Floating(r)) => Ok(Floating(l / r)),
-        _ => Err(Error::MismatchType(Token::Slash, lhs.clone(), rhs.clone())),
+        _ => Err(Error::MismatchType(Token::Slash, lhs, rhs)),
     }
 }
 
-fn modulo(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
+fn modulo(lhs: Value, rhs: Value) -> Result<Value, Error> {
     use Value::*;
     match (lhs, rhs) {
         (Integer(l), Integer(r)) => Ok(Integer(l % r)),
-        (Floating(l), Integer(r)) => Ok(Floating(l % (*r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) % r)),
+        (Floating(l), Integer(r)) => Ok(Floating(l % (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Floating((l as f64) % r)),
         (Floating(l), Floating(r)) => Ok(Floating(l % r)),
-        _ => Err(Error::MismatchType(
-            Token::PercentLPointParent,
-            lhs.clone(),
-            rhs.clone(),
-        )),
+        _ => Err(Error::MismatchType(Token::PercentLPointParent, lhs, rhs)),
     }
 }
 
-fn to_index(value: &Value) -> Result<usize, Error> {
+fn to_index(value: Value) -> Result<usize, Error> {
     match value {
         Value::Integer(i) => {
-            if *i < 0 {
-                return Err(Error::ValueMustBeUsize(value.clone()));
+            if i < 0 {
+                return Err(Error::ValueMustBeUsize(value));
             }
             // Try into usize to handle platforms where usize < i64
-            usize::try_from(*i).map_err(|_| Error::ValueMustBeUsize(value.clone()))
+            usize::try_from(i).map_err(|_| Error::ValueMustBeUsize(value))
         }
         Value::Floating(f) => {
-            if *f < 0.0 || f.fract() != 0.0 {
-                return Err(Error::ValueMustBeUsize(value.clone()));
+            if f < 0.0 || f.fract() != 0.0 {
+                return Err(Error::ValueMustBeUsize(value));
             }
             // We use 'as' for the final cast, but check bounds first
-            if *f > usize::MAX as f64 {
-                return Err(Error::ValueMustBeUsize(value.clone()));
+            if f > usize::MAX as f64 {
+                return Err(Error::ValueMustBeUsize(value));
             }
-            Ok(*f as usize)
+            Ok(f as usize)
         }
-        _ => Err(Error::ValueMustBeUsize(value.clone())),
+        _ => Err(Error::ValueMustBeUsize(value)),
     }
 }

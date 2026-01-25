@@ -31,13 +31,13 @@ impl Scope {
         }
     }
 
-    fn get_variable(&self, id: Id) -> Option<&Value> {
-        self.variables.get(&id)
+    fn get_variable(&self, id: Id) -> Option<Value> {
+        self.variables.get(&id).copied()
     }
 
-    fn get_variable_recursive<'a>(&'a self, id: Id, scopes: &'a Vec<Scope>) -> Option<&'a Value> {
+    fn get_variable_recursive<'a>(&'a self, id: Id, scopes: &'a Vec<Scope>) -> Option<Value> {
         if let Some(value) = self.variables.get(&id) {
-            return Some(value);
+            return Some(*value);
         }
         if let Some(parent_scope) = self.get_parent_scope(scopes) {
             return parent_scope.get_variable_recursive(id, scopes);
@@ -173,15 +173,15 @@ impl Environment {
             .expect("There must be at least one scope")
     }
 
-    pub fn get_variable_current_scope(&self, node: &IdentifierNode) -> Option<&Value> {
+    pub fn get_variable_current_scope(&self, node: &IdentifierNode) -> Option<Value> {
         self.get_current_scope().get_variable(node.get_id())
     }
 
-    pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<&Value> {
+    pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<Value> {
         self.get_variable_all_scope_by_id(node.get_id(), &node.prefix_ids)
     }
 
-    pub fn get_variable_all_scope_by_id(&self, id: Id, prefix_ids: &[Id]) -> Option<&Value> {
+    pub fn get_variable_all_scope_by_id(&self, id: Id, prefix_ids: &[Id]) -> Option<Value> {
         // check scopes/stacks
         if let Some(value) = self
             .get_current_scope()
@@ -192,7 +192,7 @@ impl Environment {
 
         // get from built-in
         if let Some(value) = self.preludes.get(&id) {
-            return Some(value);
+            return Some(*value);
         }
 
         // No prefixes mean this code is trying to reference values from the trasparent scope only
@@ -207,7 +207,7 @@ impl Environment {
 
         // This code is allowing code to un-imported module
         // for example print(a.b) -> nil eventhoug we have not import a yet
-        module.variables.get(&id)
+        module.variables.get(&id).copied()
     }
 
     pub fn insert_variable_current_scope(
@@ -219,7 +219,7 @@ impl Environment {
     }
 
     pub fn insert_variable_current_scope_by_id(&mut self, id: Id, value: Value) -> Option<Value> {
-        self.heap.shallow_copy_value(&value);
+        self.heap.shallow_copy_value(value);
         self.get_current_scope_mut().insert_variable(id, value)
     }
 
@@ -229,7 +229,7 @@ impl Environment {
         value: Value,
     ) -> Option<Value> {
         if let Some(old_value) = self.get_variable_current_scope(node) {
-            self.heap.shallow_dispose_value(old_value.clone());
+            self.heap.shallow_dispose_value(old_value);
         };
         self.insert_variable_current_scope(node, value)
     }

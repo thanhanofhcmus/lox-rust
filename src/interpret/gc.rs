@@ -86,14 +86,13 @@ impl Heap {
         GcHandle(index)
     }
 
-    pub fn shallow_copy_value(&mut self, value: &Value) -> Value {
+    pub fn shallow_copy_value(&mut self, value: Value) {
         // check if this is an lvalue, if yes, then promote it to not be lvale anymore
-        self.recursive_ref_update(value.clone(), true);
-        value.clone()
+        self.recursive_ref_update(value, true);
     }
 
     pub fn shallow_dispose_value(&mut self, value: Value) {
-        self.recursive_ref_update(value.clone(), false);
+        self.recursive_ref_update(value, false);
     }
 
     pub fn get_object(&self, handle: GcHandle) -> Option<&GcObject> {

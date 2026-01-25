@@ -42,8 +42,8 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
 
     // TODO: handle write! error
     for value in args {
-        if let Value::Str(handle) = &value {
-            let s = itp.environment.get_string(*handle)?;
+        if let Value::Str(handle) = value {
+            let s = itp.environment.get_string(handle)?;
             write!(print_writer, "{}", s).unwrap();
         } else {
             value.write_display(itp.environment, &mut *print_writer)?;
@@ -81,13 +81,14 @@ fn from_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
         // TODO: maybe throw error here
         return Ok(Value::Nil);
     };
+    let value = *value;
     let Value::Str(handle) = value else {
         // TODO: maybe throw error here
         return Ok(Value::Nil);
     };
-    let s = itp.environment.get_string(*handle)?;
+    let s = itp.environment.get_string(handle)?;
     let serial_value = serde_json::from_str::<SerialValue>(s)
-        .map_err(|e| Error::DeserializeFailed(value.clone(), e.to_string()))?;
+        .map_err(|e| Error::DeserializeFailed(value, e.to_string()))?;
 
     let value = serial_value.hydrate(itp.environment)?;
 
@@ -98,7 +99,7 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
     if args.is_empty() {
         return Ok(Value::Nil);
     }
-    let value = &args[0];
+    let value = args[0];
 
     let serial_value = SerialValue::convert_from_value(value.to_owned(), itp.environment)?;
 
@@ -115,6 +116,6 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
     };
     match result {
         Ok(v) => Ok(itp.environment.insert_string_variable(v)),
-        Err(err) => Err(Error::SerializeFailed(value.clone(), err.to_string())),
+        Err(err) => Err(Error::SerializeFailed(value, err.to_string())),
     }
 }

@@ -58,11 +58,11 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn get_handle(&self) -> Option<GcHandle> {
+    pub fn get_handle(self) -> Option<GcHandle> {
         match self {
-            Value::Str(handle) => Some(*handle),
-            Value::Array(handle) => Some(*handle),
-            Value::Function(handle) => Some(*handle),
+            Value::Str(handle) => Some(handle),
+            Value::Array(handle) => Some(handle),
+            Value::Function(handle) => Some(handle),
             _ => None,
         }
     }
@@ -170,25 +170,21 @@ impl Value {
         }
     }
 
-    pub fn write_display(
-        &self,
-        env: &Environment,
-        w: &mut dyn std::io::Write,
-    ) -> Result<(), Error> {
-        let convert = |e| Error::WriteFailed(self.clone(), e);
+    pub fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
+        let convert = |e| Error::WriteFailed(self, e);
 
         match self {
             Value::Nil => write!(w, "nil").map_err(convert),
             Value::Unit => write!(w, "()").map_err(convert),
-            Value::Integer(v) => write!(w, "{}", *v).map_err(convert),
-            Value::Floating(v) => write!(w, "{}", *v).map_err(convert),
-            Value::Bool(v) => write!(w, "{}", *v).map_err(convert),
+            Value::Integer(v) => write!(w, "{}", v).map_err(convert),
+            Value::Floating(v) => write!(w, "{}", v).map_err(convert),
+            Value::Bool(v) => write!(w, "{}", v).map_err(convert),
             Value::Str(handle) => {
-                let s = env.get_string(*handle)?;
+                let s = env.get_string(handle)?;
                 w.write_all(s.as_bytes()).map_err(convert)
             }
             Value::Array(handle) => {
-                let arr = env.get_array(*handle)?;
+                let arr = env.get_array(handle)?;
                 w.write_all(b"[").map_err(convert)?;
 
                 for value in arr {
@@ -201,7 +197,7 @@ impl Value {
                 Ok(())
             }
             Value::Map(handle) => {
-                let map = env.get_map(*handle)?;
+                let map = env.get_map(handle)?;
                 w.write_all(b"%{").map_err(convert)?;
                 for (k, v) in map {
                     write!(w, "{}", k).map_err(convert)?;
