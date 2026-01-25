@@ -1,14 +1,13 @@
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use derive_more::Display;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{error::Error, interpreter::Interpreter};
 
 use crate::{
     ast::BlockNode,
     id::Id,
-    interpret::{gc::GcHandle, Environment},
+    interpret::{gc::GcHandle, hepler_values::MapKey, Environment},
 };
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
@@ -19,8 +18,7 @@ pub struct Function {
     pub body: BlockNode,
 }
 
-#[derive(Display, Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Display, Debug, Clone)]
 pub enum Value {
     #[display(fmt = "nil")]
     Nil,
@@ -28,8 +26,6 @@ pub enum Value {
     #[display(fmt = "()")]
     Unit,
 
-    // The integer variant must be declared before the floating variant
-    // for serde to try to parse it first
     #[display(fmt = "{}", _0)]
     Integer(i64),
 
@@ -39,42 +35,25 @@ pub enum Value {
     #[display(fmt = "{}", _0)]
     Bool(bool),
 
+    // TODO: reimplement fmt, this display does not mean anything
+    //  we have to check for special case when displaying strings
     #[display(fmt = "{:?}", _0)] // Quotes for strings
-    Str(String),
+    Str(GcHandle),
 
     #[display(fmt = "{}", "format_array(_0)")] // Call helper
     Array(Vec<Value>),
 
     #[display(fmt = "%{}", "format_map(_0)")] // Call helper
-    #[serde(serialize_with = "serialize_map", deserialize_with = "deserialize_map")]
-    Map(BTreeMap<Value, Value>),
+    Map(BTreeMap<MapKey, Value>),
 
     #[display(fmt = "function")]
-    #[serde(skip)]
     Function(GcHandle),
 
     #[display(fmt = "builtin_function")]
-    #[serde(skip)]
     BuiltinFunction(BuiltinFn),
 }
 
 impl Value {
-    // does not mean anything, just for ordering in a btree
-    fn type_rank(&self) -> u8 {
-        match self {
-            Value::Nil => 0,
-            Value::Bool(_) => 1,
-            Value::Integer(_) => 2,
-            Value::Floating(_) => 3,
-            Value::Str(_) => 4,
-            Value::Array(_) => 5,
-            Value::Map(_) => 6,
-            Value::Function(_) => 7,
-            Value::BuiltinFunction(_) => 8,
-            Value::Unit => 10,
-        }
-    }
-
     pub fn is_scalar_type(&self) -> bool {
         matches!(self, Value::Nil | Value::Unit | Value::Bool(_) | Value::Integer(_) | Value::Floating(_) if {
             true
@@ -96,35 +75,49 @@ impl Value {
         }
     }
 
-    pub fn deep_eq(&self, other: &Self, env: &Environment) -> bool {
+    pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, Error> {
         if self.is_scalar_type() && other.is_scalar_type() {
-            return self.shallow_eq(other);
+            return Ok(self.shallow_eq(other));
         }
         if self.is_function_type() && other.is_function_type() {
-            return self.function_eq(other);
+            return Ok(self.function_eq(other));
         }
         use Value::*;
         match (self, other) {
-            // TODO: get value from the heap for GC equal
-            (Str(l), Str(r)) => l == r,
+            (Str(l_handle), Str(r_handle)) => {
+                if l_handle == r_handle {
+                    return Ok(true);
+                }
+                let l_str = env.get_string(*l_handle)?;
+                let r_str = env.get_string(*r_handle)?;
+                Ok(l_str == r_str)
+            }
             (Array(l), Array(r)) => {
-                l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a.deep_eq(b, env))
+                if l.len() != r.len() {
+                    return Ok(false);
+                }
+                for (l_value, r_value) in l.iter().zip(r) {
+                    if !(l_value.deep_eq(r_value, env)?) {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
             }
             (Map(l), Map(r)) => {
                 if l.len() != r.len() {
-                    return false;
+                    return Ok(false);
                 }
                 for (l_key, l_value) in l.iter() {
                     let Some(r_value) = r.get(l_key) else {
-                        return false;
+                        return Ok(false);
                     };
-                    if !l_value.deep_eq(r_value, env) {
-                        return false;
+                    if !(l_value.deep_eq(r_value, env)?) {
+                        return Ok(false);
                     }
                 }
-                true
+                Ok(true)
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 
@@ -166,79 +159,6 @@ impl PartialEq for Value {
 }
 
 impl Eq for Value {}
-
-impl PartialOrd for Value {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Value {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use Value::*;
-
-        let rank_cmp = self.type_rank().cmp(&other.type_rank());
-        if rank_cmp != Ordering::Equal {
-            return rank_cmp;
-        }
-
-        match (self, other) {
-            // TODO
-            (Unit, _) => panic!("ordering where lhs is unit"),
-            (_, Unit) => panic!("ordering where rhs is unit"),
-
-            (Nil, Nil) => Ordering::Equal,
-            (Bool(a), Bool(b)) => a.cmp(b),
-            (Str(a), Str(b)) => a.cmp(b),
-            (Floating(a), Floating(b)) => {
-                // Handle f64 comparison (ignoring NaN for simplicity, or treat NaN as the smallest number)
-                a.partial_cmp(b).unwrap_or(Ordering::Less)
-            }
-            (Array(a), Array(b)) => a.cmp(b),
-            (Map(a), Map(b)) => a.cmp(b),
-            (Function(a), Function(b)) => a.cmp(b),
-            (BuiltinFunction(a), BuiltinFunction(b)) => {
-                (a as *const BuiltinFn).cmp(&(b as *const BuiltinFn))
-            }
-            _ => Ordering::Equal,
-        }
-    }
-}
-
-fn serialize_map<S: Serializer>(
-    m: &BTreeMap<Value, Value>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    let string_map = m
-        .iter()
-        .filter_map(|(k, v)| {
-            match v {
-                Value::BuiltinFunction(_) | Value::Function(_) => return None,
-                _ => {}
-            };
-            match k {
-                Value::Str(s) => Some((s, v)),
-                // We can allow other type to be key with to_string here
-                _ => None,
-            }
-        })
-        .collect::<BTreeMap<&String, &Value>>();
-
-    string_map.serialize(serializer)
-}
-
-fn deserialize_map<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<BTreeMap<Value, Value>, D::Error> {
-    // might have performance issue here if the json object is to big
-    let string_map = BTreeMap::<String, Value>::deserialize(deserializer)?;
-    let mut value_map = BTreeMap::new();
-    for (k, v) in string_map {
-        value_map.insert(Value::Str(k), v);
-    }
-    Ok(value_map)
-}
-
 // Helper function to simulate Python's list printing
 fn format_array(values: &[Value]) -> String {
     let internal = values
@@ -250,9 +170,10 @@ fn format_array(values: &[Value]) -> String {
 }
 
 // Helper function to simulate Python's list printing
-fn format_map(values: &BTreeMap<Value, Value>) -> String {
+fn format_map(values: &BTreeMap<MapKey, Value>) -> String {
     let internal = values
         .iter()
+        //TODO: fix display
         .map(|(k, v)| format!("{} => {}", k, v))
         .collect::<Vec<_>>()
         .join(", ");

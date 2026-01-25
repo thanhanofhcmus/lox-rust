@@ -35,11 +35,19 @@ assert(list[2], "Array end indexing failed");
 var registry = %{
     "name" => "Gemini",
     100 => "Centurion",
+    200 => 300,
+    200.5 => 400,
     true => "Active"
 };
 
 assert(registry["name"] == "Gemini", "Map string key failed");
 assert(registry[100] == "Centurion", "Map integer key failed");
+assert(registry[200] == 300, "Map integer key 200 failed");
+assert(registry[200.5] == 400, "Map floating key 200.5 failed");
+assert(registry["no-nane"] == nil, "Map string key not exist failed");
+assert(registry[250] == nil, "Map integer key not exist failed");
+assert(registry[125.234] == nil, "Map floating key not exist failed");
+assert(registry[false] == nil, "Map boolen key not exist failed");
 
 print();
 
@@ -54,7 +62,7 @@ var grade = when {
 };
 assert(grade == "B", "When expression failed");
 
-print_raw();
+print();
 
 # --- 5. Function & Scope ---
 print("--- Running Function Tests...");

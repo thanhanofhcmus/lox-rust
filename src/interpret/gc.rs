@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-
-use crate::interpret::value::{Function, Value};
+use crate::interpret::value::Function;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GcHandle(usize);
@@ -15,6 +13,15 @@ pub enum GcObject {
     Map(BTreeMap<Value, Value>),
 
     Function(Function),
+}
+
+impl GcObject {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            GcObject::Str(_) => "String",
+            GcObject::Function(_) => "Function",
+        }
+    }
 }
 
 struct HeapEntry {

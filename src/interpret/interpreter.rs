@@ -3,8 +3,10 @@ use super::error::Error;
 use super::value::Value;
 use crate::ast::*;
 use crate::interpret::gc::{GcHandle, GcObject};
+use crate::interpret::hepler_values::MapKey;
 use crate::interpret::value::{BuiltinFn, Function};
 use crate::parse;
+use crate::span::Span;
 use crate::token::Token;
 use std::collections::BTreeMap;
 use std::panic;
@@ -253,10 +255,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_primary_expr(&mut self, node: &PrimaryNode) -> Result<ValueReturn, Error> {
         let val = match node {
             PrimaryNode::Nil => Value::Nil,
-            PrimaryNode::Str(v) => Value::Str(v.string_from_source(self.input)),
             PrimaryNode::Bool(v) => Value::Bool(*v),
             PrimaryNode::Integer(v) => Value::Integer(*v),
             PrimaryNode::Floating(v) => Value::Floating(*v),
+            PrimaryNode::Str(v) => {
+                let res = self.interpret_string_literal(*v)?;
+                return Ok(ValueReturn::new(res));
+            }
             PrimaryNode::ArrayLiteral(node) => {
                 let res = self.interpret_array_literal(node)?;
                 return Ok(ValueReturn::new(res));
@@ -271,6 +276,12 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             }
         };
         Ok(ValueReturn::new(val))
+    }
+
+    fn interpret_string_literal(&mut self, span: Span) -> Result<Value, Error> {
+        Ok(self
+            .environment
+            .insert_string_variable(span.string_from_source(self.input)))
     }
 
     fn interpret_array_literal(&mut self, node: &ArrayLiteralNode) -> Result<Value, Error> {
@@ -304,7 +315,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
         let mut m = BTreeMap::new();
         for kv in &node.nodes {
-            let key = self.interpret_primary_expr(&kv.key)?.get_or_error()?;
+            let raw_key = self.interpret_primary_expr(&kv.key)?.get_or_error()?;
+            let key = MapKey::convert_from_value(raw_key, self.environment)?;
             let value = self.interpret_expr(&kv.value)?.get_or_error()?;
             m.insert(key, value);
         }
@@ -404,14 +416,14 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let op = *op;
 
         match op {
-            Token::Plus => add(&lhs_val, &rhs_val),
+            Token::Plus => self.interpret_add(lhs_val, rhs_val),
             Token::Minus => subtract(&lhs_val, &rhs_val),
             Token::Star => times(&lhs_val, &rhs_val),
             Token::Slash => divide(&lhs_val, &rhs_val),
             Token::Percentage => modulo(&lhs_val, &rhs_val),
             Token::And | Token::Or => and_or(&lhs_val, op, &rhs_val),
             Token::EqualEqual | Token::BangEqual => {
-                self.interpret_cmp(&lhs_val, op, &rhs_val).map(Value::Bool)
+                self.interpret_cmp(lhs_val, op, rhs_val).map(Value::Bool)
             }
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
                 ordering(&lhs_val, op, &rhs_val)
@@ -448,16 +460,56 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 },
                 ChainingFollow::Index(indexee_expr) => {
                     let indexee = self.interpret_expr(indexee_expr)?.get_or_error()?;
-                    index(&value, &indexee)?
+                    self.intepret_index_expr(&value, &indexee)?
                 }
             }
         }
         Ok(value)
     }
 
-    fn interpret_cmp(&self, lhs: &Value, op: Token, rhs: &Value) -> Result<bool, Error> {
-        let cmp = lhs.deep_eq(rhs, self.environment);
+    fn interpret_cmp(&self, lhs: Value, op: Token, rhs: Value) -> Result<bool, Error> {
+        let cmp = lhs.deep_eq(&rhs, self.environment)?;
         Ok(cmp == (op == Token::EqualEqual))
+    }
+
+    fn interpret_add(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
+        use Value::*;
+        match (&lhs, &rhs) {
+            (Integer(l), Integer(r)) => Ok(Integer(l + r)),
+            (Floating(l), Integer(r)) => Ok(Floating(l + (*r as f64))),
+            (Integer(l), Floating(r)) => Ok(Floating((*l as f64) + r)),
+            (Floating(l), Floating(r)) => Ok(Floating(l + r)),
+            (Str(l), Str(r)) => self.interpret_add_string(*l, *r),
+            _ => Err(Error::MismatchType(Token::Plus, lhs, rhs)),
+        }
+    }
+
+    fn interpret_add_string(&mut self, lhs: GcHandle, rhs: GcHandle) -> Result<Value, Error> {
+        let l_str = self.environment.get_string(lhs)?;
+        let r_str = self.environment.get_string(rhs)?;
+        Ok(self
+            .environment
+            .insert_string_variable(l_str.to_owned() + r_str))
+    }
+
+    fn intepret_index_expr(&mut self, indexer: &Value, indexee: &Value) -> Result<Value, Error> {
+        match indexer {
+            Value::Array(arr) => {
+                let idx = to_index(indexee)?;
+                // This one is return a new value, maybe return a ref instead
+                match arr.get(idx) {
+                    None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
+                    Some(v) => Ok(v.to_owned()),
+                }
+            }
+            Value::Map(m) => {
+                let map_key = MapKey::convert_from_value(indexee.to_owned(), self.environment)?;
+                let value = m.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil);
+                // dbg!(&map_key, &value);
+                Ok(value)
+            }
+            _ => Err(Error::ValueUnIndexable(indexer.clone())),
+        }
     }
 
     fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
@@ -510,18 +562,6 @@ fn and_or(lhs: &Value, op: Token, rhs: &Value) -> Result<Value, Error> {
         Token::And => Ok(Value::Bool(l && r)),
         Token::Or => Ok(Value::Bool(l || r)),
         _ => Err(Error::UnknownOperation(op)),
-    }
-}
-
-fn add(lhs: &Value, rhs: &Value) -> Result<Value, Error> {
-    use Value::*;
-    match (lhs, rhs) {
-        (Integer(l), Integer(r)) => Ok(Integer(l + r)),
-        (Floating(l), Integer(r)) => Ok(Floating(l + (*r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((*l as f64) + r)),
-        (Floating(l), Floating(r)) => Ok(Floating(l + r)),
-        (Str(l), Str(r)) => Ok(Str(l.to_owned() + r)),
-        _ => Err(Error::MismatchType(Token::Plus, lhs.clone(), rhs.clone())),
     }
 }
 
@@ -604,20 +644,5 @@ fn to_index(value: &Value) -> Result<usize, Error> {
             Ok(*f as usize)
         }
         _ => Err(Error::ValueMustBeUsize(value.clone())),
-    }
-}
-
-fn index(indexer: &Value, indexee: &Value) -> Result<Value, Error> {
-    match indexer {
-        Value::Array(arr) => {
-            let idx = to_index(indexee)?;
-            // This one is return a new value, maybe return a ref instead
-            match arr.get(idx) {
-                None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
-                Some(v) => Ok(v.to_owned()),
-            }
-        }
-        Value::Map(m) => Ok(m.get(indexee).map(Value::to_owned).unwrap_or(Value::Nil)),
-        _ => Err(Error::ValueUnIndexable(indexer.clone())),
     }
 }

@@ -1,14 +1,14 @@
 use super::value::Value;
 use thiserror::Error;
 
-use crate::{parse::ParseError, token::Token};
+use crate::{interpret::gc::GcHandle, parse::ParseError, token::Token};
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Variable of name `{0}` has been declared before")]
     ReDeclareVariable(String),
 
-    #[error("Variable of name `{0} has not been declared but get re-assigned")]
+    #[error("Variable of name `{0}` has not been declared but get re-assigned")]
     NotFoundVariable(String),
 
     #[error("Variable of name `{0}` is readonly in this scope")]
@@ -39,7 +39,6 @@ pub enum Error {
     ValueUnIndexable(Value),
 
     #[error("Value `{0}` is can not be used as key for array or map")]
-    #[allow(dead_code)]
     ValueCannotBeUsedAsKey(Value),
 
     #[error("Value `{0}` is not of the type non-negative integer")]
@@ -60,6 +59,9 @@ pub enum Error {
     #[error("Interpreting module `{0}` in path `{1}` failed with error: {2}")]
     InterpretModuleFailed(String, String, Box<Error>),
 
+    #[error("Value of type `{0}` is not serializable")]
+    TypeIsNotSerializable(Value),
+
     #[error("Serialize value `{0}` failed with error: {1}")]
     SerializeFailed(Value, String),
 
@@ -68,4 +70,10 @@ pub enum Error {
 
     #[error("Value of type unit `()` should not be used")]
     UseUnitValue,
+
+    #[error("GcObject `{0:?}` did not exist in the heap")]
+    NotFoundGcObject(GcHandle),
+
+    #[error("GcObject `{0:?}` has type `{1}` but expected type `{2}`")]
+    WrongTypeGcObject(GcHandle, String, String),
 }

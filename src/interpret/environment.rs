@@ -9,6 +9,7 @@ use crate::{
     ast::IdentifierNode,
     id::Id,
     interpret::{
+        error::Error,
         gc::{GcHandle, GcObject, Heap},
         predule,
     },
@@ -29,10 +30,6 @@ impl Scope {
 
     fn get_variable(&self, id: Id) -> Option<&Value> {
         self.variables.get(&id)
-    }
-
-    fn get_variable_mut(&mut self, id: Id) -> Option<&mut Value> {
-        self.variables.get_mut(&id)
     }
 
     fn get_variable_recursive<'a>(&'a self, id: Id, scopes: &'a Vec<Scope>) -> Option<&'a Value> {
@@ -160,10 +157,6 @@ impl Environment {
         self.get_current_scope().get_variable(node.get_id())
     }
 
-    pub fn get_variable_current_scope_mut(&mut self, node: &IdentifierNode) -> Option<&mut Value> {
-        self.get_current_scope_mut().get_variable_mut(node.get_id())
-    }
-
     pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<&Value> {
         self.get_variable_all_scope_by_id(node.get_id(), &node.prefix_ids)
     }
@@ -213,7 +206,28 @@ impl Environment {
         self.heap.allocate(object)
     }
 
-    pub fn get_gc_object(&mut self, handle: GcHandle) -> Option<&GcObject> {
+    pub fn get_gc_object(&self, handle: GcHandle) -> Option<&GcObject> {
         self.heap.get(handle)
+    }
+
+    pub fn get_string(&self, handle: GcHandle) -> Result<&String, Error> {
+        let Some(l_obj) = self.get_gc_object(handle) else {
+            return Err(Error::NotFoundGcObject(handle));
+        };
+        let GcObject::Str(str) = l_obj else {
+            return Err(Error::WrongTypeGcObject(
+                handle,
+                l_obj.type_name().to_string(),
+                // TODO: fix this when we split Kind and Value enum
+                GcObject::Str(String::new()).type_name().to_string(),
+            ));
+        };
+        Ok(str)
+    }
+
+    pub fn insert_string_variable(&mut self, s: String) -> Value {
+        let object = GcObject::Str(s);
+        let handle = self.insert_gc_object(object);
+        Value::Str(handle)
     }
 }
