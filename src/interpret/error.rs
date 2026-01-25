@@ -1,7 +1,11 @@
 use super::value::Value;
 use thiserror::Error;
 
-use crate::{interpret::gc::GcHandle, parse::ParseError, token::Token};
+use crate::{
+    interpret::gc::{GcHandle, GcKind},
+    parse::ParseError,
+    token::Token,
+};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -77,6 +81,6 @@ pub enum Error {
     #[error("GcObject `{0:?}` did not exist in the heap")]
     NotFoundGcObject(GcHandle),
 
-    #[error("GcObject `{0:?}` has type `{1}` but expected type `{2}`")]
-    WrongTypeGcObject(GcHandle, String, String),
+    #[error("GcObject `{0:?}` has type `{}` but expected type `{}`", .1.type_name(), .2.type_name())]
+    WrongTypeGcObject(GcHandle, GcKind, GcKind),
 }

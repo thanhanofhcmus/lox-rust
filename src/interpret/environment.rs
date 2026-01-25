@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     interpret::{
         error::Error,
-        gc::{GcHandle, GcObject, Heap},
+        gc::{GcHandle, GcKind, GcObject, Heap, HeapStats},
         predule,
         value::{Array, VMap},
     },
@@ -79,7 +79,7 @@ const SCOPE_SIZE_LIMIT: usize = 20;
 
 #[derive(derive_more::Debug)]
 pub struct Environment {
-    heap: Heap,
+    pub(super) heap: Heap,
 
     scopes: Vec<Scope>,
 
@@ -117,6 +117,21 @@ impl Environment {
 
     pub(super) fn get_print_writer(&'_ self) -> RefMut<'_, dyn std::io::Write> {
         self.print_writer.borrow_mut()
+    }
+
+    pub(super) fn collect_all_variables(&self) -> Vec<Value> {
+        let mut variables = self
+            .scopes
+            .iter()
+            .flat_map(|s| s.variables.values().copied())
+            .collect::<Vec<_>>();
+        let module_vars = self
+            .modules
+            .iter()
+            .flat_map(|(_, v)| v.variables.values().copied());
+        variables.extend(module_vars);
+
+        variables
     }
 
     pub fn contains_module(&self, id: Id) -> bool {
@@ -243,9 +258,8 @@ impl Environment {
         let GcObject::Str(str) = obj else {
             return Err(Error::WrongTypeGcObject(
                 handle,
-                obj.type_name().to_string(),
-                // TODO: fix this when we split Kind and Value enum
-                GcObject::Str(String::new()).type_name().to_string(),
+                obj.get_kind(),
+                GcKind::String,
             ));
         };
         Ok(str)
@@ -264,9 +278,8 @@ impl Environment {
         let GcObject::Array(arr) = obj else {
             return Err(Error::WrongTypeGcObject(
                 handle,
-                obj.type_name().to_string(),
-                // TODO: fix this when we split Kind and Value enum
-                GcObject::Array(Array::new()).type_name().to_string(),
+                obj.get_kind(),
+                GcKind::Array,
             ));
         };
         Ok(arr)
@@ -285,9 +298,9 @@ impl Environment {
         let GcObject::Map(map) = obj else {
             return Err(Error::WrongTypeGcObject(
                 handle,
-                obj.type_name().to_string(),
+                obj.get_kind(),
                 // TODO: fix this when we split Kind and Value enum
-                GcObject::Map(VMap::new()).type_name().to_string(),
+                GcKind::Map,
             ));
         };
         Ok(map)

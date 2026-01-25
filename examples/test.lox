@@ -1,7 +1,6 @@
 # ==========================================
 # TEST SUITE: Core Language Features
 # ==========================================
-
 # --- 1. Arithmetic & Type Promotion ---
 print("--- Running Arithmetic Tests...");
 
@@ -201,3 +200,13 @@ assert(early_return(true) == "early", "Explicit return inside implicit block fai
 assert(early_return(false) == "late", "Explicit return inside implicit block failed (late)");
 
 print();
+
+_dbg_heap_stats();
+
+_dbg_gc_mark();
+_dbg_heap_stats();
+
+_dbg_gc_sweep();
+
+# _dbg_state();
+_dbg_heap_stats();

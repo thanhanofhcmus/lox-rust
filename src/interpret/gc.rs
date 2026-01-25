@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     ops::{AddAssign, SubAssign},
 };
 
@@ -11,6 +11,25 @@ use crate::interpret::{
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[debug("GcHandle({_0})")]
 pub struct GcHandle(usize);
+
+#[derive(derive_more::Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum GcKind {
+    String,
+    Array,
+    Map,
+    Function,
+}
+
+impl GcKind {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            GcKind::String => "String",
+            GcKind::Array => "Array",
+            GcKind::Map => "Map",
+            GcKind::Function => "Function",
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum GcObject {
@@ -25,12 +44,12 @@ pub enum GcObject {
 }
 
 impl GcObject {
-    pub fn type_name(&self) -> &'static str {
+    pub fn get_kind(&self) -> GcKind {
         match self {
-            GcObject::Str(_) => "String",
-            GcObject::Array(_) => "Array",
-            GcObject::Map(_) => "Map",
-            GcObject::Function(_) => "Function",
+            GcObject::Str(_) => GcKind::String,
+            GcObject::Array(_) => GcKind::Array,
+            GcObject::Map(_) => GcKind::Map,
+            GcObject::Function(_) => GcKind::Function,
         }
     }
 }
@@ -54,6 +73,15 @@ impl HeapEntry {
     }
 }
 
+#[derive(derive_more::Debug)]
+#[allow(dead_code)]
+pub struct HeapStats {
+    pub slots_size: usize,
+    pub free_list_size: usize,
+    pub total_objects_stats: HashMap<GcKind, usize>,
+    pub objects_for_delete_stats: HashMap<GcKind, usize>,
+}
+
 #[derive(Debug)]
 pub struct Heap {
     slots: Vec<Option<HeapEntry>>,
@@ -66,6 +94,77 @@ impl Heap {
             slots: vec![],
             free_list: vec![],
         }
+    }
+
+    pub fn get_stats(&self) -> HeapStats {
+        let slots_size = self.slots.len();
+        let free_list_size = self.free_list.len();
+
+        let mut total_objects_stats = HashMap::new();
+        let mut objects_for_delete_stats = HashMap::new();
+
+        for entry in self.slots.iter().flatten() {
+            let kind = entry.object.get_kind();
+            total_objects_stats.entry(kind).or_insert(0).add_assign(1);
+            if entry.is_marked_for_delete {
+                objects_for_delete_stats
+                    .entry(kind)
+                    .or_insert(0)
+                    .add_assign(1);
+            }
+        }
+
+        HeapStats {
+            slots_size,
+            free_list_size,
+            total_objects_stats,
+            objects_for_delete_stats,
+        }
+    }
+
+    pub fn mark(&mut self, root_values: Vec<Value>) {
+        for entry in self.slots.iter_mut().flatten() {
+            entry.is_marked_for_delete = true;
+        }
+
+        let mut trace_list = root_values
+            .iter()
+            .filter_map(|v| v.get_handle())
+            .collect::<Vec<_>>();
+
+        while let Some(handle) = trace_list.pop() {
+            let Some(Some(entry)) = self.slots.get_mut(handle.0) else {
+                continue;
+            };
+            entry.is_marked_for_delete = false;
+
+            match &mut entry.object {
+                GcObject::Str(_) | GcObject::Function(_) => { /* do nothing */ }
+                GcObject::Array(arr) => {
+                    let it = arr.iter().filter_map(|v| v.get_handle());
+                    trace_list.extend(it);
+                }
+                GcObject::Map(map) => {
+                    // TODO: recursive update for map key as well
+                    let it = map.iter().filter_map(|(_, v)| v.get_handle());
+                    trace_list.extend(it);
+                }
+            }
+        }
+    }
+
+    pub fn sweep(&mut self) {
+        for (index, entry) in self.slots.iter_mut().enumerate() {
+            if entry
+                .as_ref()
+                .map(|e| e.is_marked_for_delete)
+                .unwrap_or(false)
+            {
+                entry.take();
+                self.free_list.push(index);
+            }
+        }
+        self.free_list.sort();
     }
 
     /// Move the GcObject to the heap

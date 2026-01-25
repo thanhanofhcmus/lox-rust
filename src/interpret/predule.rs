@@ -15,6 +15,15 @@ pub fn create() -> HashMap<Id, Value> {
 
     preludes.insert(Id::new("_dbg_print"), Value::BuiltinFunction(dbg_print_fn));
     preludes.insert(Id::new("_dbg_state"), Value::BuiltinFunction(dbg_state_fn));
+    preludes.insert(Id::new("_dbg_gc_mark"), Value::BuiltinFunction(dbg_gc_mark));
+    preludes.insert(
+        Id::new("_dbg_gc_sweep"),
+        Value::BuiltinFunction(dbg_gc_sweep),
+    );
+    preludes.insert(
+        Id::new("_dbg_heap_stats"),
+        Value::BuiltinFunction(dbg_heap_stats),
+    );
 
     preludes
 }
@@ -34,6 +43,24 @@ fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
     }
     writeln!(print_writer).unwrap();
 
+    Ok(Value::Nil)
+}
+
+fn dbg_heap_stats(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+    let stats = itp.environment.heap.get_stats();
+    dbg!(stats);
+    Ok(Value::Nil)
+}
+
+fn dbg_gc_mark(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+    itp.environment
+        .heap
+        .mark(itp.environment.collect_all_variables());
+    Ok(Value::Nil)
+}
+
+fn dbg_gc_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+    itp.environment.heap.sweep();
     Ok(Value::Nil)
 }
 
