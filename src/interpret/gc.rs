@@ -78,8 +78,10 @@ impl HeapEntry {
 pub struct HeapStats {
     pub slots_size: usize,
     pub free_list_size: usize,
+    pub number_of_total_objects: usize,
+    pub number_of_objects_to_delete: usize,
     pub total_objects_stats: HashMap<GcKind, usize>,
-    pub objects_for_delete_stats: HashMap<GcKind, usize>,
+    pub objects_to_delete_stats: HashMap<GcKind, usize>,
 }
 
 #[derive(Debug)]
@@ -100,14 +102,21 @@ impl Heap {
         let slots_size = self.slots.len();
         let free_list_size = self.free_list.len();
 
+        let mut number_of_total_objects = 0;
+        let mut number_of_objects_to_delete = 0;
+
         let mut total_objects_stats = HashMap::new();
-        let mut objects_for_delete_stats = HashMap::new();
+        let mut objects_to_delete_stats = HashMap::new();
 
         for entry in self.slots.iter().flatten() {
             let kind = entry.object.get_kind();
+
+            number_of_total_objects += 1;
             total_objects_stats.entry(kind).or_insert(0).add_assign(1);
+
             if entry.is_marked_for_delete {
-                objects_for_delete_stats
+                number_of_objects_to_delete += 1;
+                objects_to_delete_stats
                     .entry(kind)
                     .or_insert(0)
                     .add_assign(1);
@@ -117,8 +126,10 @@ impl Heap {
         HeapStats {
             slots_size,
             free_list_size,
+            number_of_total_objects,
+            number_of_objects_to_delete,
             total_objects_stats,
-            objects_for_delete_stats,
+            objects_to_delete_stats,
         }
     }
 
@@ -154,17 +165,19 @@ impl Heap {
     }
 
     pub fn sweep(&mut self) {
-        for (index, entry) in self.slots.iter_mut().enumerate() {
+        for entry in self.slots.iter_mut() {
             if entry
                 .as_ref()
                 .map(|e| e.is_marked_for_delete)
                 .unwrap_or(false)
             {
                 entry.take();
-                self.free_list.push(index);
             }
         }
-        self.free_list.sort();
+        // move all Some element to the top
+        self.slots.sort_by_key(|e| e.is_none());
+        let first_none_dex = self.slots.partition_point(|e| e.is_some());
+        self.free_list = (first_none_dex..self.slots.len()).rev().collect();
     }
 
     /// Move the GcObject to the heap
