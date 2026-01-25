@@ -146,7 +146,12 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             return Ok(res);
         }
 
+        // TODO: if we get from an lvale, it should return a handle here
+        // perform a shallow copy
+        // how do we know if res is a new expr (rvalue) or an lvalue?
+
         let val = res.get_or_error()?;
+        let val = self.environment.shallow_copy_value(val);
         self.environment.insert_variable_current_scope(iden, val);
         Ok(ValueReturn::none())
     }
@@ -168,6 +173,9 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
 
         let val = res.get_or_error()?;
+
+        // TODO: parform deep copy mutation
+
         self.environment.insert_variable_current_scope(iden, val);
         Ok(ValueReturn::none())
     }
@@ -195,17 +203,25 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_block_node(&mut self, node: &BlockNode) -> Result<ValueReturn, Error> {
+        self.environment.push_scope();
+        // TODO: find a cleaner what to defer pop scope
+
         for stmt in &node.stmts {
             let res = self.interpret_stmt(stmt)?;
             if res.should_bubble_up {
+                self.environment.pop_scope();
                 return Ok(res);
             }
         }
-        if let Some(expr) = &node.last_expr {
-            return self.interpret_expr(expr);
-        }
 
-        Ok(ValueReturn::none())
+        let result = match &node.last_expr {
+            Some(expr) => self.interpret_expr(expr),
+            None => Ok(ValueReturn::none()),
+        };
+
+        self.environment.pop_scope();
+
+        result
     }
 
     fn interpret_while_expr(
@@ -367,6 +383,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         self.environment.push_scope();
         for (arg_id, arg_expr) in arg_ids.iter().zip(node.args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
+            let res = self.environment.shallow_copy_value(res);
             self.environment
                 .insert_variable_current_scope_by_id(*arg_id, res);
         }

@@ -56,6 +56,15 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn get_handle(&self) -> Option<GcHandle> {
+        match self {
+            Value::Str(handle) => Some(*handle),
+            Value::Array(handle) => Some(*handle),
+            Value::Function(handle) => Some(*handle),
+            _ => None,
+        }
+    }
+
     pub fn is_scalar_type(&self) -> bool {
         matches!(self, Value::Nil | Value::Unit | Value::Bool(_) | Value::Integer(_) | Value::Floating(_) if {
             true

@@ -13,7 +13,28 @@ pub fn create() -> HashMap<Id, Value> {
     preludes.insert(Id::new("from_json"), Value::BuiltinFunction(from_json_fn));
     preludes.insert(Id::new("to_json"), Value::BuiltinFunction(to_json_fn));
 
+    preludes.insert(Id::new("_dbg_print"), Value::BuiltinFunction(dbg_print_fn));
+    preludes.insert(Id::new("_dbg_state"), Value::BuiltinFunction(dbg_state_fn));
+
     preludes
+}
+
+fn dbg_state_fn(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+    let env = &itp.environment;
+    dbg!(&env);
+    Ok(Value::Nil)
+}
+
+fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+    let mut print_writer = itp.environment.get_print_writer();
+
+    // TODO: handle write! error
+    for value in args {
+        write!(print_writer, "{:?}", value).unwrap();
+    }
+    writeln!(print_writer).unwrap();
+
+    Ok(Value::Nil)
 }
 
 fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {

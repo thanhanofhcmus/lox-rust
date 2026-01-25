@@ -139,7 +139,10 @@ impl Environment {
     }
 
     pub fn pop_scope(&mut self) {
-        self.scopes.pop().expect("Scope underflow");
+        let last_scope = self.scopes.pop().expect("Scope underflow");
+        for (_, value) in last_scope.variables {
+            self.heap.dispose_value(value);
+        }
     }
 
     fn get_current_scope(&self) -> &Scope {
@@ -201,6 +204,11 @@ impl Environment {
 
     pub fn insert_variable_current_scope_by_id(&mut self, id: Id, value: Value) -> Option<Value> {
         self.get_current_scope_mut().insert_variable(id, value)
+    }
+
+    pub fn shallow_copy_value(&mut self, value: Value) -> Value {
+        self.heap.shallow_copy_value(&value);
+        value
     }
 
     pub fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {
