@@ -150,8 +150,6 @@ fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
         if !(c.is_ascii_digit() || c == '.') {
             break;
         }
-        // TODO: This code does not check if we have number after '.'
-        // This script is currently not throw error `var x = 1.`
         if c == '.' {
             if has_parsed_dot {
                 return Err(ParseError::UnexpectedCharacter(Span::one(*offset)));
@@ -161,9 +159,17 @@ fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
         *offset += 1;
     }
 
+    // check if the last thing we parsed is a dot
+    let end_offset = *offset;
+    if let Some(c) = input.chars().nth(end_offset) {
+        if c == '.' {
+            return Err(ParseError::UnexpectedCharacter(Span::one(end_offset)));
+        }
+    }
+
     Ok(LexItem::new(
         Token::Number,
-        Span::new(start_offset, *offset),
+        Span::new(start_offset, end_offset),
     ))
 }
 

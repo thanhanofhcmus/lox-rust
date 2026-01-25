@@ -12,7 +12,7 @@ use crate::{
         error::Error,
         heap::{GcHandle, GcKind, GcObject, Heap},
         predule,
-        value::{Array, VMap},
+        value::{Array, Function, VMap},
     },
 };
 
@@ -62,7 +62,6 @@ struct Module {
     variables: HashMap<Id, Value>,
     #[allow(unused)]
     id: Id,
-    // todo functions
 }
 
 impl Module {
@@ -77,6 +76,34 @@ impl Module {
 const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 20;
 const GC_TRIGGER_POINT: usize = 100;
+
+macro_rules! decl_gc_type_methods {
+    ($name:ident, $variant:ident, $type:ty, $kind:expr, $val_variant:ident) => {
+        paste::item! {
+            // Generates get_string, get_array, etc.
+            pub fn [<get_ $name>](&self, handle: GcHandle) -> Result<&$type, Error> {
+                let Some(obj) = self.get_gc_object(handle) else {
+                    return Err(Error::NotFoundGcObject(handle));
+                };
+                let GcObject::$variant(inner) = obj else {
+                    return Err(Error::WrongTypeGcObject(
+                        handle,
+                        obj.get_kind(),
+                        $kind,
+                    ));
+                };
+                Ok(inner)
+            }
+
+            // Generates insert_string_variable, etc.
+            pub fn [<insert_ $name _variable>](&mut self, data: $type) -> Value {
+                let object = GcObject::$variant(data);
+                let handle = self.insert_gc_object(object);
+                Value::$val_variant(handle)
+            }
+        }
+    };
+}
 
 #[derive(derive_more::Debug)]
 pub struct Environment {
@@ -260,63 +287,8 @@ impl Environment {
         self.heap.get_object(handle)
     }
 
-    pub fn get_string(&self, handle: GcHandle) -> Result<&String, Error> {
-        let Some(obj) = self.get_gc_object(handle) else {
-            return Err(Error::NotFoundGcObject(handle));
-        };
-        let GcObject::Str(str) = obj else {
-            return Err(Error::WrongTypeGcObject(
-                handle,
-                obj.get_kind(),
-                GcKind::String,
-            ));
-        };
-        Ok(str)
-    }
-
-    pub fn insert_string_variable(&mut self, s: String) -> Value {
-        let object = GcObject::Str(s);
-        let handle = self.insert_gc_object(object);
-        Value::Str(handle)
-    }
-
-    pub fn get_array(&self, handle: GcHandle) -> Result<&Array, Error> {
-        let Some(obj) = self.get_gc_object(handle) else {
-            return Err(Error::NotFoundGcObject(handle));
-        };
-        let GcObject::Array(arr) = obj else {
-            return Err(Error::WrongTypeGcObject(
-                handle,
-                obj.get_kind(),
-                GcKind::Array,
-            ));
-        };
-        Ok(arr)
-    }
-
-    pub fn insert_array_variable(&mut self, arr: Array) -> Value {
-        let object = GcObject::Array(arr);
-        let handle = self.insert_gc_object(object);
-        Value::Array(handle)
-    }
-
-    pub fn get_map(&self, handle: GcHandle) -> Result<&VMap, Error> {
-        let Some(obj) = self.get_gc_object(handle) else {
-            return Err(Error::NotFoundGcObject(handle));
-        };
-        let GcObject::Map(map) = obj else {
-            return Err(Error::WrongTypeGcObject(
-                handle,
-                obj.get_kind(),
-                GcKind::Map,
-            ));
-        };
-        Ok(map)
-    }
-
-    pub fn insert_map_variable(&mut self, map: VMap) -> Value {
-        let object = GcObject::Map(map);
-        let handle = self.insert_gc_object(object);
-        Value::Map(handle)
-    }
+    decl_gc_type_methods!(string, Str, String, GcKind::String, Str);
+    decl_gc_type_methods!(array, Array, Array, GcKind::Array, Array);
+    decl_gc_type_methods!(map, Map, VMap, GcKind::Map, Map);
+    decl_gc_type_methods!(function, Function, Function, GcKind::Function, Function);
 }

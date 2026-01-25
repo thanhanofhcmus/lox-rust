@@ -2,7 +2,7 @@ use super::environment::Environment;
 use super::error::Error;
 use super::value::Value;
 use crate::ast::*;
-use crate::interpret::heap::{GcHandle, GcObject};
+use crate::interpret::heap::GcHandle;
 use crate::interpret::helper_values::MapKey;
 use crate::interpret::value::{BuiltinFn, Function, VMap};
 use crate::parse;
@@ -338,14 +338,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_fn_decl(&mut self, node: &FnDeclNode) -> Result<Value, Error> {
-        let object = GcObject::Function(Function {
+        Ok(self.environment.insert_function_variable(Function {
             arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
             body: node.body.to_owned(),
-        });
-
-        let handle = self.environment.insert_gc_object(object);
-
-        Ok(Value::Function(handle))
+        }))
     }
 
     fn interpret_normal_fn_call_expr(
@@ -354,15 +350,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         handle: GcHandle,
         // value::Function { arg_ids, body }: &Function,
     ) -> Result<Value, Error> {
-        let Some(value) = self.environment.get_gc_object(handle) else {
-            // TODO:
-            return Err(Error::NotFoundVariable("TODO".to_string()));
-        };
-
-        let GcObject::Function(func) = value else {
-            // TODO:
-            return Err(Error::ValueNotCallable(Value::Unit));
-        };
+        let func = self.environment.get_function(handle)?;
 
         // TODO:
         let Function { arg_ids, body } = func.clone();
@@ -456,7 +444,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_chaining_expr(&mut self, node: &ChainingNode) -> Result<Value, Error> {
-        // TODO: we need to make this ref if we want bring back re-assignment ability
         let mut value = match &node.base {
             ChainingBase::Primary(v) => self.interpret_primary_expr(v)?.get_or_error()?,
             ChainingBase::Group(v) => self.interpret_expr(v)?.get_or_error()?,
@@ -511,7 +498,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Value::Array(handle) => {
                 let idx = to_index(indexee)?;
                 let arr = self.environment.get_array(handle)?;
-                // This one is return a new value, maybe return a ref instead
                 match arr.get(idx) {
                     None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
                     Some(v) => Ok(v.to_owned()),
@@ -528,7 +514,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
-        // TODO: make this a ref
         self.environment
             .get_variable_all_scope(node)
             .map(|v| v.to_owned())

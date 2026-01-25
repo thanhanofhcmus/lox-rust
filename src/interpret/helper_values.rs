@@ -136,7 +136,6 @@ impl MapKey {
                 MapKey::Str(s.clone())
             }
 
-            // TODO: return error
             Value::Array(_)
             | Value::Map(_)
             | Value::Unit
