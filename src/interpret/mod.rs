@@ -1,7 +1,7 @@
 mod environment;
 mod error;
 mod gc;
-mod hepler_values;
+mod helper_values;
 mod interpreter;
 mod predule;
 mod value;

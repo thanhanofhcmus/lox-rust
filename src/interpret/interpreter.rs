@@ -3,7 +3,7 @@ use super::error::Error;
 use super::value::Value;
 use crate::ast::*;
 use crate::interpret::gc::{GcHandle, GcObject};
-use crate::interpret::hepler_values::MapKey;
+use crate::interpret::helper_values::MapKey;
 use crate::interpret::value::{BuiltinFn, Function};
 use crate::parse;
 use crate::span::Span;
