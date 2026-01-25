@@ -12,6 +12,7 @@ use crate::{
         error::Error,
         gc::{GcHandle, GcObject, Heap},
         predule,
+        value::Array,
     },
 };
 
@@ -207,17 +208,17 @@ impl Environment {
     }
 
     pub fn get_gc_object(&self, handle: GcHandle) -> Option<&GcObject> {
-        self.heap.get(handle)
+        self.heap.get_object(handle)
     }
 
     pub fn get_string(&self, handle: GcHandle) -> Result<&String, Error> {
-        let Some(l_obj) = self.get_gc_object(handle) else {
+        let Some(obj) = self.get_gc_object(handle) else {
             return Err(Error::NotFoundGcObject(handle));
         };
-        let GcObject::Str(str) = l_obj else {
+        let GcObject::Str(str) = obj else {
             return Err(Error::WrongTypeGcObject(
                 handle,
-                l_obj.type_name().to_string(),
+                obj.type_name().to_string(),
                 // TODO: fix this when we split Kind and Value enum
                 GcObject::Str(String::new()).type_name().to_string(),
             ));
@@ -229,5 +230,26 @@ impl Environment {
         let object = GcObject::Str(s);
         let handle = self.insert_gc_object(object);
         Value::Str(handle)
+    }
+
+    pub fn get_array(&self, handle: GcHandle) -> Result<&Array, Error> {
+        let Some(l_obj) = self.get_gc_object(handle) else {
+            return Err(Error::NotFoundGcObject(handle));
+        };
+        let GcObject::Array(str) = l_obj else {
+            return Err(Error::WrongTypeGcObject(
+                handle,
+                l_obj.type_name().to_string(),
+                // TODO: fix this when we split Kind and Value enum
+                GcObject::Array(Array::new()).type_name().to_string(),
+            ));
+        };
+        Ok(str)
+    }
+
+    pub fn insert_array_variable(&mut self, arr: Array) -> Value {
+        let object = GcObject::Array(arr);
+        let handle = self.insert_gc_object(object);
+        Value::Array(handle)
     }
 }

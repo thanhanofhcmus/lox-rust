@@ -39,10 +39,11 @@ impl SerialValue {
                 SerialValue::Str(s.clone())
             }
 
-            Value::Array(values) => {
-                let mut vs = Vec::with_capacity(values.len());
-                for v in values {
-                    let sv = SerialValue::convert_from_value(v, env)?;
+            Value::Array(handle) => {
+                let arr = env.get_array(handle)?;
+                let mut vs = Vec::with_capacity(arr.len());
+                for v in arr {
+                    let sv = SerialValue::convert_from_value(v.to_owned(), env)?;
                     vs.push(sv);
                 }
                 SerialValue::Array(vs)
@@ -73,12 +74,12 @@ impl SerialValue {
             SerialValue::Str(v) => env.insert_string_variable(v),
 
             SerialValue::Array(values) => {
-                let mut vs = Vec::with_capacity(values.len());
+                let mut arr = Vec::with_capacity(values.len());
                 for v in values {
                     let sv = SerialValue::hydrate(v, env)?;
-                    vs.push(sv);
+                    arr.push(sv);
                 }
-                Value::Array(vs)
+                env.insert_array_variable(arr)
             }
             SerialValue::Map(m) => {
                 let mut vsm = BTreeMap::new();

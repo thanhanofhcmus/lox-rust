@@ -287,14 +287,14 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_array_literal(&mut self, node: &ArrayLiteralNode) -> Result<Value, Error> {
         match node {
             ArrayLiteralNode::List(clauses) => {
-                let mut result = Vec::with_capacity(clauses.len());
+                let mut arr = Vec::with_capacity(clauses.len());
                 for expr in clauses {
                     let res = self.interpret_clause_expr(expr)?;
                     // Even in literals, we must check if an expression bubbled a return
                     // though usually return isn't allowed here syntactically.
-                    result.push(res.get_or_error()?);
+                    arr.push(res.get_or_error()?);
                 }
-                Ok(Value::Array(result))
+                Ok(self.environment.insert_array_variable(arr))
             }
             ArrayLiteralNode::Repeat(node) => {
                 let val_res = self.interpret_clause_expr(&node.value)?;
@@ -303,11 +303,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let value = val_res.get_or_error()?;
                 let repeat = to_index(&rep_res.get_or_error()?)?;
 
-                let mut result = Vec::with_capacity(repeat);
+                let mut arr = Vec::with_capacity(repeat);
                 for _ in 0..repeat {
-                    result.push(value.clone());
+                    arr.push(value.clone());
                 }
-                Ok(Value::Array(result))
+                Ok(self.environment.insert_array_variable(arr))
             }
         }
     }
@@ -494,8 +494,9 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn intepret_index_expr(&mut self, indexer: &Value, indexee: &Value) -> Result<Value, Error> {
         match indexer {
-            Value::Array(arr) => {
+            Value::Array(handle) => {
                 let idx = to_index(indexee)?;
+                let arr = self.environment.get_array(*handle)?;
                 // This one is return a new value, maybe return a ref instead
                 match arr.get(idx) {
                     None => Err(Error::ArrayOutOfBound(arr.len(), idx)),

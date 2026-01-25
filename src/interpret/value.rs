@@ -18,6 +18,8 @@ pub struct Function {
     pub body: BlockNode,
 }
 
+pub type Array = Vec<Value>;
+
 #[derive(Display, Debug, Clone)]
 pub enum Value {
     #[display(fmt = "nil")]
@@ -40,8 +42,8 @@ pub enum Value {
     #[display(fmt = "String({:?})", _0)] // Quotes for strings
     Str(GcHandle),
 
-    #[display(fmt = "{}", "format_array(_0)")] // Call helper
-    Array(Vec<Value>),
+    #[display(fmt = "Array({:?}", _0)]
+    Array(GcHandle),
 
     #[display(fmt = "%{}", "format_map(_0)")] // Call helper
     Map(BTreeMap<MapKey, Value>),
@@ -92,11 +94,16 @@ impl Value {
                 let r_str = env.get_string(*r_handle)?;
                 Ok(l_str == r_str)
             }
-            (Array(l), Array(r)) => {
-                if l.len() != r.len() {
+            (Array(l_handle), Array(r_handle)) => {
+                if l_handle == r_handle {
+                    return Ok(true);
+                }
+                let l_arr = env.get_array(*l_handle)?;
+                let r_arr = env.get_array(*r_handle)?;
+                if l_arr.len() != r_arr.len() {
                     return Ok(false);
                 }
-                for (l_value, r_value) in l.iter().zip(r) {
+                for (l_value, r_value) in l_arr.iter().zip(r_arr) {
                     if !(l_value.deep_eq(r_value, env)?) {
                         return Ok(false);
                     }
@@ -144,61 +151,50 @@ impl Value {
 
             (Str(l), Str(r)) => l == r,
 
-            (Array(l), Array(r)) => l.len() == r.len() && l.iter().zip(r).all(|(a, b)| a == b),
-            (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
-
+            (Array(l), Array(r)) => l == r,
+            // (Map(l), Map(r)) => l.len() == r.len() && l.iter().all(|(k, v)| r.get(k) == Some(v)),
             _ => false,
         }
     }
 
-    pub fn write_display<Writer: std::io::Write>(
+    pub fn write_display(
         &self,
         env: &Environment,
-        mut w: Writer,
+        w: &mut dyn std::io::Write,
     ) -> Result<(), Error> {
-        let resutl = match self {
-            Value::Nil => write!(w, "nil"),
-            Value::Unit => write!(w, "()"),
-            Value::Integer(v) => write!(w, "{}", *v),
-            Value::Floating(v) => write!(w, "{}", *v),
-            Value::Bool(v) => write!(w, "{}", *v),
+        let convert = |e| Error::WriteFailed(self.clone(), e);
+
+        match self {
+            Value::Nil => write!(w, "nil").map_err(convert),
+            Value::Unit => write!(w, "()").map_err(convert),
+            Value::Integer(v) => write!(w, "{}", *v).map_err(convert),
+            Value::Floating(v) => write!(w, "{}", *v).map_err(convert),
+            Value::Bool(v) => write!(w, "{}", *v).map_err(convert),
             Value::Str(handle) => {
                 let s = env.get_string(*handle)?;
-                w.write_all(s.as_bytes())
+                w.write_all(s.as_bytes()).map_err(convert)
             }
-            Value::Array(values) => {
-                let s = format_array(values);
-                w.write_all(s.as_bytes())
+            Value::Array(handle) => {
+                let arr = env.get_array(*handle)?;
+                w.write_all(b"[").map_err(convert)?;
+
+                for value in arr {
+                    value.write_display(env, w)?;
+                    // TODO: for the last value, do not write `,`
+                    w.write_all(b",").map_err(convert)?;
+                }
+                w.write_all(b"]").map_err(convert)?;
+
+                Ok(())
             }
             Value::Map(m) => {
                 let s = format_map(m);
-                w.write_all(s.as_bytes())
+                w.write_all(s.as_bytes()).map_err(convert)
             }
-            Value::Function(_) => write!(w, "function"),
-            Value::BuiltinFunction(_) => write!(w, "builtin_function"),
-        };
-
-        resutl.map_err(|e| Error::WriteFailed(self.clone(), e))?;
-
-        Ok(())
+            Value::Function(_) => write!(w, "function").map_err(convert),
+            Value::BuiltinFunction(_) => write!(w, "builtin_function").map_err(convert),
+        }
     }
-}
-
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        self.shallow_eq(other)
-    }
-}
-
-impl Eq for Value {}
-// Helper function to simulate Python's list printing
-fn format_array(values: &[Value]) -> String {
-    let internal = values
-        .iter()
-        .map(|v| v.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("[{}]", internal)
 }
 
 // Helper function to simulate Python's list printing

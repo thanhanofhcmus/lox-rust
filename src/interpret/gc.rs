@@ -7,7 +7,7 @@ pub struct GcHandle(usize);
 pub enum GcObject {
     Str(String),
 
-    Array(Vec<Value>),
+    Array(Array),
 
     // TODO: maybe make the key a gc entrance
     Map(BTreeMap<Value, Value>),
@@ -19,6 +19,7 @@ impl GcObject {
     pub fn type_name(&self) -> &'static str {
         match self {
             GcObject::Str(_) => "String",
+            GcObject::Array(_) => "Array",
             GcObject::Function(_) => "Function",
         }
     }
