@@ -184,7 +184,7 @@ impl Value {
         };
         env.get_gc_object(handle)
             .ok_or(Error::GcObjectNotFound(handle))?
-            .get_at_index(indexee)
+            .get_at_index(indexee, &env.heap)
     }
 
     pub fn to_index(self) -> Result<usize, Error> {
@@ -291,6 +291,13 @@ pub enum MapKey {
 }
 
 impl MapKey {
+    pub fn get_handle(self) -> Option<GcHandle> {
+        match self {
+            MapKey::Scalar(_) => None,
+            MapKey::Str(handle) => Some(handle),
+        }
+    }
+
     pub fn convert_from_value(value: Value, env: &mut Environment) -> Result<Self, Error> {
         match value {
             Value::Scalar(v) => Ok(Self::Scalar(v)),
