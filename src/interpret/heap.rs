@@ -5,7 +5,7 @@ use std::{
 
 use crate::interpret::{
     error::Error,
-    values::{Array, Function, MapKey, VMap, Value},
+    values::{Array, Function, Map, MapKey, Value},
 };
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -37,8 +37,7 @@ pub enum GcObject {
 
     Array(Array),
 
-    // TODO: maybe make the key a gc entrance
-    Map(VMap),
+    Map(Map),
 
     Function(Function),
 }

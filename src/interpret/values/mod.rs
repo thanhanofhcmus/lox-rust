@@ -7,4 +7,4 @@ mod value_kind;
 pub use display_writer::DisplayWriter;
 pub use scalar::Scalar;
 pub use serial::SerialValue;
-pub use value::{Array, BuiltinFn, Function, MapKey, VMap, Value};
+pub use value::{Array, BuiltinFn, Function, Map, MapKey, Value};

@@ -27,7 +27,7 @@ pub struct Function {
 
 pub type Array = Vec<Value>;
 
-pub type VMap = BTreeMap<MapKey, Value>;
+pub type Map = BTreeMap<MapKey, Value>;
 
 #[derive(Display, derive_more::Debug, Clone, Copy)]
 pub enum Value {
@@ -257,7 +257,7 @@ impl DisplayWriter for Value {
                 Ok(())
             }
             Value::Map(handle) => {
-                let map: &VMap = env.get_map(handle)?;
+                let map: &Map = env.get_map(handle)?;
 
                 let mut entries = map.iter();
 

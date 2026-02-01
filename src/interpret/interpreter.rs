@@ -3,7 +3,7 @@ use super::error::Error;
 use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
-use crate::interpret::values::{BuiltinFn, Function, MapKey, Scalar, VMap};
+use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Scalar};
 use crate::parse;
 use crate::span::Span;
 use crate::token::Token;
@@ -332,7 +332,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
-        let mut map = VMap::new();
+        let mut map = Map::new();
         for kv in &node.nodes {
             let raw_key = self.interpret_primary_expr(&kv.key)?.get_or_error()?;
             let key = MapKey::convert_from_value(raw_key, self.environment)?;

@@ -12,7 +12,7 @@ use crate::{
         error::Error,
         heap::{GcHandle, GcKind, GcObject, Heap},
         predule,
-        values::{Array, Function, VMap},
+        values::{Array, Function, Map},
     },
 };
 
@@ -314,6 +314,6 @@ impl Environment {
 
     decl_gc_type_methods!(string, Str, String, GcKind::String, Str);
     decl_gc_type_methods!(array, Array, Array, GcKind::Array, Array);
-    decl_gc_type_methods!(map, Map, VMap, GcKind::Map, Map);
+    decl_gc_type_methods!(map, Map, Map, GcKind::Map, Map);
     decl_gc_type_methods!(function, Function, Function, GcKind::Function, Function);
 }
