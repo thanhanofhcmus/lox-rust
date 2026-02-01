@@ -79,7 +79,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_stmt(&mut self, stmt: &Statement) -> Result<ValueReturn, Error> {
         match stmt {
             Statement::Declare(name, expr) => self.interpret_declare_stmt(name, expr),
-            Statement::ReassignIden(name, expr) => self.interpret_reassign_id_stmt(name, expr),
+            Statement::ReassignIden(node, expr) => self.interpret_reassign_id_stmt(node, expr),
             Statement::Expr(expr) => self.interpret_expr(expr),
         }
     }
@@ -146,10 +146,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             return Ok(res);
         }
 
-        // TODO: if we get from an lvale, it should return a handle here
-        // perform a shallow copy
-        // how do we know if res is a new expr (rvalue) or an lvalue?
-
         let val = res.get_or_error()?;
         self.environment.insert_variable_current_scope(iden, val);
         Ok(ValueReturn::none())
@@ -157,25 +153,46 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_reassign_id_stmt(
         &mut self,
-        iden: &IdentifierNode,
+        node: &ChainingReassignTargetNode,
         expr: &Expression,
     ) -> Result<ValueReturn, Error> {
-        if self.environment.get_variable_current_scope(iden).is_none() {
-            return match self.environment.get_variable_all_scope(iden) {
-                Some(_) => Err(Error::VariableReadOnly(iden.create_name(self.input))),
-                None => Err(Error::NotFoundVariable(iden.create_name(self.input))),
-            };
-        }
+        // evaluate right hand side first, in case it returns
         let res = self.interpret_expr(expr)?;
         if res.should_bubble_up {
             return Ok(res);
         }
+        let reassigning_value = res.get_or_error()?;
 
-        let val = res.get_or_error()?;
+        // evaluate left hand side
+        let mut index_chain = Vec::with_capacity(node.follows.len());
+        for expr in &node.follows {
+            let value = self.interpret_expr(expr)?.get_or_error()?;
+            index_chain.push(value);
+        }
 
-        // TODO: parform deep copy mutation
+        let iden = &node.base;
 
-        self.environment.replace_variable_current_scope(iden, val);
+        let Some(current_root_value) = self.environment.get_variable_current_scope(iden) else {
+            return match self.environment.get_variable_all_scope(iden) {
+                Some(_) => Err(Error::VariableReadOnly(iden.create_name(self.input))),
+                None => Err(Error::NotFoundVariable(iden.create_name(self.input))),
+            };
+        };
+
+        if index_chain.is_empty() {
+            self.environment
+                .replace_variable_current_scope(iden, reassigning_value);
+            return Ok(ValueReturn::none());
+        }
+
+        let new_root_value = self.environment.heap.deep_copy_reassign_object(
+            current_root_value,
+            &index_chain,
+            reassigning_value,
+        )?;
+        self.environment
+            .replace_variable_current_scope(iden, new_root_value);
+
         Ok(ValueReturn::none())
     }
 
@@ -304,7 +321,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let rep_res = self.interpret_clause_expr(&node.repeat)?;
 
                 let value = val_res.get_or_error()?;
-                let repeat = to_index(rep_res.get_or_error()?)?;
+                let repeat = rep_res.get_or_error()?.to_index()?;
 
                 let mut arr = Vec::with_capacity(repeat);
                 for _ in 0..repeat {
@@ -358,8 +375,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         self.environment.push_scope();
         for (arg_id, arg_expr) in arg_ids.iter().zip(node.args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
-            self.environment
-                .insert_variable_current_scope_by_id(*arg_id, res);
+            self.environment.insert_variable_current_scope(*arg_id, res);
         }
 
         let result = self.interpret_block_node(&body);
@@ -440,7 +456,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         };
         for follow in &node.follows {
             value = match follow {
-                ChainingFollow::Identifier(node) => self.lookup_all_scope(node),
+                // TODO: this one is not working right?, this is for a.b.c.d, should be lookup on the value's scope
+                ChainingFollow::Identifier(_node) => unimplemented!(),
                 ChainingFollow::FnCall(node) => match value {
                     Value::Function(handle) => self.interpret_normal_fn_call_expr(node, handle)?,
                     Value::BuiltinFunction(function) => {
@@ -450,7 +467,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 },
                 ChainingFollow::Index(indexee_expr) => {
                     let indexee = self.interpret_expr(indexee_expr)?.get_or_error()?;
-                    self.intepret_index_expr(value, indexee)?
+                    value.get_at_index(indexee, self.environment)?
                 }
             }
         }
@@ -480,26 +497,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(self
             .environment
             .insert_string_variable(l_str.to_owned() + r_str))
-    }
-
-    fn intepret_index_expr(&mut self, indexer: Value, indexee: Value) -> Result<Value, Error> {
-        match indexer {
-            Value::Array(handle) => {
-                let idx = to_index(indexee)?;
-                let arr = self.environment.get_array(handle)?;
-                match arr.get(idx) {
-                    None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
-                    Some(v) => Ok(v.to_owned()),
-                }
-            }
-            Value::Map(handle) => {
-                let map_key = MapKey::convert_from_value(indexee.to_owned(), self.environment)?;
-                let map = self.environment.get_map(handle)?;
-                let value = map.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil);
-                Ok(value)
-            }
-            _ => Err(Error::ValueUnIndexable(indexer)),
-        }
     }
 
     fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
@@ -608,28 +605,5 @@ fn modulo(lhs: Value, rhs: Value) -> Result<Value, Error> {
         (Integer(l), Floating(r)) => Ok(Floating((l as f64) % r)),
         (Floating(l), Floating(r)) => Ok(Floating(l % r)),
         _ => Err(Error::MismatchType(Token::PercentLPointParent, lhs, rhs)),
-    }
-}
-
-fn to_index(value: Value) -> Result<usize, Error> {
-    match value {
-        Value::Integer(i) => {
-            if i < 0 {
-                return Err(Error::ValueMustBeUsize(value));
-            }
-            // Try into usize to handle platforms where usize < i64
-            usize::try_from(i).map_err(|_| Error::ValueMustBeUsize(value))
-        }
-        Value::Floating(f) => {
-            if f < 0.0 || f.fract() != 0.0 {
-                return Err(Error::ValueMustBeUsize(value));
-            }
-            // We use 'as' for the final cast, but check bounds first
-            if f > usize::MAX as f64 {
-                return Err(Error::ValueMustBeUsize(value));
-            }
-            Ok(f as usize)
-        }
-        _ => Err(Error::ValueMustBeUsize(value)),
     }
 }

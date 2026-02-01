@@ -10,11 +10,17 @@ pub struct AST {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Declare(IdentifierNode, Expression),
-    ReassignIden(IdentifierNode, Expression),
+    ReassignIden(ChainingReassignTargetNode, Expression),
     Expr(Expression),
 }
 
 pub type StatementList = Vec<Statement>;
+
+#[derive(Debug, Clone)]
+pub struct ChainingReassignTargetNode {
+    pub base: IdentifierNode,
+    pub follows: Vec<Expression>,
+}
 
 #[derive(Debug, Clone)]
 pub struct BlockNode {
@@ -192,5 +198,11 @@ impl IdentifierNode {
 
     pub fn get_id(&self) -> Id {
         self.name_id
+    }
+}
+
+impl From<&IdentifierNode> for Id {
+    fn from(val: &IdentifierNode) -> Self {
+        val.get_id()
     }
 }

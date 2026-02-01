@@ -76,6 +76,20 @@ impl Value {
         }
     }
 
+    pub fn replace_handle(&mut self, new_handle: GcHandle) -> Option<GcHandle> {
+        match self {
+            Value::Str(handle)
+            | Value::Array(handle)
+            | Value::Map(handle)
+            | Value::Function(handle) => {
+                let old_handle = *handle;
+                *handle = new_handle;
+                Some(old_handle)
+            }
+            _ => None,
+        }
+    }
+
     pub fn is_scalar_type(&self) -> bool {
         matches!(self, Value::Nil | Value::Unit | Value::Bool(_) | Value::Integer(_) | Value::Floating(_) if {
             true
@@ -176,6 +190,39 @@ impl Value {
             (Array(l), Array(r)) => l == r,
             (Map(l), Map(r)) => l == r,
             _ => false,
+        }
+    }
+
+    pub fn get_at_index(&self, indexee: Value, env: &Environment) -> Result<Value, Error> {
+        let Some(handle) = self.get_handle() else {
+            return Err(Error::ValueUnIndexable(*self));
+        };
+        env.get_gc_object(handle)
+            .ok_or(Error::GcObjectNotFound(handle))?
+            .get_at_index(indexee, &env.heap)
+    }
+
+    pub fn to_index(self) -> Result<usize, Error> {
+        let value = self;
+        match value {
+            Value::Integer(i) => {
+                if i < 0 {
+                    return Err(Error::ValueMustBeUsize(value));
+                }
+                // Try into usize to handle platforms where usize < i64
+                usize::try_from(i).map_err(|_| Error::ValueMustBeUsize(value))
+            }
+            Value::Floating(f) => {
+                if f < 0.0 || f.fract() != 0.0 {
+                    return Err(Error::ValueMustBeUsize(value));
+                }
+                // We use 'as' for the final cast, but check bounds first
+                if f > usize::MAX as f64 {
+                    return Err(Error::ValueMustBeUsize(value));
+                }
+                Ok(f as usize)
+            }
+            _ => Err(Error::ValueMustBeUsize(value)),
         }
     }
 

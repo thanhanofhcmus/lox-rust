@@ -119,18 +119,25 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
 }
 
 fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
-    if !state.peek_2_token(&[Token::Equal]) {
-        let expr = parse_expr_stmt(state)?;
-        return Ok(expr);
+    let expr = parse_expr(state)?;
+
+    if !state.peek(&[Token::Equal]) {
+        return Ok(Statement::Expr(expr));
     }
-    let id_item = state.consume_token(Token::Identifier)?;
+
     state.consume_token(Token::Equal)?;
+
+    // validate the expression is a lvalue
+    let Expression::Clause(ClauseNode::Chaining(chaining_node)) = expr else {
+        // TODO: return actual error
+        panic!("not chaining node in the left side of assignment");
+    };
+
+    let node = convert_chaining(chaining_node)?;
+
     let expr = parse_expr(state)?;
     state.consume_token(Token::Semicolon)?;
-    Ok(Statement::ReassignIden(
-        IdentifierNode::new_from_name(id_item.span, state.get_input()),
-        expr,
-    ))
+    Ok(Statement::ReassignIden(node, expr))
 }
 
 fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
@@ -544,4 +551,28 @@ where
         parse_repeated_with_separator(state, Token::Comma, lower_fn, |t| t == right_paren)?;
     state.consume_token(right_paren)?;
     Ok(result)
+}
+
+fn convert_chaining(node: ChainingNode) -> Result<ChainingReassignTargetNode, ParseError> {
+    let base = match node.base {
+        ChainingBase::Primary(_) | ChainingBase::Group(_) => {
+            return Err(ParseError::ReassignRootIsNotAnIdentifier);
+        }
+        ChainingBase::Identifier(v) => v,
+    };
+
+    let mut follows = vec![];
+
+    for follow in node.follows {
+        match follow {
+            ChainingFollow::Identifier(_) | ChainingFollow::FnCall(_) => {
+                return Err(ParseError::ReassignFollowIsNotAnIndex);
+            }
+            ChainingFollow::Index(indexee_expr) => {
+                follows.push(*indexee_expr);
+            }
+        };
+    }
+
+    Ok(ChainingReassignTargetNode { base, follows })
 }

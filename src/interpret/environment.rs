@@ -83,10 +83,10 @@ macro_rules! decl_gc_type_methods {
             // Generates get_string, get_array, etc.
             pub fn [<get_ $name>](&self, handle: GcHandle) -> Result<&$type, Error> {
                 let Some(obj) = self.get_gc_object(handle) else {
-                    return Err(Error::NotFoundGcObject(handle));
+                    return Err(Error::GcObjectNotFound(handle));
                 };
                 let GcObject::$variant(inner) = obj else {
-                    return Err(Error::WrongTypeGcObject(
+                    return Err(Error::GcObjectWrongType(
                         handle,
                         obj.get_kind(),
                         $kind,
@@ -94,6 +94,23 @@ macro_rules! decl_gc_type_methods {
                 };
                 Ok(inner)
             }
+
+            // Generates get_string_mut
+            #[allow(dead_code)]
+            pub fn [<get_ $name _mut>](&mut self, handle: GcHandle) -> Result<&mut $type, Error> {
+                let Some(obj) = self.get_gc_object_mut(handle) else {
+                    return Err(Error::GcObjectNotFound(handle));
+                };
+                let GcObject::$variant(inner) = obj else {
+                    return Err(Error::GcObjectWrongType(
+                        handle,
+                        obj.get_kind(),
+                        $kind,
+                    ));
+                };
+                Ok(inner)
+            }
+
 
             // Generates insert_string_variable, etc.
             pub fn [<insert_ $name _variable>](&mut self, data: $type) -> Value {
@@ -178,7 +195,7 @@ impl Environment {
         assert!(self.scopes.len() == 1);
         module.variables = std::mem::take(&mut self.get_current_scope_mut().variables);
 
-        // TOOD: handle heap
+        // TODO: handle heap
 
         self.modules.insert(self.current_module_id, module);
     }
@@ -210,8 +227,8 @@ impl Environment {
             .expect("There must be at least one scope")
     }
 
-    pub fn get_variable_current_scope(&self, node: &IdentifierNode) -> Option<Value> {
-        self.get_current_scope().get_variable(node.get_id())
+    pub fn get_variable_current_scope(&self, id: impl Into<Id>) -> Option<Value> {
+        self.get_current_scope().get_variable(id.into())
     }
 
     pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<Value> {
@@ -249,14 +266,12 @@ impl Environment {
 
     pub fn insert_variable_current_scope(
         &mut self,
-        node: &IdentifierNode,
+        id: impl Into<Id>,
         value: Value,
     ) -> Option<Value> {
-        self.insert_variable_current_scope_by_id(node.get_id(), value)
-    }
-
-    pub fn insert_variable_current_scope_by_id(&mut self, id: Id, value: Value) -> Option<Value> {
-        let result = self.get_current_scope_mut().insert_variable(id, value);
+        let result = self
+            .get_current_scope_mut()
+            .insert_variable(id.into(), value);
         self.heap.shallow_copy_value(value);
 
         if self.heap.get_stats().number_of_used_objects >= GC_TRIGGER_POINT {
@@ -270,21 +285,26 @@ impl Environment {
 
     pub fn replace_variable_current_scope(
         &mut self,
-        node: &IdentifierNode,
+        id: impl Into<Id>,
         value: Value,
     ) -> Option<Value> {
-        if let Some(old_value) = self.get_variable_current_scope(node) {
+        let id = id.into();
+        if let Some(old_value) = self.get_variable_current_scope(id) {
             self.heap.shallow_dispose_value(old_value);
         };
-        self.insert_variable_current_scope(node, value)
+        self.insert_variable_current_scope(id, value)
     }
 
-    pub fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {
+    fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {
         self.heap.allocate(object)
     }
 
     pub fn get_gc_object(&self, handle: GcHandle) -> Option<&GcObject> {
         self.heap.get_object(handle)
+    }
+
+    pub fn get_gc_object_mut(&mut self, handle: GcHandle) -> Option<&mut GcObject> {
+        self.heap.get_object_mut(handle)
     }
 
     decl_gc_type_methods!(string, Str, String, GcKind::String, Str);

@@ -48,7 +48,7 @@ pub enum Error {
     #[error("Value `{0}` is not of the type non-negative integer")]
     ValueMustBeUsize(Value),
 
-    #[error("Arrayhas length `{0}` but received index `{1}`")]
+    #[error("Array has length `{0}` but received index `{1}`")]
     ArrayOutOfBound(usize, usize),
 
     #[error("Module `{0}` cannot be found in path `{1}`")]
@@ -79,8 +79,11 @@ pub enum Error {
     UseUnitValue,
 
     #[error("GcObject `{0:?}` did not exist in the heap")]
-    NotFoundGcObject(GcHandle),
+    GcObjectNotFound(GcHandle),
 
     #[error("GcObject `{0:?}` has type `{}` but expected type `{}`", .1.type_name(), .2.type_name())]
-    WrongTypeGcObject(GcHandle, GcKind, GcKind),
+    GcObjectWrongType(GcHandle, GcKind, GcKind),
+
+    #[error("GcObject with type `{}` did not exist in the heap", .0.type_name())]
+    GcObjectUnIndexable(GcKind),
 }

@@ -124,25 +124,32 @@ impl MapKey {
         }
     }
 
-    pub fn convert_from_value(value: Value, env: &Environment) -> Result<Self, Error> {
+    pub fn convert_from_simple_value(value: Value) -> Result<Self, Error> {
         let v = match value {
             Value::Nil => MapKey::Nil,
             Value::Integer(v) => MapKey::Integer(v),
             Value::Floating(v) => MapKey::Floating(v),
             Value::Bool(v) => MapKey::Bool(v),
+            _ => return Err(Error::ValueCannotBeUsedAsKey(value)),
+        };
+        Ok(v)
+    }
 
+    pub fn convert_from_value(value: Value, env: &Environment) -> Result<Self, Error> {
+        match value {
             Value::Str(handle) => {
                 let s = env.get_string(handle)?;
-                MapKey::Str(s.clone())
+                Ok(MapKey::Str(s.clone()))
             }
 
             Value::Array(_)
             | Value::Map(_)
             | Value::Unit
             | Value::Function(_)
-            | Value::BuiltinFunction(_) => return Err(Error::ValueCannotBeUsedAsKey(value)),
-        };
-        Ok(v)
+            | Value::BuiltinFunction(_) => Err(Error::ValueCannotBeUsedAsKey(value)),
+
+            _ => Self::convert_from_simple_value(value),
+        }
     }
 }
 

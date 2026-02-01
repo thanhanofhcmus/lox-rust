@@ -27,6 +27,12 @@ pub enum ParseError {
 
     #[error("Parse have leftover tokens start with {0} at {1}")]
     Unfinished(Token, Span),
+
+    #[error("Reassign root is not an identifier")]
+    ReassignRootIsNotAnIdentifier,
+
+    #[error("Reassign root is not a array or map index")]
+    ReassignFollowIsNotAnIndex,
 }
 
 impl ParseError {
@@ -41,6 +47,7 @@ impl ParseError {
             UnexpectedReturn(s) => s.to_start_row_col(input),
             Eof(_) => (0, 0),
             Unfinished(_, s) => s.to_start_row_col(input),
+            ReassignFollowIsNotAnIndex | ReassignRootIsNotAnIdentifier => (0, 0),
         }
     }
 }

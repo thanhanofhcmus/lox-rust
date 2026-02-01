@@ -3,7 +3,11 @@ use std::{
     ops::{AddAssign, SubAssign},
 };
 
-use crate::interpret::value::{Array, Function, VMap, Value};
+use crate::interpret::{
+    error::Error,
+    helper_values::MapKey,
+    value::{Array, Function, VMap, Value},
+};
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[debug("GcHandle({_0})")]
@@ -49,6 +53,59 @@ impl GcObject {
             GcObject::Function(_) => GcKind::Function,
         }
     }
+
+    pub fn get_at_index(&self, indexee: Value, heap: &Heap) -> Result<Value, Error> {
+        match self {
+            GcObject::Array(arr) => {
+                let idx = indexee.to_index()?;
+                match arr.get(idx) {
+                    None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
+                    Some(v) => Ok(v.to_owned()),
+                }
+            }
+            GcObject::Map(map) => {
+                let map_key = match indexee {
+                    Value::Str(handle) => {
+                        let obj = heap.get_object_or_error(handle)?;
+                        let GcObject::Str(key_string) = obj else {
+                            return Err(Error::GcObjectWrongType(
+                                handle,
+                                obj.get_kind(),
+                                GcKind::String,
+                            ));
+                        };
+                        // TODO: fix clone this
+                        MapKey::Str(key_string.clone())
+                    }
+                    _ => MapKey::convert_from_simple_value(indexee)?,
+                };
+
+                Ok(map.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil))
+            }
+            _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
+        }
+    }
+
+    pub fn replace_at_index(&mut self, indexee: Value, new_value: Value) -> Result<Value, Error> {
+        match self {
+            GcObject::Array(arr) => {
+                let idx = indexee.to_index()?;
+                if arr.len() <= idx {
+                    Err(Error::ArrayOutOfBound(arr.len(), idx))
+                } else {
+                    let old_value = std::mem::replace(&mut arr[idx], new_value);
+                    Ok(old_value)
+                }
+            }
+            GcObject::Map(_) => {
+                unimplemented!()
+                // let map_key = MapKey::convert_from_value(indexee.to_owned(), env)?;
+                // let old_value = map.insert(map_key, new_value).unwrap_or(Value::Nil);
+                // Ok(old_value)
+            }
+            _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -77,9 +134,9 @@ pub struct HeapStats {
     pub free_list_size: usize,
     pub number_of_total_objects: usize,
     pub number_of_used_objects: usize,
-    pub number_of_objects_to_delete: usize,
+    pub number_of_to_be_deleted_objects: usize,
     pub total_objects_stats: HashMap<GcKind, usize>,
-    pub objects_to_delete_stats: HashMap<GcKind, usize>,
+    pub to_be_deleted_objects_stats: HashMap<GcKind, usize>,
 }
 
 #[derive(Debug)]
@@ -102,10 +159,10 @@ impl Heap {
 
         let mut number_of_total_objects = 0;
         let mut number_of_used_objects = 0;
-        let mut number_of_objects_to_delete = 0;
+        let mut number_of_to_be_deleted_objects = 0;
 
         let mut total_objects_stats = HashMap::new();
-        let mut objects_to_delete_stats = HashMap::new();
+        let mut to_be_deleted_objects_stats = HashMap::new();
 
         for entry in self.slots.iter().flatten() {
             let kind = entry.object.get_kind();
@@ -114,8 +171,8 @@ impl Heap {
             total_objects_stats.entry(kind).or_insert(0).add_assign(1);
 
             if entry.is_marked_for_delete {
-                number_of_objects_to_delete += 1;
-                objects_to_delete_stats
+                number_of_to_be_deleted_objects += 1;
+                to_be_deleted_objects_stats
                     .entry(kind)
                     .or_insert(0)
                     .add_assign(1);
@@ -129,9 +186,9 @@ impl Heap {
             free_list_size,
             number_of_total_objects,
             number_of_used_objects,
-            number_of_objects_to_delete,
+            number_of_to_be_deleted_objects,
             total_objects_stats,
-            objects_to_delete_stats,
+            to_be_deleted_objects_stats,
         }
     }
 
@@ -194,12 +251,83 @@ impl Heap {
     }
 
     pub fn shallow_copy_value(&mut self, value: Value) {
-        // check if this is an lvalue, if yes, then promote it to not be lvale anymore
-        self.recursive_ref_update(value, true);
+        // check if this is an lvalue, if yes, then promote it to not be lvalue anymore
+        // TODO: recursively increase ref is wrong,
+        // what we really want to say is we want the value increase ref
+        // self.recursive_ref_count_update(value, true);
+        self.update_ref_count(value, true);
     }
 
     pub fn shallow_dispose_value(&mut self, value: Value) {
-        self.recursive_ref_update(value, false);
+        let some_entry = self.update_ref_count(value, false);
+        let Some(entry) = some_entry else {
+            return;
+        };
+        if entry.ref_count != 0 {
+            return;
+        }
+        // this object does not have any backing any more, mark as dead and remove the count
+        entry.is_marked_for_delete = true;
+        match &entry.object {
+            GcObject::Str(_) | GcObject::Function(_) => { /* do nothing */ }
+            GcObject::Array(arr) => {
+                for value in arr.clone() {
+                    self.shallow_dispose_value(value);
+                }
+            }
+            GcObject::Map(map) => {
+                // TODO: recursive update for map key as well
+                for (_, value) in map.clone() {
+                    self.shallow_dispose_value(value);
+                }
+            }
+        };
+    }
+
+    fn foo(&mut self, value: Value) -> Result<(GcHandle, Value), Error> {
+        let old_handle = value.get_handle().expect("Must be a handled value");
+        let old_object = self.get_object_or_error(old_handle)?;
+        let new_handle = self.allocate(old_object.clone());
+        let mut new_value = value;
+        new_value.replace_handle(new_handle);
+        Ok((new_handle, new_value))
+    }
+
+    pub fn deep_copy_reassign_object(
+        &mut self,
+        current_root_value: Value,
+        // chain always have aleast 1 value when get in to this function
+        chain: &[Value],
+        reassigning_value: Value,
+    ) -> Result<Value, Error> {
+        let (root_handle, root_value) = self.foo(current_root_value)?;
+
+        let mut current_handle = root_handle;
+
+        let (last, rest) = chain
+            .split_last()
+            .expect("chain must have at least 1 value when got to here");
+
+        for indexee in rest.iter().copied() {
+            let current_value = self
+                .get_object_or_error(current_handle)?
+                .get_at_index(indexee, self)?;
+
+            let (new_handle, new_value) = self.foo(current_value)?;
+
+            // TODO: dispose old value
+            _ = self
+                .get_object_mut_or_error(current_handle)?
+                .replace_at_index(indexee, new_value)?;
+
+            current_handle = new_handle;
+        }
+
+        _ = self
+            .get_object_mut_or_error(current_handle)?
+            .replace_at_index(*last, reassigning_value)?;
+
+        Ok(root_value)
     }
 
     pub fn get_object(&self, handle: GcHandle) -> Option<&GcObject> {
@@ -209,14 +337,29 @@ impl Heap {
         }
     }
 
-    fn recursive_ref_update(&mut self, value: Value, is_increase: bool) {
-        let Some(handle) = value.get_handle() else {
-            return;
-        };
+    pub fn get_object_mut(&mut self, handle: GcHandle) -> Option<&mut GcObject> {
+        match self.slots.get_mut(handle.0) {
+            Some(Some(v)) => Some(&mut v.object),
+            _ => None,
+        }
+    }
+
+    pub fn get_object_or_error(&self, handle: GcHandle) -> Result<&GcObject, Error> {
+        self.get_object(handle)
+            .ok_or(Error::GcObjectNotFound(handle))
+    }
+
+    pub fn get_object_mut_or_error(&mut self, handle: GcHandle) -> Result<&mut GcObject, Error> {
+        self.get_object_mut(handle)
+            .ok_or(Error::GcObjectNotFound(handle))
+    }
+
+    fn update_ref_count(&mut self, value: Value, is_increase: bool) -> Option<&mut HeapEntry> {
+        let handle = value.get_handle()?;
 
         let Some(Some(entry)) = self.slots.get_mut(handle.0) else {
             // TODO: maybe return error
-            return;
+            return None;
         };
 
         if is_increase {
@@ -225,19 +368,6 @@ impl Heap {
             entry.ref_count.sub_assign(1);
         }
 
-        match &entry.object {
-            GcObject::Str(_) | GcObject::Function(_) => { /* do nothing */ }
-            GcObject::Array(arr) => {
-                for value in arr.clone() {
-                    self.recursive_ref_update(value, is_increase);
-                }
-            }
-            GcObject::Map(map) => {
-                // TODO: recursive update for map key as well
-                for (_, value) in map.clone() {
-                    self.recursive_ref_update(value, is_increase);
-                }
-            }
-        };
+        Some(entry)
     }
 }
