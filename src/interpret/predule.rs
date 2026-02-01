@@ -21,6 +21,10 @@ pub fn create() -> HashMap<Id, Value> {
         Value::BuiltinFunction(dbg_gc_sweep),
     );
     preludes.insert(
+        Id::new("_dbg_gc_mark_sweep"),
+        Value::BuiltinFunction(dbg_gc_mark_sweep),
+    );
+    preludes.insert(
         Id::new("_dbg_heap_stats"),
         Value::BuiltinFunction(dbg_heap_stats),
     );
@@ -60,6 +64,14 @@ fn dbg_gc_mark(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Valu
 }
 
 fn dbg_gc_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+    itp.environment.heap.sweep();
+    Ok(Value::Nil)
+}
+
+fn dbg_gc_mark_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+    itp.environment
+        .heap
+        .mark(itp.environment.collect_all_variables());
     itp.environment.heap.sweep();
     Ok(Value::Nil)
 }
