@@ -1,13 +1,20 @@
-use std::collections::BTreeMap;
+use std::{cmp::Ordering, collections::BTreeMap};
 
 use derive_more::Display;
-
-use super::{error::Error, interpreter::Interpreter};
 
 use crate::{
     ast::BlockNode,
     id::Id,
-    interpret::{heap::GcHandle, helper_values::MapKey, Environment},
+    interpret::{
+        error::Error,
+        heap::GcHandle,
+        values::{
+            display_writer::DisplayWriter,
+            scalar::Scalar,
+            value_kind::{GetValueKind, ValueKind},
+        },
+        Environment, Interpreter,
+    },
 };
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
@@ -24,23 +31,10 @@ pub type VMap = BTreeMap<MapKey, Value>;
 
 #[derive(Display, derive_more::Debug, Clone, Copy)]
 pub enum Value {
-    #[display("nil")]
-    Nil,
-
     #[display("()")]
     Unit,
 
-    #[display("{}", _0)]
-    #[debug("Integer({})", _0)]
-    Integer(i64),
-
-    #[display("{}", _0)]
-    #[debug("Floating({})", _0)]
-    Floating(f64),
-
-    #[display("{}", _0)]
-    #[debug("Bool({})", _0)]
-    Bool(bool),
+    Scalar(Scalar),
 
     // TODO: Error crate needs display method and is using this format
     // we need to make error print the actual value or maybe keep printing String like this
@@ -66,6 +60,29 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn make_nil() -> Value {
+        Value::Scalar(Scalar::Nil)
+    }
+
+    pub fn make_bool(v: bool) -> Value {
+        Value::Scalar(Scalar::Bool(v))
+    }
+
+    pub fn make_integer(v: i64) -> Value {
+        Value::Scalar(Scalar::Integer(v))
+    }
+
+    pub fn make_floating(v: f64) -> Value {
+        Value::Scalar(Scalar::Floating(v))
+    }
+
+    pub fn get_bool(self) -> Option<bool> {
+        match self {
+            Value::Scalar(Scalar::Bool(v)) => Some(v),
+            _ => None,
+        }
+    }
+
     pub fn get_handle(self) -> Option<GcHandle> {
         match self {
             Value::Str(handle) => Some(handle),
@@ -90,12 +107,6 @@ impl Value {
         }
     }
 
-    pub fn is_scalar_type(&self) -> bool {
-        matches!(self, Value::Nil | Value::Unit | Value::Bool(_) | Value::Integer(_) | Value::Floating(_) if {
-            true
-        })
-    }
-
     pub fn is_function_type(&self) -> bool {
         matches!(self, Value::Function(_) | Value::BuiltinFunction(_) if {
             true
@@ -104,7 +115,7 @@ impl Value {
 
     pub fn function_eq(&self, other: &Self) -> bool {
         match (self, other) {
-            // 2 functions are considireded equals if they point to the same `blueprint`
+            // 2 functions are considered equals if they point to the same `blueprint`
             (Value::Function(l), Value::Function(r)) => l == r,
             (Value::BuiltinFunction(l), Value::BuiltinFunction(r)) => std::ptr::fn_addr_eq(*l, *r),
             _ => false,
@@ -112,14 +123,17 @@ impl Value {
     }
 
     pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, Error> {
-        if self.is_scalar_type() && other.is_scalar_type() {
-            return Ok(self.shallow_eq(other));
-        }
         if self.is_function_type() && other.is_function_type() {
             return Ok(self.function_eq(other));
         }
         use Value::*;
         match (self, other) {
+            // TODO
+            (Unit, _) => panic!("compare where lhs is unit"),
+            (_, Unit) => panic!("compare where rhs is unit"),
+
+            (Scalar(l), Scalar(r)) => Ok(l == r),
+
             (Str(l_handle), Str(r_handle)) => {
                 if l_handle == r_handle {
                     return Ok(true);
@@ -164,55 +178,29 @@ impl Value {
         }
     }
 
-    pub fn shallow_eq(&self, other: &Self) -> bool {
-        if self.is_function_type() && other.is_function_type() {
-            return self.function_eq(other);
-        }
-
-        use Value::*;
-        const NUMBER_DELTA: f64 = 1e-10;
-
-        match (self, other) {
-            // TODO
-            (Unit, _) => panic!("compare where lhs is unit"),
-            (_, Unit) => panic!("compare where rhs is unit"),
-
-            (Nil, Nil) => true,
-            (Bool(l), Bool(r)) => l == r,
-
-            (Integer(l), Integer(r)) => l == r,
-            (Floating(l), Integer(r)) => (l - (*r as f64)).abs() < NUMBER_DELTA,
-            (Integer(l), Floating(r)) => ((*l as f64) - r).abs() < NUMBER_DELTA,
-            (Floating(l), Floating(r)) => (*l - *r).abs() < NUMBER_DELTA,
-
-            (Str(l), Str(r)) => l == r,
-
-            (Array(l), Array(r)) => l == r,
-            (Map(l), Map(r)) => l == r,
-            _ => false,
-        }
-    }
-
     pub fn get_at_index(&self, indexee: Value, env: &Environment) -> Result<Value, Error> {
         let Some(handle) = self.get_handle() else {
             return Err(Error::ValueUnIndexable(*self));
         };
         env.get_gc_object(handle)
             .ok_or(Error::GcObjectNotFound(handle))?
-            .get_at_index(indexee, &env.heap)
+            .get_at_index(indexee)
     }
 
     pub fn to_index(self) -> Result<usize, Error> {
         let value = self;
-        match value {
-            Value::Integer(i) => {
+        let Value::Scalar(scalar) = value else {
+            return Err(Error::ValueMustBeUsize(value));
+        };
+        match scalar {
+            Scalar::Integer(i) => {
                 if i < 0 {
                     return Err(Error::ValueMustBeUsize(value));
                 }
                 // Try into usize to handle platforms where usize < i64
                 usize::try_from(i).map_err(|_| Error::ValueMustBeUsize(value))
             }
-            Value::Floating(f) => {
+            Scalar::Floating(f) => {
                 if f < 0.0 || f.fract() != 0.0 {
                     return Err(Error::ValueMustBeUsize(value));
                 }
@@ -225,16 +213,29 @@ impl Value {
             _ => Err(Error::ValueMustBeUsize(value)),
         }
     }
+}
 
-    pub fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
-        let convert = |e| Error::WriteFailed(self, e);
+impl GetValueKind for Value {
+    fn get_kind(&self) -> ValueKind {
+        match self {
+            Value::Unit => ValueKind::Unit,
+            Value::Scalar(v) => v.get_kind(),
+            Value::Str(_) => ValueKind::Str,
+            Value::Array(_) => ValueKind::Array,
+            Value::Map(_) => ValueKind::Map,
+            Value::Function(_) => ValueKind::Function,
+            Value::BuiltinFunction(_) => ValueKind::BuiltinFunction,
+        }
+    }
+}
+
+impl DisplayWriter for Value {
+    fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
+        let convert = |e| Error::WriteValueFailed(self, e);
 
         match self {
-            Value::Nil => write!(w, "nil").map_err(convert),
+            Value::Scalar(v) => v.write_display(env, w),
             Value::Unit => write!(w, "()").map_err(convert),
-            Value::Integer(v) => write!(w, "{}", v).map_err(convert),
-            Value::Floating(v) => write!(w, "{}", v).map_err(convert),
-            Value::Bool(v) => write!(w, "{}", v).map_err(convert),
             Value::Str(handle) => {
                 let s = env.get_string(handle)?;
                 w.write_all(s.as_bytes()).map_err(convert)
@@ -262,11 +263,14 @@ impl Value {
 
                 w.write_all(b"%{").map_err(convert)?;
                 if let Some((first_key, first_value)) = entries.next() {
-                    write!(w, "{} => ", first_key).map_err(convert)?;
+                    first_key.write_display(env, w)?;
+                    write!(w, " => ").map_err(convert)?;
                     first_value.write_display(env, w)?;
 
                     for (k, v) in entries {
-                        write!(w, ", {} => ", k).map_err(convert)?;
+                        write!(w, ", ").map_err(convert)?;
+                        k.write_display(env, w)?;
+                        write!(w, "=> ").map_err(convert)?;
                         v.write_display(env, w)?;
                     }
                 }
@@ -276,6 +280,88 @@ impl Value {
             }
             Value::Function(_) => write!(w, "function").map_err(convert),
             Value::BuiltinFunction(_) => write!(w, "builtin_function").map_err(convert),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MapKey {
+    Scalar(Scalar),
+    Str(GcHandle),
+}
+
+impl MapKey {
+    pub fn convert_from_value(value: Value, env: &mut Environment) -> Result<Self, Error> {
+        match value {
+            Value::Scalar(v) => Ok(Self::Scalar(v)),
+
+            Value::Str(handle) => {
+                env.shallow_copy_value(value);
+                Ok(MapKey::Str(handle))
+            }
+
+            Value::Array(_)
+            | Value::Map(_)
+            | Value::Unit
+            | Value::Function(_)
+            | Value::BuiltinFunction(_) => Err(Error::ValueCannotBeUsedAsKey(value)),
+        }
+    }
+}
+
+impl GetValueKind for MapKey {
+    fn get_kind(&self) -> ValueKind {
+        match self {
+            MapKey::Scalar(v) => v.get_kind(),
+            MapKey::Str(_) => ValueKind::Str,
+        }
+    }
+}
+
+impl DisplayWriter for MapKey {
+    fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
+        match self {
+            MapKey::Scalar(v) => v.write_display(env, w),
+            MapKey::Str(handle) => {
+                let s = env.get_string(handle)?;
+                w.write_all(s.as_bytes())
+                    .map_err(|e| Error::WriteValueFailed(Value::Str(handle), e))
+            }
+        }
+    }
+}
+
+impl PartialEq for MapKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Scalar(l), Self::Scalar(r)) => l == r,
+            (Self::Str(l), Self::Str(r)) => l == r,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for MapKey {}
+
+impl PartialOrd for MapKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MapKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use MapKey::*;
+
+        let rank_cmp = self.get_kind().cmp(&other.get_kind());
+        if rank_cmp != Ordering::Equal {
+            return rank_cmp;
+        }
+
+        match (self, other) {
+            (Scalar(l), Scalar(r)) => l.cmp(r),
+            (Str(l), Str(r)) => l.cmp(r),
+            _ => Ordering::Equal,
         }
     }
 }

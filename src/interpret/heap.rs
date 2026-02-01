@@ -5,8 +5,7 @@ use std::{
 
 use crate::interpret::{
     error::Error,
-    helper_values::MapKey,
-    value::{Array, Function, VMap, Value},
+    values::{Array, Function, MapKey, VMap, Value},
 };
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,7 +53,7 @@ impl GcObject {
         }
     }
 
-    pub fn get_at_index(&self, indexee: Value, heap: &Heap) -> Result<Value, Error> {
+    pub fn get_at_index(&self, indexee: Value) -> Result<Value, Error> {
         match self {
             GcObject::Array(arr) => {
                 let idx = indexee.to_index()?;
@@ -66,21 +65,17 @@ impl GcObject {
             GcObject::Map(map) => {
                 let map_key = match indexee {
                     Value::Str(handle) => {
-                        let obj = heap.get_object_or_error(handle)?;
-                        let GcObject::Str(key_string) = obj else {
-                            return Err(Error::GcObjectWrongType(
-                                handle,
-                                obj.get_kind(),
-                                GcKind::String,
-                            ));
-                        };
-                        // TODO: fix clone this
-                        MapKey::Str(key_string.clone())
+                        // TODO: we might need to increase rc here
+                        MapKey::Str(handle)
                     }
-                    _ => MapKey::convert_from_simple_value(indexee)?,
+                    Value::Scalar(v) => MapKey::Scalar(v),
+                    _ => return Err(Error::ValueUnIndexable(indexee)),
                 };
 
-                Ok(map.get(&map_key).map(Value::to_owned).unwrap_or(Value::Nil))
+                Ok(map
+                    .get(&map_key)
+                    .map(Value::to_owned)
+                    .unwrap_or(Value::make_nil()))
             }
             _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
         }
@@ -311,7 +306,7 @@ impl Heap {
         for indexee in rest.iter().copied() {
             let current_value = self
                 .get_object_or_error(current_handle)?
-                .get_at_index(indexee, self)?;
+                .get_at_index(indexee)?;
 
             let (new_handle, new_value) = self.foo(current_value)?;
 

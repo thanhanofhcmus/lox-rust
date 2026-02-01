@@ -1,10 +1,9 @@
 use super::environment::Environment;
 use super::error::Error;
-use super::value::Value;
+use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
-use crate::interpret::helper_values::MapKey;
-use crate::interpret::value::{BuiltinFn, Function, VMap};
+use crate::interpret::values::{BuiltinFn, Function, MapKey, Scalar, VMap};
 use crate::parse;
 use crate::span::Span;
 use crate::token::Token;
@@ -286,10 +285,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_primary_expr(&mut self, node: &PrimaryNode) -> Result<ValueReturn, Error> {
         let val = match node {
-            PrimaryNode::Nil => Value::Nil,
-            PrimaryNode::Bool(v) => Value::Bool(*v),
-            PrimaryNode::Integer(v) => Value::Integer(*v),
-            PrimaryNode::Floating(v) => Value::Floating(*v),
+            PrimaryNode::Nil => Value::make_nil(),
+            PrimaryNode::Bool(v) => Value::make_bool(*v),
+            PrimaryNode::Integer(v) => Value::make_integer(*v),
+            PrimaryNode::Floating(v) => Value::make_floating(*v),
             PrimaryNode::Str(v) => self.interpret_string_literal(*v)?,
             PrimaryNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
             PrimaryNode::MapLiteral(node) => self.interpret_map_literal(node)?,
@@ -402,12 +401,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_unary_op(&mut self, node: &ClauseNode, op: Token) -> Result<Value, Error> {
         let res = self.interpret_clause_expr(node)?.get_or_error()?;
         match op {
-            Token::Not => match res {
-                Value::Bool(v) => Ok(Value::Bool(!v)),
+            Token::Not => match res.get_bool() {
+                Some(v) => Ok(Value::make_bool(!v)),
                 _ => Err(Error::InvalidOperationOnType(op, res)),
             },
             Token::Minus => match res {
-                Value::Floating(v) => Ok(Value::Floating(-v)),
+                Value::Scalar(Scalar::Integer(v)) => Ok(Value::make_integer(-v)),
+                Value::Scalar(Scalar::Floating(v)) => Ok(Value::make_floating(-v)),
                 _ => Err(Error::InvalidOperationOnType(op, res)),
             },
             _ => Err(Error::UnknownOperation(op)),
@@ -429,9 +429,9 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Token::Slash => divide(lhs_val, rhs_val),
             Token::Percentage => modulo(lhs_val, rhs_val),
             Token::And | Token::Or => and_or(lhs_val, op, rhs_val),
-            Token::EqualEqual | Token::BangEqual => {
-                self.interpret_cmp(lhs_val, op, rhs_val).map(Value::Bool)
-            }
+            Token::EqualEqual | Token::BangEqual => self
+                .interpret_cmp(lhs_val, op, rhs_val)
+                .map(Value::make_bool),
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
                 ordering(lhs_val, op, rhs_val)
             }
@@ -480,13 +480,16 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_add(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
-        use Value::*;
+        use Scalar::*;
         match (&lhs, &rhs) {
-            (Integer(l), Integer(r)) => Ok(Integer(l + r)),
-            (Floating(l), Integer(r)) => Ok(Floating(l + (*r as f64))),
-            (Integer(l), Floating(r)) => Ok(Floating((*l as f64) + r)),
-            (Floating(l), Floating(r)) => Ok(Floating(l + r)),
-            (Str(l), Str(r)) => self.interpret_add_string(*l, *r),
+            (Value::Scalar(l_s), Value::Scalar(r_s)) => match (l_s, r_s) {
+                (Integer(l), Integer(r)) => Ok(Value::make_integer(l + r)),
+                (Floating(l), Integer(r)) => Ok(Value::make_floating(l + (*r as f64))),
+                (Integer(l), Floating(r)) => Ok(Value::make_floating((*l as f64) + r)),
+                (Floating(l), Floating(r)) => Ok(Value::make_floating(l + r)),
+                _ => Err(Error::MismatchType(Token::Plus, lhs, rhs)),
+            },
+            (Value::Str(l), Value::Str(r)) => self.interpret_add_string(*l, *r),
             _ => Err(Error::MismatchType(Token::Plus, lhs, rhs)),
         }
     }
@@ -504,13 +507,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             .get_variable_all_scope(node)
             .map(|v| v.to_owned())
             .to_owned()
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::make_nil())
     }
 
     fn is_truthy(&mut self, expr: &ClauseNode) -> Result<bool, Error> {
         let res = self.interpret_clause_expr(expr)?;
         let cond_value = res.get_or_error()?;
-        let Value::Bool(cond_bin) = cond_value else {
+        let Some(cond_bin) = cond_value.get_bool() else {
             return Err(Error::ConditionNotBool(cond_value));
         };
         Ok(cond_bin)
@@ -519,91 +522,99 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
 fn ordering(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
     let from_ord = |o: std::cmp::Ordering| match op {
-        Token::Less => Ok(Value::Bool(o.is_lt())),
-        Token::LessEqual => Ok(Value::Bool(o.is_le())),
-        Token::Greater => Ok(Value::Bool(o.is_gt())),
-        Token::GreaterEqual => Ok(Value::Bool(o.is_ge())),
+        Token::Less => Ok(Value::make_bool(o.is_lt())),
+        Token::LessEqual => Ok(Value::make_bool(o.is_le())),
+        Token::Greater => Ok(Value::make_bool(o.is_gt())),
+        Token::GreaterEqual => Ok(Value::make_bool(o.is_ge())),
         _ => Err(Error::UnknownOperation(op)),
     };
     use Value::*;
     match (lhs, rhs) {
-        (Integer(l), Integer(r)) => from_ord(l.cmp(&r)),
-        (Floating(l), Integer(r)) => from_ord(l.total_cmp(&(r as f64))),
-        (Integer(l), Floating(r)) => from_ord((l as f64).total_cmp(&r)),
-        (Floating(l), Floating(r)) => from_ord(l.total_cmp(&r)),
-
-        // TODO: fix this
+        (Scalar(l), Scalar(r)) => from_ord(l.cmp(&r)),
+        // TODO: fix this, this is comparing handles, should compare strings instead
         (Str(l), Str(r)) => from_ord(l.cmp(&r)),
         _ => Err(Error::InvalidOperationOnType(op, lhs)),
     }
 }
 
 fn and_or(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
-    let Value::Bool(l) = lhs else {
+    let Some(l) = lhs.get_bool() else {
         return Err(Error::InvalidOperationOnType(op, lhs));
     };
-    let Value::Bool(r) = rhs else {
+    let Some(r) = rhs.get_bool() else {
         return Err(Error::InvalidOperationOnType(op, rhs));
     };
 
     match op {
-        Token::And => Ok(Value::Bool(l && r)),
-        Token::Or => Ok(Value::Bool(l || r)),
+        Token::And => Ok(Value::make_bool(l && r)),
+        Token::Or => Ok(Value::make_bool(l || r)),
         _ => Err(Error::UnknownOperation(op)),
     }
 }
 
 fn subtract(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Value::*;
-    match (lhs, rhs) {
-        (Integer(l), Integer(r)) => Ok(Integer(l - r)),
-        (Floating(l), Integer(r)) => Ok(Floating(l - (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((l as f64) - r)),
-        (Floating(l), Floating(r)) => Ok(Floating(l - r)),
+    use Scalar::*;
+    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
+        return Err(Error::MismatchType(Token::Minus, lhs, rhs));
+    };
+    match (l_scalar, r_scalar) {
+        (Integer(l), Integer(r)) => Ok(Value::make_integer(l - r)),
+        (Floating(l), Integer(r)) => Ok(Value::make_floating(l - (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) - r)),
+        (Floating(l), Floating(r)) => Ok(Value::make_floating(l - r)),
         _ => Err(Error::MismatchType(Token::Minus, lhs, rhs)),
     }
 }
 
 fn times(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Value::*;
-    match (lhs, rhs) {
-        (Integer(l), Integer(r)) => Ok(Integer(l * r)),
-        (Floating(l), Integer(r)) => Ok(Floating(l * (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((l as f64) * r)),
-        (Floating(l), Floating(r)) => Ok(Floating(l * r)),
+    use Scalar::*;
+    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
+        return Err(Error::MismatchType(Token::Minus, lhs, rhs));
+    };
+    match (l_scalar, r_scalar) {
+        (Integer(l), Integer(r)) => Ok(Value::make_integer(l * r)),
+        (Floating(l), Integer(r)) => Ok(Value::make_floating(l * (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) * r)),
+        (Floating(l), Floating(r)) => Ok(Value::make_floating(l * r)),
         _ => Err(Error::MismatchType(Token::Star, lhs, rhs)),
     }
 }
 
 fn divide(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Value::*;
-    match rhs {
+    use Scalar::*;
+    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
+        return Err(Error::MismatchType(Token::Minus, lhs, rhs));
+    };
+    match r_scalar {
         Integer(0) => return Err(Error::DivideByZero),
         Floating(0.0) => return Err(Error::DivideByZero),
         _ => {}
     }
-    match (lhs, rhs) {
+    match (l_scalar, r_scalar) {
         (Integer(l), Integer(r)) => {
             if l % r == 0 {
-                Ok(Integer(l / r))
+                Ok(Value::make_integer(l / r))
             } else {
-                Ok(Floating(l as f64 / r as f64))
+                Ok(Value::make_floating(l as f64 / r as f64))
             }
         }
-        (Floating(l), Integer(r)) => Ok(Floating(l / (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((l as f64) / r)),
-        (Floating(l), Floating(r)) => Ok(Floating(l / r)),
+        (Floating(l), Integer(r)) => Ok(Value::make_floating(l / (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) / r)),
+        (Floating(l), Floating(r)) => Ok(Value::make_floating(l / r)),
         _ => Err(Error::MismatchType(Token::Slash, lhs, rhs)),
     }
 }
 
 fn modulo(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Value::*;
-    match (lhs, rhs) {
-        (Integer(l), Integer(r)) => Ok(Integer(l % r)),
-        (Floating(l), Integer(r)) => Ok(Floating(l % (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Floating((l as f64) % r)),
-        (Floating(l), Floating(r)) => Ok(Floating(l % r)),
+    use Scalar::*;
+    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
+        return Err(Error::MismatchType(Token::Minus, lhs, rhs));
+    };
+    match (l_scalar, r_scalar) {
+        (Integer(l), Integer(r)) => Ok(Value::make_integer(l % r)),
+        (Floating(l), Integer(r)) => Ok(Value::make_floating(l % (r as f64))),
+        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) % r)),
+        (Floating(l), Floating(r)) => Ok(Value::make_floating(l % r)),
         _ => Err(Error::MismatchType(Token::PercentLPointParent, lhs, rhs)),
     }
 }

@@ -1,10 +1,9 @@
 mod environment;
 mod error;
 mod heap;
-mod helper_values;
 mod interpreter;
 mod predule;
-mod value;
+mod values;
 
 pub use environment::Environment;
 pub use interpreter::Interpreter;

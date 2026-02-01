@@ -1,8 +1,13 @@
+use crate::interpret::values::DisplayWriter;
 use std::collections::HashMap;
 
 use crate::{
     id::Id,
-    interpret::{error::Error, helper_values::SerialValue, interpreter, value::Value},
+    interpret::{
+        error::Error,
+        interpreter,
+        values::{SerialValue, Value},
+    },
 };
 
 pub fn create() -> HashMap<Id, Value> {
@@ -35,7 +40,7 @@ pub fn create() -> HashMap<Id, Value> {
 fn dbg_state_fn(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
     let env = &itp.environment;
     dbg!(&env);
-    Ok(Value::Nil)
+    Ok(Value::make_nil())
 }
 
 fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
@@ -47,25 +52,25 @@ fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
     }
     writeln!(print_writer).unwrap();
 
-    Ok(Value::Nil)
+    Ok(Value::make_nil())
 }
 
 fn dbg_heap_stats(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
     let stats = itp.environment.heap.get_stats();
     dbg!(stats);
-    Ok(Value::Nil)
+    Ok(Value::make_nil())
 }
 
 fn dbg_gc_mark(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
     itp.environment
         .heap
         .mark(itp.environment.collect_all_variables());
-    Ok(Value::Nil)
+    Ok(Value::make_nil())
 }
 
 fn dbg_gc_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
     itp.environment.heap.sweep();
-    Ok(Value::Nil)
+    Ok(Value::make_nil())
 }
 
 fn dbg_gc_mark_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
@@ -73,7 +78,7 @@ fn dbg_gc_mark_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Resul
         .heap
         .mark(itp.environment.collect_all_variables());
     itp.environment.heap.sweep();
-    Ok(Value::Nil)
+    Ok(Value::make_nil())
 }
 
 fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
@@ -90,7 +95,7 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
     }
     writeln!(print_writer).unwrap();
 
-    Ok(Value::Nil)
+    Ok(Value::make_nil())
 }
 
 fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
@@ -102,9 +107,14 @@ fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Val
     let condition = args_iter.next().unwrap();
     let message_val = args_iter.next().unwrap();
 
-    match condition {
-        Value::Bool(true) => Ok(Value::Nil), // Assertion passed
-        Value::Bool(false) => print_fn(itp, vec![message_val]),
+    match condition.get_bool() {
+        Some(v) => {
+            if v {
+                Ok(Value::make_nil())
+            } else {
+                print_fn(itp, vec![message_val])
+            }
+        }
         _ => {
             let warn_msg = itp.environment.insert_string_variable(
                 "Assertion check value did not evaluated to boolean".into(),
@@ -118,12 +128,12 @@ fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Val
 fn from_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
     let Some(value) = args.first() else {
         // TODO: maybe throw error here
-        return Ok(Value::Nil);
+        return Ok(Value::make_nil());
     };
     let value = *value;
     let Value::Str(handle) = value else {
         // TODO: maybe throw error here
-        return Ok(Value::Nil);
+        return Ok(Value::make_nil());
     };
     let s = itp.environment.get_string(handle)?;
     let serial_value = serde_json::from_str::<SerialValue>(s)
@@ -136,7 +146,7 @@ fn from_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
 
 fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
     if args.is_empty() {
-        return Ok(Value::Nil);
+        return Ok(Value::make_nil());
     }
     let value = args[0];
 
@@ -145,7 +155,8 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
     // maybe also throw error here
     let is_print_pretty = args
         .get(1)
-        .map(|v| if let Value::Bool(b) = v { *b } else { false })
+        .map(|v| v.get_bool())
+        .unwrap_or_default()
         .unwrap_or(false);
 
     let result = if is_print_pretty {

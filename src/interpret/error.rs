@@ -1,4 +1,4 @@
-use super::value::Value;
+use super::values::Value;
 use thiserror::Error;
 
 use crate::{
@@ -73,7 +73,7 @@ pub enum Error {
     DeserializeFailed(Value, String),
 
     #[error("Write value `{0}` failed with error: {1}")]
-    WriteFailed(Value, std::io::Error),
+    WriteValueFailed(Value, std::io::Error),
 
     #[error("Value of type unit `()` should not be used")]
     UseUnitValue,

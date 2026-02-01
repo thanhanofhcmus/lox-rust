@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use super::value::Value;
+use super::values::Value;
 use crate::{
     ast::IdentifierNode,
     id::Id,
@@ -12,7 +12,7 @@ use crate::{
         error::Error,
         heap::{GcHandle, GcKind, GcObject, Heap},
         predule,
-        value::{Array, Function, VMap},
+        values::{Array, Function, VMap},
     },
 };
 
@@ -272,6 +272,13 @@ impl Environment {
         let result = self
             .get_current_scope_mut()
             .insert_variable(id.into(), value);
+
+        self.shallow_copy_value(value);
+
+        result
+    }
+
+    pub fn shallow_copy_value(&mut self, value: Value) {
         self.heap.shallow_copy_value(value);
 
         if self.heap.get_stats().number_of_used_objects >= GC_TRIGGER_POINT {
@@ -279,8 +286,6 @@ impl Environment {
             self.heap.mark(root_values);
             self.heap.sweep();
         }
-
-        result
     }
 
     pub fn replace_variable_current_scope(
