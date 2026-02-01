@@ -24,21 +24,27 @@ fn main() -> DynResult {
     debug!("{:?}", input);
 
     match input.as_str() {
-        "-i" => repl(),
+        "-i" => repl(args),
         "-f" => read_from_file(args.get(2).expect("must provide file name")),
         _ => panic!("expect a mode"),
     }
 }
 
-fn repl() -> DynResult {
+fn repl(args: Vec<String>) -> DynResult {
     info!("Running in REPL mode");
+
+    let rc = Rc::new(RefCell::new(std::io::stdout()));
+    let mut itp_env = interpret::Environment::new(rc);
 
     let mut rl = DefaultEditor::new()?;
     rl.add_history_entry("_dbg_heap_stats();")?;
     rl.add_history_entry("_dbg_state();")?;
 
-    let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp_env = interpret::Environment::new(rc);
+    if let Some(line) = args.get(2) {
+        rl.add_history_entry(line)?;
+        _ = run_stmt(line.trim_end(), &mut itp_env);
+    }
+
     let mut line: String;
 
     loop {
