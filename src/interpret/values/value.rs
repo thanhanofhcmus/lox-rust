@@ -270,7 +270,7 @@ impl DisplayWriter for Value {
                     for (k, v) in entries {
                         write!(w, ", ").map_err(convert)?;
                         k.write_display(env, w)?;
-                        write!(w, "=> ").map_err(convert)?;
+                        write!(w, " => ").map_err(convert)?;
                         v.write_display(env, w)?;
                     }
                 }
