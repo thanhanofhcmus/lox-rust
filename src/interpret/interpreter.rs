@@ -357,7 +357,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     ) -> Result<Value, Error> {
         let func = self.environment.get_function(handle)?;
 
-        // TODO:
+        // TODO: remove clone
         let Function { arg_ids, body } = func.clone();
 
         if arg_ids.len() != node.args.len() {
@@ -433,7 +433,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 .interpret_cmp(lhs_val, op, rhs_val)
                 .map(Value::make_bool),
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
-                ordering(lhs_val, op, rhs_val)
+                self.interpret_ordering(lhs_val, op, rhs_val)
             }
             _ => Err(Error::UnknownOperation(op)),
         }
@@ -502,6 +502,27 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             .insert_string_variable(l_str.to_owned() + r_str))
     }
 
+    fn interpret_ordering(&mut self, lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
+        let from_ord = |o: std::cmp::Ordering| match op {
+            Token::Less => Ok(Value::make_bool(o.is_lt())),
+            Token::LessEqual => Ok(Value::make_bool(o.is_le())),
+            Token::Greater => Ok(Value::make_bool(o.is_gt())),
+            Token::GreaterEqual => Ok(Value::make_bool(o.is_ge())),
+            _ => Err(Error::UnknownOperation(op)),
+        };
+        use Value::*;
+        match (lhs, rhs) {
+            (Scalar(l), Scalar(r)) => from_ord(l.cmp(&r)),
+            // TODO: fix this, this is comparing handles, should compare strings instead
+            (Str(l_handle), Str(r_handle)) => {
+                let l_str = self.environment.get_string(l_handle)?;
+                let r_str = self.environment.get_string(r_handle)?;
+                from_ord(l_str.cmp(r_str))
+            }
+            _ => Err(Error::InvalidOperationOnType(op, lhs)),
+        }
+    }
+
     fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
         self.environment
             .get_variable_all_scope(node)
@@ -517,23 +538,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             return Err(Error::ConditionNotBool(cond_value));
         };
         Ok(cond_bin)
-    }
-}
-
-fn ordering(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
-    let from_ord = |o: std::cmp::Ordering| match op {
-        Token::Less => Ok(Value::make_bool(o.is_lt())),
-        Token::LessEqual => Ok(Value::make_bool(o.is_le())),
-        Token::Greater => Ok(Value::make_bool(o.is_gt())),
-        Token::GreaterEqual => Ok(Value::make_bool(o.is_ge())),
-        _ => Err(Error::UnknownOperation(op)),
-    };
-    use Value::*;
-    match (lhs, rhs) {
-        (Scalar(l), Scalar(r)) => from_ord(l.cmp(&r)),
-        // TODO: fix this, this is comparing handles, should compare strings instead
-        (Str(l), Str(r)) => from_ord(l.cmp(&r)),
-        _ => Err(Error::InvalidOperationOnType(op, lhs)),
     }
 }
 

@@ -85,10 +85,10 @@ impl Value {
 
     pub fn get_handle(self) -> Option<GcHandle> {
         match self {
-            Value::Str(handle) => Some(handle),
-            Value::Array(handle) => Some(handle),
-            Value::Function(handle) => Some(handle),
-            Value::Map(handle) => Some(handle),
+            Value::Str(handle)
+            | Value::Array(handle)
+            | Value::Map(handle)
+            | Value::Function(handle) => Some(handle),
             _ => None,
         }
     }
