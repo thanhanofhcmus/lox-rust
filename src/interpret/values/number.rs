@@ -6,11 +6,7 @@ use std::{
 
 use crate::interpret::{
     error::Error,
-    values::{
-        display_writer::DisplayWriter,
-        value_kind::{GetValueKind, ValueKind},
-        Scalar, Value,
-    },
+    values::{display_writer::DisplayWriter, Scalar, Value},
 };
 
 #[derive(derive_more::Debug, derive_more::Display, Clone, Copy, Serialize, Deserialize)]
@@ -137,15 +133,6 @@ impl std::ops::Neg for Number {
         match self {
             Integer(v) => Integer(-v),
             Floating(v) => Floating(-v),
-        }
-    }
-}
-
-impl GetValueKind for Number {
-    fn get_kind(&self) -> ValueKind {
-        match self {
-            Number::Integer(_) => ValueKind::Integer,
-            Number::Floating(_) => ValueKind::Floating,
         }
     }
 }

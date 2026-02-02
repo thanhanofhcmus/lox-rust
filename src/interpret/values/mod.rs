@@ -3,7 +3,6 @@ mod number;
 mod scalar;
 mod serial;
 mod value;
-mod value_kind;
 
 pub use display_writer::DisplayWriter;
 pub use number::Number;

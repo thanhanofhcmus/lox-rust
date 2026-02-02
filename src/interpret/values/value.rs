@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use derive_more::Display;
 
@@ -9,12 +9,7 @@ use crate::{
         error::Error,
         heap::GcHandle,
         string_interner::StrId,
-        values::{
-            display_writer::DisplayWriter,
-            number::Number,
-            scalar::Scalar,
-            value_kind::{GetValueKind, ValueKind},
-        },
+        values::{display_writer::DisplayWriter, number::Number, scalar::Scalar},
         Environment, Interpreter,
     },
 };
@@ -168,20 +163,6 @@ impl Value {
     }
 }
 
-impl GetValueKind for Value {
-    fn get_kind(&self) -> ValueKind {
-        match self {
-            Value::Unit => ValueKind::Unit,
-            Value::Scalar(v) => v.get_kind(),
-            Value::Str(_) => ValueKind::Str,
-            Value::Array(_) => ValueKind::Array,
-            Value::Map(_) => ValueKind::Map,
-            Value::Function(_) => ValueKind::Function,
-            Value::BuiltinFunction(_) => ValueKind::BuiltinFunction,
-        }
-    }
-}
-
 impl DisplayWriter for Value {
     fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
         let convert = |e| Error::WriteValueFailed(self, e);
@@ -237,7 +218,7 @@ impl DisplayWriter for Value {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MapKey {
     Scalar(Scalar),
     Str(StrId),
@@ -257,15 +238,6 @@ impl MapKey {
     }
 }
 
-impl GetValueKind for MapKey {
-    fn get_kind(&self) -> ValueKind {
-        match self {
-            MapKey::Scalar(v) => v.get_kind(),
-            MapKey::Str(_) => ValueKind::Str,
-        }
-    }
-}
-
 impl DisplayWriter for MapKey {
     fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
         match self {
@@ -275,41 +247,6 @@ impl DisplayWriter for MapKey {
                 w.write_all(s.as_bytes())
                     .map_err(|e| Error::WriteValueFailed(Value::Str(handle), e))
             }
-        }
-    }
-}
-
-impl PartialEq for MapKey {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Scalar(l), Self::Scalar(r)) => l == r,
-            (Self::Str(l), Self::Str(r)) => l == r,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for MapKey {}
-
-impl PartialOrd for MapKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for MapKey {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use MapKey::*;
-
-        let rank_cmp = self.get_kind().cmp(&other.get_kind());
-        if rank_cmp != Ordering::Equal {
-            return rank_cmp;
-        }
-
-        match (self, other) {
-            (Scalar(l), Scalar(r)) => l.cmp(r),
-            (Str(l), Str(r)) => l.cmp(r),
-            _ => Ordering::Equal,
         }
     }
 }

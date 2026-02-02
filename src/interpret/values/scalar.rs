@@ -2,11 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::interpret::{
     error::Error,
-    values::{
-        number::Number,
-        value_kind::{GetValueKind, ValueKind},
-        DisplayWriter, Value,
-    },
+    values::{number::Number, DisplayWriter, Value},
 };
 
 #[derive(
@@ -33,16 +29,6 @@ pub enum Scalar {
     #[display("{}", _0)]
     #[debug("Bool({})", _0)]
     Bool(bool),
-}
-
-impl GetValueKind for Scalar {
-    fn get_kind(&self) -> ValueKind {
-        match self {
-            Scalar::Nil => ValueKind::Nil,
-            Scalar::Number(v) => v.get_kind(),
-            Scalar::Bool(_) => ValueKind::Bool,
-        }
-    }
 }
 
 impl DisplayWriter for Scalar {

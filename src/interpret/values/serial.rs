@@ -71,6 +71,7 @@ impl SerialValue {
                 }
                 SerialValue::Array(vs)
             }
+
             Value::Map(handle) => {
                 let map = env.get_map(handle)?;
                 let mut vsm = BTreeMap::<SerialMapKey, SerialValue>::new();
@@ -103,6 +104,7 @@ impl SerialValue {
                 }
                 env.insert_array_variable(arr)
             }
+
             SerialValue::Map(m) => {
                 let mut map = BTreeMap::new();
                 for (k, v) in m {
