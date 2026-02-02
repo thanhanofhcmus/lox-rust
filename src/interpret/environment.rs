@@ -285,7 +285,7 @@ impl Environment {
     }
 
     fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {
-        self.heap.allocate(object)
+        self.heap.insert_object(object)
     }
 
     pub fn get_gc_object(&self, handle: GcHandle) -> Option<&GcObject> {

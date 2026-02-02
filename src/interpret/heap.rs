@@ -15,7 +15,6 @@ pub struct GcHandle(usize);
 
 #[derive(derive_more::Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum GcKind {
-    String,
     Array,
     Map,
     Function,
@@ -24,7 +23,6 @@ pub enum GcKind {
 impl GcKind {
     pub fn type_name(&self) -> &'static str {
         match self {
-            GcKind::String => "String",
             GcKind::Array => "Array",
             GcKind::Map => "Map",
             GcKind::Function => "Function",
@@ -218,7 +216,7 @@ impl Heap {
     }
 
     /// Move the GcObject to the heap
-    pub fn allocate(&mut self, object: GcObject) -> GcHandle {
+    pub fn insert_object(&mut self, object: GcObject) -> GcHandle {
         if let Some(index) = self.free_list.pop() {
             self.slots[index] = Some(HeapEntry::new(object));
             return GcHandle(index);
@@ -266,7 +264,7 @@ impl Heap {
     fn copy_by_value(&mut self, value: Value) -> Result<(GcHandle, Value), Error> {
         let old_handle = value.get_handle().expect("Must be a handled value");
         let old_object = self.get_object_or_error(old_handle)?;
-        let new_handle = self.allocate(old_object.clone());
+        let new_handle = self.insert_object(old_object.clone());
         let mut new_value = value;
         new_value.replace_handle(new_handle);
         Ok((new_handle, new_value))
