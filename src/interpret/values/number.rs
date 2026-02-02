@@ -20,6 +20,23 @@ pub enum Number {
     #[debug("Floating({})", _0)]
     Floating(f64),
 }
+
+impl Number {
+    pub fn to_f64(self) -> f64 {
+        match self {
+            Self::Integer(v) => v as f64,
+            Self::Floating(v) => v,
+        }
+    }
+
+    pub fn is_zero(self) -> bool {
+        match self {
+            Number::Integer(v) => v == 0,
+            Number::Floating(v) => v == 0.0,
+        }
+    }
+}
+
 macro_rules! impl_binary_op {
     ($trait:ident, $method:ident) => {
         impl $trait for Number {
@@ -57,33 +74,25 @@ impl Div for Number {
     }
 }
 
-impl Number {
-    pub fn to_f64(self) -> f64 {
-        match self {
-            Self::Integer(v) => v as f64,
-            Self::Floating(v) => v,
-        }
-    }
+impl TryInto<usize> for Number {
+    type Error = Error;
 
-    pub fn is_zero(self) -> bool {
+    fn try_into(self) -> Result<usize, Self::Error> {
+        let err = Error::ValueMustBeUsize(Value::make_number(self));
+        let ret = Err(Error::ValueMustBeUsize(Value::make_number(self)));
         match self {
-            Number::Integer(v) => v == 0,
-            Number::Floating(v) => v == 0.0,
-        }
-    }
-
-    // TODO: move to use trait and return error
-    pub fn try_to_usize(self) -> Option<usize> {
-        match self {
-            Number::Integer(i) => match i < -1 {
-                true => None,
-                false => usize::try_from(i).ok(),
-            },
+            Number::Integer(i) => {
+                if i >= -1 {
+                    usize::try_from(i).map_err(|_| err)
+                } else {
+                    ret
+                }
+            }
             Number::Floating(f) => {
                 if !((f < 0.0 || f.fract() != 0.0) && (f > usize::MAX as f64)) {
-                    Some(f as usize)
+                    Ok(f as usize)
                 } else {
-                    None
+                    ret
                 }
             }
         }

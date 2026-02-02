@@ -155,11 +155,10 @@ impl Value {
     }
 
     pub fn to_index(self) -> Result<usize, Error> {
-        let value = self;
-        let Value::Scalar(Scalar::Number(v)) = value else {
-            return Err(Error::ValueMustBeUsize(value));
+        let Value::Scalar(Scalar::Number(v)) = self else {
+            return Err(Error::ValueMustBeUsize(self));
         };
-        v.try_to_usize().ok_or(Error::ValueMustBeUsize(value))
+        v.try_into()
     }
 }
 
