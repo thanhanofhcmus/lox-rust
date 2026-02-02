@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -11,7 +11,7 @@ use crate::interpret::{
     Environment,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(untagged)]
 pub enum SerialMapKey {
     Scalar(Scalar),
@@ -36,36 +36,6 @@ impl SerialMapKey {
             SerialMapKey::Str(v) => MapKey::Str(env.insert_string_id(v)),
         };
         Ok(v)
-    }
-}
-
-impl PartialEq for SerialMapKey {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (SerialMapKey::Str(l), SerialMapKey::Str(r)) => l == r,
-            (SerialMapKey::Scalar(l), SerialMapKey::Scalar(r)) => l == r,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for SerialMapKey {}
-
-impl PartialOrd for SerialMapKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SerialMapKey {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use SerialMapKey::*;
-
-        match (self, other) {
-            (Scalar(a), Scalar(b)) => a.cmp(b),
-            (Str(a), Str(b)) => a.cmp(b),
-            _ => Ordering::Equal,
-        }
     }
 }
 

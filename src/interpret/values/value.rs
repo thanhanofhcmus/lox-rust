@@ -100,25 +100,7 @@ impl Value {
         }
     }
 
-    pub fn is_function_type(&self) -> bool {
-        matches!(self, Value::Function(_) | Value::BuiltinFunction(_) if {
-            true
-        })
-    }
-
-    pub fn function_eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            // 2 functions are considered equals if they point to the same `blueprint`
-            (Value::Function(l), Value::Function(r)) => l == r,
-            (Value::BuiltinFunction(l), Value::BuiltinFunction(r)) => std::ptr::fn_addr_eq(*l, *r),
-            _ => false,
-        }
-    }
-
     pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, Error> {
-        if self.is_function_type() && other.is_function_type() {
-            return Ok(self.function_eq(other));
-        }
         use Value::*;
         match (self, other) {
             // TODO
@@ -128,6 +110,13 @@ impl Value {
             (Scalar(l), Scalar(r)) => Ok(l == r),
 
             (Str(l), Str(r)) => Ok(l == r),
+
+            // 2 functions are considered equals if they point to the same `blueprint`
+            (Value::Function(l), Value::Function(r)) => Ok(l == r),
+            (Value::BuiltinFunction(l), Value::BuiltinFunction(r)) => {
+                Ok(std::ptr::fn_addr_eq(*l, *r))
+            }
+
             (Array(l_handle), Array(r_handle)) => {
                 if l_handle == r_handle {
                     return Ok(true);
@@ -280,9 +269,7 @@ impl MapKey {
     pub fn convert_from_value(value: Value) -> Result<Self, Error> {
         match value {
             Value::Scalar(v) => Ok(Self::Scalar(v)),
-
             Value::Str(id) => Ok(MapKey::Str(id)),
-
             Value::Array(_)
             | Value::Map(_)
             | Value::Unit

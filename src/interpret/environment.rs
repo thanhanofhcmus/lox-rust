@@ -96,23 +96,6 @@ macro_rules! decl_gc_type_methods {
                 Ok(inner)
             }
 
-            // Generates get_string_mut
-            #[allow(dead_code)]
-            pub fn [<get_ $name _mut>](&mut self, handle: GcHandle) -> Result<&mut $type, Error> {
-                let Some(obj) = self.get_gc_object_mut(handle) else {
-                    return Err(Error::GcObjectNotFound(handle));
-                };
-                let GcObject::$variant(inner) = obj else {
-                    return Err(Error::GcObjectWrongType(
-                        handle,
-                        obj.get_kind(),
-                        $kind,
-                    ));
-                };
-                Ok(inner)
-            }
-
-
             // Generates insert_string_variable, etc.
             pub fn [<insert_ $name _variable>](&mut self, data: $type) -> Value {
                 let object = GcObject::$variant(data);
@@ -307,10 +290,6 @@ impl Environment {
 
     pub fn get_gc_object(&self, handle: GcHandle) -> Option<&GcObject> {
         self.heap.get_object(handle)
-    }
-
-    pub fn get_gc_object_mut(&mut self, handle: GcHandle) -> Option<&mut GcObject> {
-        self.heap.get_object_mut(handle)
     }
 
     pub fn get_string(&self, id: StrId) -> Result<&str, Error> {
