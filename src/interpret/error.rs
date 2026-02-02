@@ -2,7 +2,10 @@ use super::values::Value;
 use thiserror::Error;
 
 use crate::{
-    interpret::heap::{GcHandle, GcKind},
+    interpret::{
+        heap::{GcHandle, GcKind},
+        string_interner::StrId,
+    },
     parse::ParseError,
     token::Token,
 };
@@ -86,4 +89,7 @@ pub enum Error {
 
     #[error("GcObject with type `{}` did not exist in the heap", .0.type_name())]
     GcObjectUnIndexable(GcKind),
+
+    #[error("String with Id `{}` is does not exists in the heap interner", .0)]
+    StringNotFoundOnHeap(StrId),
 }

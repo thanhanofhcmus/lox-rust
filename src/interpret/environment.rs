@@ -12,6 +12,7 @@ use crate::{
         error::Error,
         heap::{GcHandle, GcKind, GcObject, Heap},
         predule,
+        string_interner::StrId,
         values::{Array, Function, Map},
     },
 };
@@ -312,7 +313,19 @@ impl Environment {
         self.heap.get_object_mut(handle)
     }
 
-    decl_gc_type_methods!(string, Str, String, GcKind::String, Str);
+    pub fn get_string(&self, id: StrId) -> Result<&str, Error> {
+        self.heap.get_string_or_error(id)
+    }
+
+    pub fn insert_string_id(&mut self, s: String) -> StrId {
+        self.heap.insert_string(s)
+    }
+
+    pub fn insert_string_variable(&mut self, s: String) -> Value {
+        let id = self.insert_string_id(s);
+        Value::Str(id)
+    }
+
     decl_gc_type_methods!(array, Array, Array, GcKind::Array, Array);
     decl_gc_type_methods!(map, Map, Map, GcKind::Map, Map);
     decl_gc_type_methods!(function, Function, Function, GcKind::Function, Function);

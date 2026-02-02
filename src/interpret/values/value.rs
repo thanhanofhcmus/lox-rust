@@ -8,6 +8,7 @@ use crate::{
     interpret::{
         error::Error,
         heap::GcHandle,
+        string_interner::StrId,
         values::{
             display_writer::DisplayWriter,
             scalar::Scalar,
@@ -40,7 +41,7 @@ pub enum Value {
     // we need to make error print the actual value or maybe keep printing String like this
     #[display("string({:?})", _0)]
     #[debug("String({:?})", _0)]
-    Str(GcHandle),
+    Str(StrId),
 
     #[display("array({:?})", _0)]
     #[debug("Array({:?})", _0)]
@@ -85,23 +86,15 @@ impl Value {
 
     pub fn get_handle(self) -> Option<GcHandle> {
         match self {
-            Value::Str(handle)
-            | Value::Array(handle)
-            | Value::Map(handle)
-            | Value::Function(handle) => Some(handle),
+            Value::Array(handle) | Value::Map(handle) | Value::Function(handle) => Some(handle),
             _ => None,
         }
     }
 
     pub fn replace_handle(&mut self, new_handle: GcHandle) -> Option<GcHandle> {
         match self {
-            Value::Str(handle)
-            | Value::Array(handle)
-            | Value::Map(handle)
-            | Value::Function(handle) => {
-                let old_handle = *handle;
-                *handle = new_handle;
-                Some(old_handle)
+            Value::Array(handle) | Value::Map(handle) | Value::Function(handle) => {
+                Some(std::mem::replace(handle, new_handle))
             }
             _ => None,
         }
@@ -134,14 +127,7 @@ impl Value {
 
             (Scalar(l), Scalar(r)) => Ok(l == r),
 
-            (Str(l_handle), Str(r_handle)) => {
-                if l_handle == r_handle {
-                    return Ok(true);
-                }
-                let l_str = env.get_string(*l_handle)?;
-                let r_str = env.get_string(*r_handle)?;
-                Ok(l_str == r_str)
-            }
+            (Str(l), Str(r)) => Ok(l == r),
             (Array(l_handle), Array(r_handle)) => {
                 if l_handle == r_handle {
                     return Ok(true);
@@ -184,7 +170,7 @@ impl Value {
         };
         env.get_gc_object(handle)
             .ok_or(Error::GcObjectNotFound(handle))?
-            .get_at_index(indexee, &env.heap)
+            .get_at_index(indexee)
     }
 
     pub fn to_index(self) -> Result<usize, Error> {
@@ -287,25 +273,15 @@ impl DisplayWriter for Value {
 #[derive(Debug, Clone, Copy)]
 pub enum MapKey {
     Scalar(Scalar),
-    Str(GcHandle),
+    Str(StrId),
 }
 
 impl MapKey {
-    pub fn get_handle(self) -> Option<GcHandle> {
-        match self {
-            MapKey::Scalar(_) => None,
-            MapKey::Str(handle) => Some(handle),
-        }
-    }
-
-    pub fn convert_from_value(value: Value, env: &mut Environment) -> Result<Self, Error> {
+    pub fn convert_from_value(value: Value) -> Result<Self, Error> {
         match value {
             Value::Scalar(v) => Ok(Self::Scalar(v)),
 
-            Value::Str(handle) => {
-                env.shallow_copy_value(value);
-                Ok(MapKey::Str(handle))
-            }
+            Value::Str(id) => Ok(MapKey::Str(id)),
 
             Value::Array(_)
             | Value::Map(_)

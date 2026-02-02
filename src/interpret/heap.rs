@@ -5,6 +5,7 @@ use std::{
 
 use crate::interpret::{
     error::Error,
+    string_interner::{StrId, StringInterner},
     values::{Array, Function, Map, MapKey, Value},
 };
 
@@ -33,58 +34,31 @@ impl GcKind {
 
 #[derive(Debug, Clone)]
 pub enum GcObject {
-    Str(String),
-
     Array(Array),
-
     Map(Map),
-
     Function(Function),
 }
 
 impl GcObject {
     pub fn get_kind(&self) -> GcKind {
         match self {
-            GcObject::Str(_) => GcKind::String,
             GcObject::Array(_) => GcKind::Array,
             GcObject::Map(_) => GcKind::Map,
             GcObject::Function(_) => GcKind::Function,
         }
     }
 
-    pub fn get_at_index(&self, indexee: Value, heap: &Heap) -> Result<Value, Error> {
+    pub fn get_at_index(&self, indexee: Value) -> Result<Value, Error> {
         match self {
             GcObject::Array(arr) => {
                 let idx = indexee.to_index()?;
-                match arr.get(idx) {
-                    None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
-                    Some(v) => Ok(v.to_owned()),
-                }
+                arr.get(idx)
+                    .copied()
+                    .ok_or(Error::ArrayOutOfBound(arr.len(), idx))
             }
             GcObject::Map(map) => {
-                let map_key = match indexee {
-                    Value::Str(handle) => MapKey::Str(handle),
-                    Value::Scalar(v) => MapKey::Scalar(v),
-                    _ => return Err(Error::ValueUnIndexable(indexee)),
-                };
-
-                let opt = map.iter().find(|(k, _)| match (**k, map_key) {
-                    (MapKey::Scalar(l), MapKey::Scalar(r)) => l == r,
-                    (MapKey::Str(l_handle), MapKey::Str(r_handle)) => {
-                        let l_opt = heap.get_string(l_handle);
-                        let r_opt = heap.get_string(r_handle);
-                        let (Some(l_str), Some(r_str)) = (l_opt, r_opt) else {
-                            return false;
-                        };
-                        l_str == r_str
-                    }
-                    _ => false,
-                });
-
-                Ok(match opt {
-                    Some((_, v)) => *v,
-                    None => Value::make_nil(),
-                })
+                let map_key = MapKey::convert_from_value(indexee)?;
+                Ok(map.get(&map_key).copied().unwrap_or(Value::make_nil()))
             }
             _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
         }
@@ -147,6 +121,7 @@ pub struct HeapStats {
 pub struct Heap {
     slots: Vec<Option<HeapEntry>>,
     free_list: Vec<usize>,
+    string_interner: StringInterner,
 }
 
 impl Heap {
@@ -154,6 +129,7 @@ impl Heap {
         Self {
             slots: vec![],
             free_list: vec![],
+            string_interner: StringInterner::new(),
         }
     }
 
@@ -201,6 +177,8 @@ impl Heap {
             entry.is_marked_for_delete = true;
         }
 
+        // TODO: mark for string_interner
+
         let mut trace_list = root_values
             .iter()
             .filter_map(|v| v.get_handle())
@@ -213,14 +191,12 @@ impl Heap {
             entry.is_marked_for_delete = false;
 
             match &mut entry.object {
-                GcObject::Str(_) | GcObject::Function(_) => { /* do nothing */ }
+                GcObject::Function(_) => { /* do nothing */ }
                 GcObject::Array(arr) => {
                     let it = arr.iter().filter_map(|v| v.get_handle());
                     trace_list.extend(it);
                 }
                 GcObject::Map(map) => {
-                    let key_it = map.keys().filter_map(|k| k.get_handle());
-                    trace_list.extend(key_it);
                     let value_it = map.iter().filter_map(|(_, v)| v.get_handle());
                     trace_list.extend(value_it);
                 }
@@ -274,7 +250,7 @@ impl Heap {
         // this object does not have any backing any more, mark as dead and remove the count
         entry.is_marked_for_delete = true;
         match &entry.object {
-            GcObject::Str(_) | GcObject::Function(_) => { /* do nothing */ }
+            GcObject::Function(_) => { /* do nothing */ }
             GcObject::Array(arr) => {
                 for value in arr.clone() {
                     self.shallow_dispose_value(value);
@@ -316,7 +292,7 @@ impl Heap {
         for indexee in rest.iter().copied() {
             let current_value = self
                 .get_object_or_error(current_handle)?
-                .get_at_index(indexee, self)?;
+                .get_at_index(indexee)?;
 
             let (new_handle, new_value) = self.copy_by_value(current_value)?;
 
@@ -333,6 +309,18 @@ impl Heap {
             .replace_at_index(*last, reassigning_value)?;
 
         Ok(root_value)
+    }
+
+    pub fn insert_string(&mut self, s: String) -> StrId {
+        self.string_interner.intern(&s)
+    }
+
+    pub fn get_string(&self, id: StrId) -> Option<&str> {
+        self.string_interner.get(id)
+    }
+
+    pub fn get_string_or_error(&self, id: StrId) -> Result<&str, Error> {
+        self.get_string(id).ok_or(Error::StringNotFoundOnHeap(id))
     }
 
     pub fn get_object(&self, handle: GcHandle) -> Option<&GcObject> {
@@ -357,13 +345,6 @@ impl Heap {
     pub fn get_object_mut_or_error(&mut self, handle: GcHandle) -> Result<&mut GcObject, Error> {
         self.get_object_mut(handle)
             .ok_or(Error::GcObjectNotFound(handle))
-    }
-
-    fn get_string(&self, handle: GcHandle) -> Option<&String> {
-        self.get_object(handle).and_then(|o| match o {
-            GcObject::Str(s) => Some(s),
-            _ => None,
-        })
     }
 
     fn update_ref_count(&mut self, value: Value, is_increase: bool) -> Option<&mut HeapEntry> {

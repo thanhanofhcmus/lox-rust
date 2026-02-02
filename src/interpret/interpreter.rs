@@ -3,6 +3,7 @@ use super::error::Error;
 use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
+use crate::interpret::string_interner::StrId;
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Scalar};
 use crate::parse;
 use crate::span::Span;
@@ -335,7 +336,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let mut map = Map::new();
         for kv in &node.nodes {
             let raw_key = self.interpret_primary_expr(&kv.key)?.get_or_error()?;
-            let key = MapKey::convert_from_value(raw_key, self.environment)?;
+            let key = MapKey::convert_from_value(raw_key)?;
             let value = self.interpret_expr(&kv.value)?.get_or_error()?;
             map.insert(key, value);
         }
@@ -494,7 +495,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
-    fn interpret_add_string(&mut self, lhs: GcHandle, rhs: GcHandle) -> Result<Value, Error> {
+    fn interpret_add_string(&mut self, lhs: StrId, rhs: StrId) -> Result<Value, Error> {
         let l_str = self.environment.get_string(lhs)?;
         let r_str = self.environment.get_string(rhs)?;
         Ok(self

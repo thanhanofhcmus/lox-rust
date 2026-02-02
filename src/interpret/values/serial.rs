@@ -24,7 +24,7 @@ impl SerialMapKey {
             MapKey::Scalar(v) => Self::Scalar(*v),
             MapKey::Str(handle) => {
                 let s = env.get_string(*handle)?;
-                Self::Str(s.clone())
+                Self::Str(s.to_string())
             }
         };
         Ok(v)
@@ -33,11 +33,7 @@ impl SerialMapKey {
     pub fn hydrate_map_key(self, env: &mut Environment) -> Result<MapKey, Error> {
         let v = match self {
             SerialMapKey::Scalar(v) => MapKey::Scalar(v),
-            SerialMapKey::Str(v) => {
-                let v = env.insert_string_variable(v);
-                let handle = v.get_handle().expect("must have handle");
-                MapKey::Str(handle)
-            }
+            SerialMapKey::Str(v) => MapKey::Str(env.insert_string_id(v)),
         };
         Ok(v)
     }
@@ -93,7 +89,7 @@ impl SerialValue {
 
             Value::Str(handle) => {
                 let s = env.get_string(handle)?;
-                SerialValue::Str(s.clone())
+                SerialValue::Str(s.to_string())
             }
 
             Value::Array(handle) => {
