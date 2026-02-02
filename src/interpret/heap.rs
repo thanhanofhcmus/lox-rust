@@ -90,7 +90,12 @@ impl GcObject {
         }
     }
 
-    pub fn replace_at_index(&mut self, indexee: Value, new_value: Value) -> Result<Value, Error> {
+    pub fn replace_at_index(
+        &mut self,
+        indexee: Value,
+        new_value: Value,
+        heap: &Heap,
+    ) -> Result<Value, Error> {
         match self {
             GcObject::Array(arr) => {
                 let idx = indexee.to_index()?;
@@ -101,11 +106,37 @@ impl GcObject {
                     Ok(old_value)
                 }
             }
-            GcObject::Map(_) => {
-                unimplemented!()
-                // let map_key = MapKey::convert_from_value(indexee.to_owned(), env)?;
-                // let old_value = map.insert(map_key, new_value).unwrap_or(Value::Nil);
-                // Ok(old_value)
+            GcObject::Map(map) => {
+                let map_key = match indexee {
+                    Value::Str(handle) => MapKey::Str(handle),
+                    Value::Scalar(v) => MapKey::Scalar(v),
+                    _ => return Err(Error::ValueUnIndexable(indexee)),
+                };
+
+                let opt = map.iter_mut().find(|(k, _)| match (**k, map_key) {
+                    (MapKey::Scalar(l), MapKey::Scalar(r)) => l == r,
+                    (MapKey::Str(l_handle), MapKey::Str(r_handle)) => {
+                        let l_opt = heap.get_string(l_handle);
+                        let r_opt = heap.get_string(r_handle);
+                        let (Some(l_str), Some(r_str)) = (l_opt, r_opt) else {
+                            return false;
+                        };
+                        l_str == r_str
+                    }
+                    _ => false,
+                });
+
+                match opt {
+                    Some((_, v)) => {
+                        let old_value = *v;
+                        *v = new_value;
+                        Ok(old_value)
+                    }
+                    None => {
+                        // TODO:
+                        panic!("key is not on map")
+                    }
+                }
             }
             _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
         }
@@ -321,16 +352,12 @@ impl Heap {
             let (new_handle, new_value) = self.copy_by_value(current_value)?;
 
             // TODO: dispose old value
-            _ = self
-                .get_object_mut_or_error(current_handle)?
-                .replace_at_index(indexee, new_value)?;
+            _ = self.replace_value_at_index(current_handle, indexee, new_value)?;
 
             current_handle = new_handle;
         }
 
-        _ = self
-            .get_object_mut_or_error(current_handle)?
-            .replace_at_index(*last, reassigning_value)?;
+        _ = self.replace_value_at_index(current_handle, *last, reassigning_value)?;
 
         Ok(root_value)
     }
@@ -364,6 +391,61 @@ impl Heap {
             GcObject::Str(s) => Some(s),
             _ => None,
         })
+    }
+
+    // TODO: somehow make the code does not need to call this function
+    fn get_string_clone(&self, handle: GcHandle) -> Option<String> {
+        self.get_object(handle).and_then(|o| match o {
+            GcObject::Str(s) => Some(s.clone()),
+            _ => None,
+        })
+    }
+
+    fn replace_value_at_index(
+        &mut self,
+        handle: GcHandle,
+        indexee: Value,
+        new_value: Value,
+    ) -> Result<Value, Error> {
+        let obj = self.get_object_mut_or_error(handle)?;
+
+        match obj {
+            GcObject::Array(arr) => {
+                let idx = indexee.to_index()?;
+                if arr.len() <= idx {
+                    Err(Error::ArrayOutOfBound(arr.len(), idx))
+                } else {
+                    let old_value = std::mem::replace(&mut arr[idx], new_value);
+                    Ok(old_value)
+                }
+            }
+            GcObject::Map(map) => {
+                let map_key = match indexee {
+                    Value::Str(handle) => MapKey::Str(handle),
+                    Value::Scalar(v) => MapKey::Scalar(v),
+                    _ => return Err(Error::ValueUnIndexable(indexee)),
+                };
+
+                for k in map.keys().copied() {
+                    let a = match (k, map_key) {
+                        (MapKey::Scalar(l), MapKey::Scalar(r)) => l == r,
+                        (MapKey::Str(l_handle), MapKey::Str(r_handle)) => {
+                            let l_opt = self.get_string_clone(l_handle);
+                            let r_opt = self.get_string_clone(r_handle);
+                            if let (Some(l_str), Some(r_str)) = (l_opt, r_opt) {
+                                l_str == r_str
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+                }
+
+                Ok(Value::Unit)
+            }
+            _ => Err(Error::GcObjectUnIndexable(obj.get_kind())),
+        }
     }
 
     fn update_ref_count(&mut self, value: Value, is_increase: bool) -> Option<&mut HeapEntry> {
