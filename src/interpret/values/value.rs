@@ -11,6 +11,7 @@ use crate::{
         string_interner::StrId,
         values::{
             display_writer::DisplayWriter,
+            number::Number,
             scalar::Scalar,
             value_kind::{GetValueKind, ValueKind},
         },
@@ -69,12 +70,8 @@ impl Value {
         Value::Scalar(Scalar::Bool(v))
     }
 
-    pub fn make_integer(v: i64) -> Value {
-        Value::Scalar(Scalar::Integer(v))
-    }
-
-    pub fn make_floating(v: f64) -> Value {
-        Value::Scalar(Scalar::Floating(v))
+    pub fn make_number(v: Number) -> Value {
+        Value::Scalar(Scalar::Number(v))
     }
 
     pub fn get_bool(self) -> Option<bool> {
@@ -164,29 +161,10 @@ impl Value {
 
     pub fn to_index(self) -> Result<usize, Error> {
         let value = self;
-        let Value::Scalar(scalar) = value else {
+        let Value::Scalar(Scalar::Number(v)) = value else {
             return Err(Error::ValueMustBeUsize(value));
         };
-        match scalar {
-            Scalar::Integer(i) => {
-                if i < 0 {
-                    return Err(Error::ValueMustBeUsize(value));
-                }
-                // Try into usize to handle platforms where usize < i64
-                usize::try_from(i).map_err(|_| Error::ValueMustBeUsize(value))
-            }
-            Scalar::Floating(f) => {
-                if f < 0.0 || f.fract() != 0.0 {
-                    return Err(Error::ValueMustBeUsize(value));
-                }
-                // We use 'as' for the final cast, but check bounds first
-                if f > usize::MAX as f64 {
-                    return Err(Error::ValueMustBeUsize(value));
-                }
-                Ok(f as usize)
-            }
-            _ => Err(Error::ValueMustBeUsize(value)),
-        }
+        v.try_to_usize().ok_or(Error::ValueMustBeUsize(value))
     }
 }
 

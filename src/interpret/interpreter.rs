@@ -3,8 +3,7 @@ use super::error::Error;
 use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
-use crate::interpret::string_interner::StrId;
-use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Scalar};
+use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar};
 use crate::parse;
 use crate::span::Span;
 use crate::token::Token;
@@ -288,8 +287,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let val = match node {
             PrimaryNode::Nil => Value::make_nil(),
             PrimaryNode::Bool(v) => Value::make_bool(*v),
-            PrimaryNode::Integer(v) => Value::make_integer(*v),
-            PrimaryNode::Floating(v) => Value::make_floating(*v),
+            PrimaryNode::Integer(v) => Value::make_number(Number::Integer(*v)),
+            PrimaryNode::Floating(v) => Value::make_number(Number::Floating(*v)),
             PrimaryNode::Str(v) => self.interpret_string_literal(*v)?,
             PrimaryNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
             PrimaryNode::MapLiteral(node) => self.interpret_map_literal(node)?,
@@ -407,8 +406,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 _ => Err(Error::InvalidOperationOnType(op, res)),
             },
             Token::Minus => match res {
-                Value::Scalar(Scalar::Integer(v)) => Ok(Value::make_integer(-v)),
-                Value::Scalar(Scalar::Floating(v)) => Ok(Value::make_floating(-v)),
+                Value::Scalar(Scalar::Number(v)) => Ok(Value::make_number(-v)),
                 _ => Err(Error::InvalidOperationOnType(op, res)),
             },
             _ => Err(Error::UnknownOperation(op)),
@@ -425,14 +423,15 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         match op {
             Token::Plus => self.interpret_add(lhs_val, rhs_val),
-            Token::Minus => subtract(lhs_val, rhs_val),
-            Token::Star => times(lhs_val, rhs_val),
-            Token::Slash => divide(lhs_val, rhs_val),
-            Token::Percentage => modulo(lhs_val, rhs_val),
             Token::And | Token::Or => and_or(lhs_val, op, rhs_val),
-            Token::EqualEqual | Token::BangEqual => self
-                .interpret_cmp(lhs_val, op, rhs_val)
-                .map(Value::make_bool),
+            Token::Minus | Token::Star | Token::Slash | Token::Percentage => {
+                binary_number(lhs_val, op, rhs_val)
+            }
+            Token::EqualEqual | Token::BangEqual => {
+                let cmp = lhs_val.deep_eq(&rhs_val, self.environment)?;
+                let ret = cmp == (op == Token::EqualEqual);
+                Ok(Value::make_bool(ret))
+            }
             Token::Less | Token::LessEqual | Token::Greater | Token::GreaterEqual => {
                 self.interpret_ordering(lhs_val, op, rhs_val)
             }
@@ -475,32 +474,20 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(value)
     }
 
-    fn interpret_cmp(&self, lhs: Value, op: Token, rhs: Value) -> Result<bool, Error> {
-        let cmp = lhs.deep_eq(&rhs, self.environment)?;
-        Ok(cmp == (op == Token::EqualEqual))
-    }
-
     fn interpret_add(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
-        use Scalar::*;
-        match (&lhs, &rhs) {
-            (Value::Scalar(l_s), Value::Scalar(r_s)) => match (l_s, r_s) {
-                (Integer(l), Integer(r)) => Ok(Value::make_integer(l + r)),
-                (Floating(l), Integer(r)) => Ok(Value::make_floating(l + (*r as f64))),
-                (Integer(l), Floating(r)) => Ok(Value::make_floating((*l as f64) + r)),
-                (Floating(l), Floating(r)) => Ok(Value::make_floating(l + r)),
-                _ => Err(Error::MismatchType(Token::Plus, lhs, rhs)),
-            },
-            (Value::Str(l), Value::Str(r)) => self.interpret_add_string(*l, *r),
+        match (lhs, rhs) {
+            (Value::Scalar(Scalar::Number(l)), Value::Scalar(Scalar::Number(r))) => {
+                Ok(Value::make_number(l + r))
+            }
+            (Value::Str(l_id), Value::Str(r_id)) => {
+                let l_str = self.environment.get_string(l_id)?;
+                let r_str = self.environment.get_string(r_id)?;
+                Ok(self
+                    .environment
+                    .insert_string_variable(l_str.to_owned() + r_str))
+            }
             _ => Err(Error::MismatchType(Token::Plus, lhs, rhs)),
         }
-    }
-
-    fn interpret_add_string(&mut self, lhs: StrId, rhs: StrId) -> Result<Value, Error> {
-        let l_str = self.environment.get_string(lhs)?;
-        let r_str = self.environment.get_string(rhs)?;
-        Ok(self
-            .environment
-            .insert_string_variable(l_str.to_owned() + r_str))
     }
 
     fn interpret_ordering(&mut self, lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
@@ -557,69 +544,23 @@ fn and_or(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
     }
 }
 
-fn subtract(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Scalar::*;
-    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
+fn binary_number(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
+    let (Value::Scalar(Scalar::Number(l)), Value::Scalar(Scalar::Number(r))) = (lhs, rhs) else {
         return Err(Error::MismatchType(Token::Minus, lhs, rhs));
     };
-    match (l_scalar, r_scalar) {
-        (Integer(l), Integer(r)) => Ok(Value::make_integer(l - r)),
-        (Floating(l), Integer(r)) => Ok(Value::make_floating(l - (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) - r)),
-        (Floating(l), Floating(r)) => Ok(Value::make_floating(l - r)),
-        _ => Err(Error::MismatchType(Token::Minus, lhs, rhs)),
-    }
-}
 
-fn times(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Scalar::*;
-    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
-        return Err(Error::MismatchType(Token::Minus, lhs, rhs));
-    };
-    match (l_scalar, r_scalar) {
-        (Integer(l), Integer(r)) => Ok(Value::make_integer(l * r)),
-        (Floating(l), Integer(r)) => Ok(Value::make_floating(l * (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) * r)),
-        (Floating(l), Floating(r)) => Ok(Value::make_floating(l * r)),
-        _ => Err(Error::MismatchType(Token::Star, lhs, rhs)),
-    }
-}
-
-fn divide(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Scalar::*;
-    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
-        return Err(Error::MismatchType(Token::Minus, lhs, rhs));
-    };
-    match r_scalar {
-        Integer(0) => return Err(Error::DivideByZero),
-        Floating(0.0) => return Err(Error::DivideByZero),
-        _ => {}
-    }
-    match (l_scalar, r_scalar) {
-        (Integer(l), Integer(r)) => {
-            if l % r == 0 {
-                Ok(Value::make_integer(l / r))
-            } else {
-                Ok(Value::make_floating(l as f64 / r as f64))
+    let v = match op {
+        Token::Plus => l + r,
+        Token::Minus => l - r,
+        Token::Star => l * r,
+        Token::Percentage => l % r,
+        Token::Slash => {
+            if r.is_zero() {
+                return Err(Error::DivideByZero);
             }
+            l / r
         }
-        (Floating(l), Integer(r)) => Ok(Value::make_floating(l / (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) / r)),
-        (Floating(l), Floating(r)) => Ok(Value::make_floating(l / r)),
-        _ => Err(Error::MismatchType(Token::Slash, lhs, rhs)),
-    }
-}
-
-fn modulo(lhs: Value, rhs: Value) -> Result<Value, Error> {
-    use Scalar::*;
-    let (Value::Scalar(l_scalar), Value::Scalar(r_scalar)) = (lhs, rhs) else {
-        return Err(Error::MismatchType(Token::Minus, lhs, rhs));
+        _ => return Err(Error::UnknownOperation(op)),
     };
-    match (l_scalar, r_scalar) {
-        (Integer(l), Integer(r)) => Ok(Value::make_integer(l % r)),
-        (Floating(l), Integer(r)) => Ok(Value::make_floating(l % (r as f64))),
-        (Integer(l), Floating(r)) => Ok(Value::make_floating((l as f64) % r)),
-        (Floating(l), Floating(r)) => Ok(Value::make_floating(l % r)),
-        _ => Err(Error::MismatchType(Token::PercentLPointParent, lhs, rhs)),
-    }
+    Ok(Value::make_number(v))
 }
