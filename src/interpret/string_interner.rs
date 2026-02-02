@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use derive_more::Display;
 
-#[derive(Display, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Display, derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[debug("StrId({_0})")]
 pub struct StrId(usize);
 
 #[derive(Debug, Clone)]

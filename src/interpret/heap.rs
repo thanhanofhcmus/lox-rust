@@ -75,11 +75,9 @@ impl GcObject {
                     Ok(old_value)
                 }
             }
-            GcObject::Map(_) => {
-                unimplemented!()
-                // let map_key = MapKey::convert_from_value(indexee.to_owned(), env)?;
-                // let old_value = map.insert(map_key, new_value).unwrap_or(Value::Nil);
-                // Ok(old_value)
+            GcObject::Map(map) => {
+                let map_key = MapKey::convert_from_value(indexee)?;
+                Ok(map.insert(map_key, new_value).unwrap_or(Value::make_nil()))
             }
             _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
         }
