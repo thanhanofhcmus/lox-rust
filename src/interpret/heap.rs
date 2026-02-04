@@ -215,18 +215,6 @@ impl Heap {
         self.free_list.reverse();
     }
 
-    /// Move the GcObject to the heap
-    pub fn insert_object(&mut self, object: GcObject) -> GcHandle {
-        if let Some(index) = self.free_list.pop() {
-            self.slots[index] = Some(HeapEntry::new(object));
-            return GcHandle(index);
-        }
-
-        let index = self.slots.len();
-        self.slots.push(Some(HeapEntry::new(object)));
-        GcHandle(index)
-    }
-
     pub fn shallow_copy_value(&mut self, value: Value) {
         // check if this is an lvalue, if yes, then promote it to not be lvalue anymore
         // TODO: recursively increase ref is wrong,
@@ -273,7 +261,7 @@ impl Heap {
     pub fn deep_copy_reassign_object(
         &mut self,
         current_root_value: Value,
-        // chain always have aleast 1 value when get in to this function
+        last_value: Value,
         chain: &[Value],
         reassigning_value: Value,
     ) -> Result<Value, Error> {
@@ -281,11 +269,7 @@ impl Heap {
 
         let mut current_handle = root_handle;
 
-        let (last, rest) = chain
-            .split_last()
-            .expect("chain must have at least 1 value when got to here");
-
-        for indexee in rest.iter().copied() {
+        for indexee in chain.iter().copied() {
             let current_value = self
                 .get_object_or_error(current_handle)?
                 .get_at_index(indexee)?;
@@ -302,7 +286,7 @@ impl Heap {
 
         _ = self
             .get_object_mut_or_error(current_handle)?
-            .replace_at_index(*last, reassigning_value)?;
+            .replace_at_index(last_value, reassigning_value)?;
 
         Ok(root_value)
     }
@@ -317,6 +301,18 @@ impl Heap {
 
     pub fn get_string_or_error(&self, id: StrId) -> Result<&str, Error> {
         self.get_string(id).ok_or(Error::StringNotFoundOnHeap(id))
+    }
+
+    /// Move the GcObject to the heap
+    pub fn insert_object(&mut self, object: GcObject) -> GcHandle {
+        if let Some(index) = self.free_list.pop() {
+            self.slots[index] = Some(HeapEntry::new(object));
+            return GcHandle(index);
+        }
+
+        let index = self.slots.len();
+        self.slots.push(Some(HeapEntry::new(object)));
+        GcHandle(index)
     }
 
     pub fn get_object(&self, handle: GcHandle) -> Option<&GcObject> {

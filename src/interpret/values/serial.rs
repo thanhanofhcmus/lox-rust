@@ -32,8 +32,8 @@ impl SerialMapKey {
 
     pub fn hydrate_map_key(self, env: &mut Environment) -> Result<MapKey, Error> {
         let v = match self {
-            SerialMapKey::Scalar(v) => MapKey::Scalar(v),
-            SerialMapKey::Str(v) => MapKey::Str(env.insert_string_id(v)),
+            Self::Scalar(v) => MapKey::Scalar(v),
+            Self::Str(v) => MapKey::Str(env.insert_string_id(v)),
         };
         Ok(v)
     }
@@ -59,28 +59,28 @@ impl SerialValue {
 
             Value::Str(handle) => {
                 let s = env.get_string(handle)?;
-                SerialValue::Str(s.to_string())
+                Self::Str(s.to_string())
             }
 
             Value::Array(handle) => {
                 let arr = env.get_array(handle)?;
                 let mut vs = Vec::with_capacity(arr.len());
                 for v in arr {
-                    let sv = SerialValue::convert_from_value(v.to_owned(), env)?;
+                    let sv = Self::convert_from_value(v.to_owned(), env)?;
                     vs.push(sv);
                 }
-                SerialValue::Array(vs)
+                Self::Array(vs)
             }
 
             Value::Map(handle) => {
                 let map = env.get_map(handle)?;
-                let mut vsm = BTreeMap::<SerialMapKey, SerialValue>::new();
+                let mut vsm = BTreeMap::new();
                 for (k, v) in map {
                     let k_sv = SerialMapKey::convert_from_map_key(k, env)?;
                     let v_sv = SerialValue::convert_from_value(*v, env)?;
                     vsm.insert(k_sv, v_sv);
                 }
-                SerialValue::Map(vsm)
+                Self::Map(vsm)
             }
 
             Value::Unit | Value::Function(_) | Value::BuiltinFunction(_) => {
@@ -92,20 +92,20 @@ impl SerialValue {
 
     pub fn hydrate(self, env: &mut Environment) -> Result<Value, Error> {
         let v = match self {
-            SerialValue::Scalar(v) => Value::Scalar(v),
+            Self::Scalar(v) => Value::Scalar(v),
 
-            SerialValue::Str(v) => env.insert_string_variable(v),
+            Self::Str(v) => env.insert_string_variable(v),
 
-            SerialValue::Array(values) => {
+            Self::Array(values) => {
                 let mut arr = Vec::with_capacity(values.len());
                 for v in values {
-                    let sv = SerialValue::hydrate(v, env)?;
+                    let sv = Self::hydrate(v, env)?;
                     arr.push(sv);
                 }
                 env.insert_array_variable(arr)
             }
 
-            SerialValue::Map(m) => {
+            Self::Map(m) => {
                 let mut map = BTreeMap::new();
                 for (k, v) in m {
                     let k_v = k.hydrate_map_key(env)?;

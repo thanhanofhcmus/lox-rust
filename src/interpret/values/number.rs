@@ -6,7 +6,7 @@ use std::{
 
 use crate::interpret::{
     error::Error,
-    values::{display_writer::DisplayWriter, Scalar, Value},
+    values::{display_writer::DisplayWriter, Value},
 };
 
 #[derive(derive_more::Debug, derive_more::Display, Clone, Copy, Serialize, Deserialize)]
@@ -79,22 +79,12 @@ impl TryInto<usize> for Number {
 
     fn try_into(self) -> Result<usize, Self::Error> {
         let err = Error::ValueMustBeUsize(Value::make_number(self));
-        let ret = Err(Error::ValueMustBeUsize(Value::make_number(self)));
         match self {
-            Number::Integer(i) => {
-                if i >= -1 {
-                    usize::try_from(i).map_err(|_| err)
-                } else {
-                    ret
-                }
+            Self::Integer(i) if i >= 0 => usize::try_from(i).map_err(|_| err),
+            Self::Floating(v) if v >= 0.0 && v.fract() == 0.0 && v <= usize::MAX as f64 => {
+                Ok(v as usize)
             }
-            Number::Floating(f) => {
-                if !((f < 0.0 || f.fract() != 0.0) && (f > usize::MAX as f64)) {
-                    Ok(f as usize)
-                } else {
-                    ret
-                }
-            }
+            _ => Err(err),
         }
     }
 }
@@ -104,11 +94,11 @@ impl PartialEq for Number {
         use Number::*;
         const NUMBER_DELTA: f64 = 1e-10;
 
-        match (self, other) {
+        match (*self, *other) {
             (Integer(l), Integer(r)) => l == r,
-            (Floating(l), Integer(r)) => (l - (*r as f64)).abs() < NUMBER_DELTA,
-            (Integer(l), Floating(r)) => ((*l as f64) - r).abs() < NUMBER_DELTA,
-            (Floating(l), Floating(r)) => (*l - *r).abs() < NUMBER_DELTA,
+            (Floating(l), Integer(r)) => (l - (r as f64)).abs() < NUMBER_DELTA,
+            (Integer(l), Floating(r)) => ((l as f64) - r).abs() < NUMBER_DELTA,
+            (Floating(l), Floating(r)) => (l - r).abs() < NUMBER_DELTA,
         }
     }
 }
@@ -124,7 +114,7 @@ impl PartialOrd for Number {
 impl Ord for Number {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         use Number::*;
-        // Handle f64 comparison (ignoring NaN for simplicity, or treat NaN as the smallest number)
+        // For f64 comparison, ignoring NaN for simplicity
         match (*self, *other) {
             (Integer(l), Integer(r)) => l.cmp(&r),
             (Floating(l), Integer(r)) => l.partial_cmp(&(r as f64)).unwrap_or(Ordering::Less),
@@ -138,10 +128,9 @@ impl std::ops::Neg for Number {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        use Number::*;
         match self {
-            Integer(v) => Integer(-v),
-            Floating(v) => Floating(-v),
+            Self::Integer(v) => Self::Integer(-v),
+            Self::Floating(v) => Self::Floating(-v),
         }
     }
 }
@@ -153,12 +142,10 @@ impl DisplayWriter for Number {
         w: &mut dyn std::io::Write,
     ) -> Result<(), Error> {
         let result = match self {
-            Number::Integer(v) => write!(w, "{}", v),
-            Number::Floating(v) => write!(w, "{}", v),
+            Self::Integer(v) => write!(w, "{}", v),
+            Self::Floating(v) => write!(w, "{}", v),
         };
-
-        result.map_err(|e| Error::WriteValueFailed(Value::Scalar(Scalar::Number(self)), e))?;
-
+        result.map_err(|e| Error::WriteValueFailed(Value::make_number(self), e))?;
         Ok(())
     }
 }

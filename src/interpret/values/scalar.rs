@@ -39,9 +39,9 @@ impl DisplayWriter for Scalar {
     ) -> Result<(), Error> {
         let convert = |e| Error::WriteValueFailed(Value::Scalar(self), e);
         match self {
-            Scalar::Nil => write!(w, "nil").map_err(convert),
-            Scalar::Number(v) => v.write_display(env, w),
-            Scalar::Bool(v) => write!(w, "{}", v).map_err(convert),
+            Self::Nil => write!(w, "nil").map_err(convert),
+            Self::Number(v) => v.write_display(env, w),
+            Self::Bool(v) => write!(w, "{}", v).map_err(convert),
         }
     }
 }
