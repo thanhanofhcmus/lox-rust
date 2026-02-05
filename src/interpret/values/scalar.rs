@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::interpret::{
     error::Error,
-    values::{number::Number, DisplayWriter, Value},
+    values::{DisplayWriter, Value, number::Number},
 };
 
 #[derive(

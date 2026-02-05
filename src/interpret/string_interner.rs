@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use derive_more::Display;
 
+/// The Ordering in this type does not mean anything, just to be used as map key
 #[derive(Display, derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[debug("StrId({_0})")]
 pub struct StrId(usize);

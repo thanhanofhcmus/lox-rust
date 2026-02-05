@@ -4,11 +4,11 @@ use crate::{
     ast::BlockNode,
     id::Id,
     interpret::{
+        Environment, Interpreter,
         error::Error,
         heap::GcHandle,
         string_interner::StrId,
         values::{display_writer::DisplayWriter, number::Number, scalar::Scalar},
-        Environment, Interpreter,
     },
 };
 
@@ -228,11 +228,7 @@ impl MapKey {
         match value {
             Value::Scalar(v) => Ok(Self::Scalar(v)),
             Value::Str(id) => Ok(MapKey::Str(id)),
-            Value::Array(_)
-            | Value::Map(_)
-            | Value::Unit
-            | Value::Function(_)
-            | Value::BuiltinFunction(_) => Err(Error::ValueCannotBeUsedAsKey(value)),
+            _ => Err(Error::ValueCannotBeUsedAsKey(value)),
         }
     }
 }

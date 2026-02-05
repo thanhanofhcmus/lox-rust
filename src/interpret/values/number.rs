@@ -6,15 +6,17 @@ use std::{
 
 use crate::interpret::{
     error::Error,
-    values::{display_writer::DisplayWriter, Value},
+    values::{Value, display_writer::DisplayWriter},
 };
 
-#[derive(derive_more::Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(derive_more::Debug, derive_more::Display, Clone, Copy, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Number {
+    #[display("{}", _0)]
     #[debug("Integer({})", _0)]
     Integer(i64),
 
+    #[display("{}", _0)]
     #[debug("Floating({})", _0)]
     Floating(f64),
 }
