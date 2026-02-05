@@ -66,11 +66,9 @@ impl GcObject {
         match self {
             GcObject::Array(arr) => {
                 let idx = indexee.to_index()?;
-                if arr.len() <= idx {
-                    Err(Error::ArrayOutOfBound(arr.len(), idx))
-                } else {
-                    let old_value = std::mem::replace(&mut arr[idx], new_value);
-                    Ok(old_value)
+                match arr.get_mut(idx) {
+                    Some(v) => Ok(std::mem::replace(v, new_value)),
+                    None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
                 }
             }
             GcObject::Map(map) => {
@@ -202,11 +200,7 @@ impl Heap {
 
     pub fn sweep(&mut self) {
         for (index, entry) in self.slots.iter_mut().enumerate() {
-            if entry
-                .as_ref()
-                .map(|e| e.is_marked_for_delete)
-                .unwrap_or(false)
-            {
+            if let Some(v) = entry && v.is_marked_for_delete {
                 entry.take();
                 self.free_list.push(index);
             }
@@ -241,7 +235,6 @@ impl Heap {
                 }
             }
             GcObject::Map(map) => {
-                // TODO: recursive update for map key as well
                 for (_, value) in map.clone() {
                     self.shallow_dispose_value(value);
                 }

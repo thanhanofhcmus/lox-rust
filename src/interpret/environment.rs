@@ -129,15 +129,13 @@ impl Environment {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
         let scopes = vec![Scope::new(0)];
-        let mut modules = HashMap::new();
-        modules.insert(current_module_id, Module::new(current_module_id));
+        let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
 
         Self {
             heap: Heap::new(),
             scopes,
             modules,
             preludes: predule::create(),
-
             current_module_id,
 
             print_writer,
@@ -240,11 +238,13 @@ impl Environment {
 
         // For now, we expect a variable from another module is in the form
         // module_name.variable_name (1 dot, 2 parts)
+        // TODO: Fix this when modules are better speced
         let module_id = prefix_ids[0];
         let module = self.modules.get(&module_id)?;
 
         // This code is allowing code to un-imported module
-        // for example print(a.b) -> nil eventhoug we have not import a yet
+        // for example print(a.b) -> nil eventhough we have not import the module `a` yet
+        // TODO: Make this an error when modules are better speced
         module.variables.get(&id).copied()
     }
 
@@ -256,9 +256,7 @@ impl Environment {
         let result = self
             .get_current_scope_mut()
             .insert_variable(id.into(), value);
-
         self.shallow_copy_value(value);
-
         result
     }
 
@@ -301,8 +299,7 @@ impl Environment {
     }
 
     pub fn insert_string_variable(&mut self, s: String) -> Value {
-        let id = self.insert_string_id(s);
-        Value::Str(id)
+        Value::Str(self.insert_string_id(s))
     }
 
     decl_gc_type_methods!(array, Array, Array, GcKind::Array, Array);

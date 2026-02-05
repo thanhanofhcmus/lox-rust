@@ -3,12 +3,12 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::interpret::{
+    Environment,
     error::Error,
     values::{
         scalar::Scalar,
         value::{MapKey, Value},
     },
-    Environment,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -64,11 +64,10 @@ impl SerialValue {
 
             Value::Array(handle) => {
                 let arr = env.get_array(handle)?;
-                let mut vs = Vec::with_capacity(arr.len());
-                for v in arr {
-                    let sv = Self::convert_from_value(v.to_owned(), env)?;
-                    vs.push(sv);
-                }
+                let vs = arr
+                    .iter()
+                    .map(|v| Self::convert_from_value(*v, env))
+                    .collect::<Result<_, _>>()?;
                 Self::Array(vs)
             }
 
@@ -84,7 +83,7 @@ impl SerialValue {
             }
 
             Value::Unit | Value::Function(_) | Value::BuiltinFunction(_) => {
-                return Err(Error::TypeIsNotSerializable(value))
+                return Err(Error::TypeIsNotSerializable(value));
             }
         };
         Ok(v)
@@ -97,11 +96,10 @@ impl SerialValue {
             Self::Str(v) => env.insert_string_variable(v),
 
             Self::Array(values) => {
-                let mut arr = Vec::with_capacity(values.len());
-                for v in values {
-                    let sv = Self::hydrate(v, env)?;
-                    arr.push(sv);
-                }
+                let arr = values
+                    .into_iter()
+                    .map(|v| v.hydrate(env))
+                    .collect::<Result<_, _>>()?;
                 env.insert_array_variable(arr)
             }
 

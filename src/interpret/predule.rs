@@ -150,7 +150,7 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
     }
     let value = args[0];
 
-    let serial_value = SerialValue::convert_from_value(value.to_owned(), itp.environment)?;
+    let serial_value = SerialValue::convert_from_value(value, itp.environment)?;
 
     // maybe also throw error here
     let is_print_pretty = args

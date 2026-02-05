@@ -76,13 +76,13 @@ fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
 
         // we are facing the end of this block,
         if state.peek(&[Token::RPointParen]) {
-            // last parsed statement might be an expression with no semicolor
+            // last parsed statement might be an expression with no semicolon
             if let Statement::Expr(expr) = result {
                 // the last parsed statement is an expression, make it a return expr
                 last_expr = Some(Box::new(expr));
                 break;
             } else {
-                // the last parsed statement is just a normal staement
+                // the last parsed statement is just a normal statement
                 stmts.push(result);
             }
         } else {
@@ -152,9 +152,9 @@ fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
 }
 
 fn parse_return(state: &mut Context) -> Result<Expression, ParseError> {
-    let return_li = state.consume_token(Token::Return)?;
+    let li = state.consume_token(Token::Return)?;
     if !state.is_in_fn {
-        return Err(ParseError::UnexpectedReturn(return_li.span));
+        return Err(ParseError::UnexpectedReturn(li.span));
     }
     let return_expr = if !state.peek(&[Token::Semicolon]) {
         let expr = parse_expr(state)?;
@@ -197,16 +197,15 @@ fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {
             break;
         };
     }
-    let chains = IfChainNode {
+
+    Ok(Expression::IfChain(IfChainNode {
         if_node: ElseIfNode {
             cond,
             stmts: if_stmts,
         },
         else_if_nodes,
         else_stmts,
-    };
-
-    Ok(Expression::IfChain(chains))
+    }))
 }
 
 fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {
@@ -276,6 +275,7 @@ fn parse_recursive_binary<F>(
 where
     F: Fn(&mut Context) -> Result<ClauseNode, ParseError>,
 {
+    // TODO: implement pratt-parsing
     let mut lhs = lower_fn(state)?;
 
     while let Ok(op) = state.get_curr().cloned() {
@@ -310,10 +310,8 @@ fn parse_recursive_unary(
     let li = state.get_curr()?;
     if li.token == match_token {
         state.advance();
-        Ok(ClauseNode::UnaryOp(
-            Box::new(parse_recursive_unary(state, match_token)?),
-            match_token,
-        ))
+        let expr = parse_recursive_unary(state, match_token)?;
+        Ok(ClauseNode::UnaryOp(Box::new(expr), match_token))
     } else {
         parse_chaining(state)
     }
@@ -494,7 +492,7 @@ fn parse_number(state: &mut Context) -> Result<PrimaryNode, ParseError> {
 
 fn get_identifier(state: &mut Context) -> Result<LexItem, ParseError> {
     let li = state.consume_token(Token::Identifier)?;
-    Ok(li.to_owned())
+    Ok(li)
 }
 
 fn parse_repeated_with_separator<F, T>(
@@ -526,11 +524,11 @@ where
         result.push(expr);
         has_consumed_separator = false;
 
-        if let Ok(next) = state.get_curr() {
-            if next.token == separator {
-                state.advance();
-                has_consumed_separator = true;
-            }
+        if let Ok(next) = state.get_curr()
+            && next.token == separator
+        {
+            state.advance();
+            has_consumed_separator = true;
         };
     }
 

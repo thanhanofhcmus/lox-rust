@@ -6,27 +6,15 @@ use crate::interpret::{
 };
 
 #[derive(
-    derive_more::Debug,
-    derive_more::Display,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
+    derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
 )]
 #[serde(untagged)]
 pub enum Scalar {
-    #[display("nil")]
     Nil,
 
-    #[display("{}", _0)]
-    #[debug("Number({})", _0)]
+    #[debug("Number({:?})", _0)]
     Number(Number),
 
-    #[display("{}", _0)]
     #[debug("Bool({})", _0)]
     Bool(bool),
 }

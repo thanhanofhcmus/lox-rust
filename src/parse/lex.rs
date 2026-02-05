@@ -161,10 +161,10 @@ fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
 
     // check if the last thing we parsed is a dot
     let end_offset = *offset;
-    if let Some(c) = input.chars().nth(end_offset) {
-        if c == '.' {
-            return Err(ParseError::UnexpectedCharacter(Span::one(end_offset)));
-        }
+    if let Some(c) = input.chars().nth(end_offset)
+        && c == '.'
+    {
+        return Err(ParseError::UnexpectedCharacter(Span::one(end_offset)));
     }
 
     Ok(LexItem::new(

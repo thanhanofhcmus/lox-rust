@@ -10,6 +10,8 @@ use crate::{
     token::Token,
 };
 
+// TODO: create a special error reporting function that print to the actual string/array/map value
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Variable of name `{0}` has been declared before")]
@@ -24,31 +26,31 @@ pub enum Error {
     #[error("Unknown operator `{0}`")]
     UnknownOperation(Token),
 
-    #[error("Value `{1}` does not accept operator `{0}`")]
+    #[error("Value `{1:?}` does not accept operator `{0}`")]
     InvalidOperationOnType(Token, Value),
 
-    #[error("Type `{1}` and type `{2} canot perform operation `{0}` ")]
+    #[error("Type `{1:?}` and type `{2:?} canot perform operation `{0}` ")]
     MismatchType(Token, Value, Value),
 
-    #[error("Condition evaluated to `{0}` which is not a boolean value")]
+    #[error("Condition evaluated to `{0:?}` which is not a boolean value")]
     ConditionNotBool(Value),
 
     #[error("Divide by 0")]
     DivideByZero,
 
-    #[error("Value `{0}` is not a callable")]
+    #[error("Value `{0:?}` is not a callable")]
     ValueNotCallable(Value),
 
     #[error("Callable `{0}` accepts {1} number of arguments but received {2}")]
     WrongNumberOfArgument(String, usize, usize),
 
-    #[error("Value `{0}` is not of the type array or map, hance not indexable")]
+    #[error("Value `{0:?}` is not of the type array or map, hance not indexable")]
     ValueUnIndexable(Value),
 
-    #[error("Value `{0}` is can not be used as key for array or map")]
+    #[error("Value `{0:?}` is can not be used as key for array or map")]
     ValueCannotBeUsedAsKey(Value),
 
-    #[error("Value `{0}` is not of the type non-negative integer")]
+    #[error("Value `{0:?}` is not of the type non-negative integer")]
     ValueMustBeUsize(Value),
 
     #[error("Array has length `{0}` but received index `{1}`")]
@@ -66,16 +68,16 @@ pub enum Error {
     #[error("Interpreting module `{0}` in path `{1}` failed with error: {2}")]
     InterpretModuleFailed(String, String, Box<Error>),
 
-    #[error("Value of type `{0}` is not serializable")]
+    #[error("Value of type `{0:?}` is not serializable")]
     TypeIsNotSerializable(Value),
 
-    #[error("Serialize value `{0}` failed with error: {1}")]
+    #[error("Serialize value `{0:?}` failed with error: {1}")]
     SerializeFailed(Value, String),
 
-    #[error("Deserialize value `{0}` failed with error: {1}")]
+    #[error("Deserialize value `{0:?}` failed with error: {1}")]
     DeserializeFailed(Value, String),
 
-    #[error("Write value `{0}` failed with error: {1}")]
+    #[error("Write value `{0:?}` failed with error: {1}")]
     WriteValueFailed(Value, std::io::Error),
 
     #[error("Value of type unit `()` should not be used")]

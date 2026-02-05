@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use derive_more::Display;
-
 use crate::{
     ast::BlockNode,
     id::Id,
@@ -26,32 +24,26 @@ pub type Array = Vec<Value>;
 
 pub type Map = BTreeMap<MapKey, Value>;
 
-#[derive(Display, derive_more::Debug, Clone, Copy)]
+#[derive(derive_more::Debug, Clone, Copy)]
 pub enum Value {
-    #[display("()")]
     Unit,
 
     Scalar(Scalar),
 
     // TODO: Error crate needs display method and is using this format
     // we need to make error print the actual value or maybe keep printing String like this
-    #[display("string({:?})", _0)]
     #[debug("String({:?})", _0)]
     Str(StrId),
 
-    #[display("array({:?})", _0)]
     #[debug("Array({:?})", _0)]
     Array(GcHandle),
 
-    #[display("map({:?})", _0)]
     #[debug("Map({:?})", _0)]
     Map(GcHandle),
 
-    #[display("function({:?})", _0)]
     #[debug("Function({:?})", _0)]
     Function(GcHandle),
 
-    #[display("builtin_function")]
     #[debug("BuitinFunction({:?})", _0)]
     BuiltinFunction(BuiltinFn),
 }
@@ -72,6 +64,13 @@ impl Value {
     pub fn get_bool(self) -> Option<bool> {
         match self {
             Value::Scalar(Scalar::Bool(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn get_number(self) -> Option<Number> {
+        match self {
+            Value::Scalar(Scalar::Number(v)) => Some(v),
             _ => None,
         }
     }
@@ -146,6 +145,7 @@ impl Value {
     }
 
     pub fn get_at_index(&self, indexee: Value, env: &Environment) -> Result<Value, Error> {
+        // all the 2 types array and map that have the index method also have to get the value through a handle
         let Some(handle) = self.get_handle() else {
             return Err(Error::ValueUnIndexable(*self));
         };
@@ -155,10 +155,10 @@ impl Value {
     }
 
     pub fn to_index(self) -> Result<usize, Error> {
-        let Value::Scalar(Scalar::Number(v)) = self else {
-            return Err(Error::ValueMustBeUsize(self));
-        };
-        v.try_into()
+        match self.get_number() {
+            Some(v) => v.try_into(),
+            None => Err(Error::ValueMustBeUsize(self)),
+        }
     }
 }
 

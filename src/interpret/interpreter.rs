@@ -178,19 +178,21 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             };
         };
 
-        if index_chain.is_empty() {
-            self.environment
-                .replace_variable_current_scope(iden, reassigning_value);
-            return Ok(ValueReturn::none());
-        }
-
-        let new_root_value = self.environment.heap.deep_copy_reassign_object(
-            current_root_value,
-            &index_chain,
-            reassigning_value,
-        )?;
-        self.environment
-            .replace_variable_current_scope(iden, new_root_value);
+        match index_chain.split_last() {
+            Some((last, chain)) => {
+                let new_root_value = self.environment.heap.deep_copy_reassign_object(
+                    current_root_value,
+                    *last,
+                    chain,
+                    reassigning_value,
+                )?;
+                self.environment
+                    .replace_variable_current_scope(iden, new_root_value)
+            }
+            None => self
+                .environment
+                .replace_variable_current_scope(iden, reassigning_value),
+        };
 
         Ok(ValueReturn::none())
     }
@@ -228,7 +230,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         for stmt in &node.stmts {
             let res = self.interpret_stmt(stmt)?;
             if res.should_bubble_up {
-                // self.environment.pop_scope();
                 return Ok(res);
             }
         }
@@ -275,12 +276,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_clause_expr(&mut self, node: &ClauseNode) -> Result<ValueReturn, Error> {
         match node {
-            ClauseNode::UnaryOp(node, op) => {
-                self.interpret_unary_op(node, *op).map(ValueReturn::new)
-            }
-            ClauseNode::BinaryOp(node) => self.interpret_binary_op(node).map(ValueReturn::new),
-            ClauseNode::Chaining(node) => self.interpret_chaining_expr(node).map(ValueReturn::new),
+            ClauseNode::UnaryOp(node, op) => self.interpret_unary_op(node, *op),
+            ClauseNode::BinaryOp(node) => self.interpret_binary_op(node),
+            ClauseNode::Chaining(node) => self.interpret_chaining_expr(node),
         }
+        .map(ValueReturn::new)
     }
 
     fn interpret_primary_expr(&mut self, node: &PrimaryNode) -> Result<ValueReturn, Error> {
@@ -322,11 +322,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let value = val_res.get_or_error()?;
                 let repeat = rep_res.get_or_error()?.to_index()?;
 
-                let mut arr = Vec::with_capacity(repeat);
-                for _ in 0..repeat {
-                    arr.push(value);
-                }
-                Ok(self.environment.insert_array_variable(arr))
+                Ok(self.environment.insert_array_variable(vec![value; repeat]))
             }
         }
     }
@@ -353,11 +349,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         &mut self,
         node: &FnCallNode,
         handle: GcHandle,
-        // value::Function { arg_ids, body }: &Function,
     ) -> Result<Value, Error> {
         let func = self.environment.get_function(handle)?;
 
-        // TODO: remove clone
+        // Technically, we does not need the clone for args_ids and body here
+        // since when intepreting functions, we cannot create reassign it to an new value
+        // but we don't have a way in rust to formally express this
+        // TODO: find a way to express this
         let Function { arg_ids, body } = func.clone();
 
         if arg_ids.len() != node.args.len() {
@@ -390,11 +388,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         node: &FnCallNode,
         function: BuiltinFn,
     ) -> Result<Value, Error> {
-        let mut args = vec![];
-        for expr in &node.args {
-            let res = self.interpret_expr(expr)?.get_or_error()?;
-            args.push(res);
-        }
+        let args = node
+            .args
+            .iter()
+            .map(|expr| self.interpret_expr(expr).and_then(|v| v.get_or_error()))
+            .collect::<Result<_, _>>()?;
         function(self, args)
     }
 
@@ -403,11 +401,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         match op {
             Token::Not => match res.get_bool() {
                 Some(v) => Ok(Value::make_bool(!v)),
-                _ => Err(Error::InvalidOperationOnType(op, res)),
+                None => Err(Error::InvalidOperationOnType(op, res)),
             },
-            Token::Minus => match res {
-                Value::Scalar(Scalar::Number(v)) => Ok(Value::make_number(-v)),
-                _ => Err(Error::InvalidOperationOnType(op, res)),
+            Token::Minus => match res.get_number() {
+                Some(v) => Ok(Value::make_number(-v)),
+                None => Err(Error::InvalidOperationOnType(op, res)),
             },
             _ => Err(Error::UnknownOperation(op)),
         }
@@ -498,11 +496,9 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Token::GreaterEqual => Ok(Value::make_bool(o.is_ge())),
             _ => Err(Error::UnknownOperation(op)),
         };
-        use Value::*;
         match (lhs, rhs) {
-            (Scalar(l), Scalar(r)) => from_ord(l.cmp(&r)),
-            // TODO: fix this, this is comparing handles, should compare strings instead
-            (Str(l_handle), Str(r_handle)) => {
+            (Value::Scalar(l), Value::Scalar(r)) => from_ord(l.cmp(&r)),
+            (Value::Str(l_handle), Value::Str(r_handle)) => {
                 let l_str = self.environment.get_string(l_handle)?;
                 let r_str = self.environment.get_string(r_handle)?;
                 from_ord(l_str.cmp(r_str))
@@ -514,18 +510,15 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
         self.environment
             .get_variable_all_scope(node)
-            .map(|v| v.to_owned())
-            .to_owned()
             .unwrap_or(Value::make_nil())
     }
 
     fn is_truthy(&mut self, expr: &ClauseNode) -> Result<bool, Error> {
-        let res = self.interpret_clause_expr(expr)?;
-        let cond_value = res.get_or_error()?;
-        let Some(cond_bin) = cond_value.get_bool() else {
-            return Err(Error::ConditionNotBool(cond_value));
-        };
-        Ok(cond_bin)
+        let b = self.interpret_clause_expr(expr)?.get_or_error()?;
+        match b.get_bool() {
+            Some(v) => Ok(v),
+            None => Err(Error::ConditionNotBool(b)),
+        }
     }
 }
 
@@ -545,7 +538,7 @@ fn and_or(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
 }
 
 fn binary_number(lhs: Value, op: Token, rhs: Value) -> Result<Value, Error> {
-    let (Value::Scalar(Scalar::Number(l)), Value::Scalar(Scalar::Number(r))) = (lhs, rhs) else {
+    let (Some(l), Some(r)) = (lhs.get_number(), rhs.get_number()) else {
         return Err(Error::MismatchType(Token::Minus, lhs, rhs));
     };
 
