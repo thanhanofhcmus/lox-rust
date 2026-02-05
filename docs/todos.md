@@ -1,14 +1,17 @@
 ## Todos:
-- [X] Check and reword module
-- Add prelude and standard module
+- Implement more string stuff, multi-line, escape sequence, formatted string
+- List/Map comprehention
+- Rework module
+- And standard library module
 - More docs
 - More test, try fuzzing
+- Add type annotation, type checker
+- On-demand parsing
 - Experimenting the byte code VM
-- Implement more string stuff, multi-line, escape sequence, formatted string
-- Make last expression in a block return the value of the block (like rust)
-- On-deman parsing
-- Implement `map` data structure and it methods
-- [X] Maybe implement node-id
 - Add tree-sitter
 - Add LSP
-- Add type annotation, type checker
+
+- [X] Maybe implement node-id
+- [X] Make last expression in a block return the value of the block (like rust)
+- [X] Add prelude
+- [X] Implement `map` data structure
