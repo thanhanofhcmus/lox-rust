@@ -77,10 +77,21 @@ module.exports = grammar({
     unary: ($) =>
       prec.left(PRECEDENCES.Unary, seq(choice("-", "not"), $._clause)),
 
-    primary: ($) => choice("true", "false", "nil", $.number, $.string),
+    primary: ($) => choice($.scalar, $.array_literal, $.map_literal),
+
+    scalar: ($) => choice("true", "false", "nil", $.number, $.string),
 
     string: ($) => /"[^"]*"/,
     number: ($) => /\d+(\.\d+)?/,
+
+    array_literal: ($) =>
+      choice(
+        seq("[", sep_by_optional(",", $.clause), "]"),
+        seq("[", ":", $.clause, ":", $.clause, "]"),
+      ),
+
+    map_literal: ($) =>
+      seq("%{", sep_by_optional(",", seq($.scalar, "=>", $.expr)), "}"),
 
     identifier: ($) => sep_by(".", /[a-zA-Z_][a-zA-Z0-9_]*/),
 
@@ -93,4 +104,9 @@ module.exports = grammar({
 // @ts-ignore
 function sep_by(sep, rule) {
   return seq(rule, repeat(seq(sep, rule)));
+}
+
+// @ts-ignore
+function sep_by_optional(sep, rule) {
+  return optional(sep_by(sep, rule));
 }
