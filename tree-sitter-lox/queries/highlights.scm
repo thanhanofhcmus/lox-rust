@@ -1,9 +1,10 @@
-(declaration "var" @keyword)
+["var" "import" "as"] @keyword
 
-[(bool) (nil)] @constant.builtin
+["true" "false" "nil"] @constant.builtin
 
 (number) @number
 
 (string) @string
+(unix_path_string) @string.special
 
 (comment) @comment
