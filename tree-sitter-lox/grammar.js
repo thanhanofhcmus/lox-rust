@@ -77,10 +77,8 @@ module.exports = grammar({
     unary: ($) =>
       prec.left(PRECEDENCES.Unary, seq(choice("-", "not"), $._clause)),
 
-    primary: ($) => choice($.nil, $.bool, $.number, $.string),
+    primary: ($) => choice("true", "false", "nil", $.number, $.string),
 
-    nil: ($) => "null",
-    bool: ($) => choice("true", "false"),
     string: ($) => /"[^"]*"/,
     number: ($) => /\d+(\.\d+)?/,
 
