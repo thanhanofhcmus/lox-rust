@@ -19,7 +19,7 @@ pub type StatementList = Vec<Statement>;
 #[derive(Debug, Clone)]
 pub struct ChainingReassignTargetNode {
     pub base: IdentifierNode,
-    pub follows: Vec<Expression>,
+    pub follows: Vec<ClauseNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,13 +65,29 @@ pub struct WhileNode {
 
 #[derive(Debug, Clone)]
 pub enum ClauseNode {
-    UnaryOp(Box<ClauseNode>, Token),
-    BinaryOp(BinaryOpNode),
-    Chaining(ChainingNode),
+    Unary(Box<ClauseNode>, Token),
+    Binary(BinaryOpNode),
+    RawValue(RawValueNode),
+    Group(Box<ClauseNode>),
+    Identifier(IdentifierNode),
+    Subscription(SubscriptionNode),
+    FnCall(FnCallNode),
 }
 
 #[derive(Debug, Clone)]
-pub enum PrimaryNode {
+pub struct SubscriptionNode {
+    pub indexer: Box<ClauseNode>,
+    pub indexee: Box<ClauseNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnCallNode {
+    pub caller: Box<ClauseNode>,
+    pub args: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RawValueNode {
     Scalar(ScalarNode),
     ArrayLiteral(ArrayLiteralNode),
     MapLiteral(MapLiteralNode),
@@ -101,7 +117,7 @@ pub struct MapLiteralNode {
 #[derive(Debug, Clone)]
 pub struct MapLiteralElementNode {
     pub key: ScalarNode,
-    pub value: Expression,
+    pub value: ClauseNode,
 }
 
 #[derive(Debug, Clone)]
@@ -114,32 +130,6 @@ pub struct ArrayRepeatNode {
 pub struct FnDeclNode {
     pub arg_names: Vec<IdentifierNode>,
     pub body: BlockNode,
-}
-
-#[derive(Debug, Clone)]
-pub struct FnCallNode {
-    pub iden: IdentifierNode,
-    pub args: Vec<Expression>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ChainingBase {
-    Identifier(IdentifierNode),
-    Primary(PrimaryNode),
-    Group(Box<Expression>),
-}
-
-#[derive(Debug, Clone)]
-pub enum ChainingFollow {
-    Identifier(IdentifierNode), // a.b
-    FnCall(FnCallNode),         // a(b, c)
-    Index(Box<Expression>),     // a[b + c], array or map indexing
-}
-
-#[derive(Debug, Clone)]
-pub struct ChainingNode {
-    pub base: ChainingBase,
-    pub follows: Vec<ChainingFollow>,
 }
 
 #[derive(Debug, Clone)]

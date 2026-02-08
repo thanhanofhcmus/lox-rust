@@ -164,7 +164,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // evaluate left hand side
         let mut index_chain = Vec::with_capacity(node.follows.len());
         for expr in &node.follows {
-            let value = self.interpret_expr(expr)?.get_or_error()?;
+            let value = self.interpret_clause_expr(expr)?;
             index_chain.push(value);
         }
 
@@ -200,7 +200,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         match expr {
             Expression::Return(expr) => self.interpret_return_expr(expr),
             Expression::When(nodes) => self.interpret_when_expr(nodes),
-            Expression::Clause(node) => self.interpret_clause_expr(node),
+            Expression::Clause(node) => self.interpret_clause_expr(node).map(ValueReturn::new),
             Expression::Block(node) => self.interpret_block_node(node),
             Expression::While(node) => self.interpret_while_expr(node),
             Expression::IfChain(node) => self.interpret_if_chain_expr(node),
@@ -273,23 +273,26 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(ValueReturn::none())
     }
 
-    fn interpret_clause_expr(&mut self, node: &ClauseNode) -> Result<ValueReturn, Error> {
+    fn interpret_clause_expr(&mut self, node: &ClauseNode) -> Result<Value, Error> {
         match node {
-            ClauseNode::UnaryOp(node, op) => self.interpret_unary_op(node, *op),
-            ClauseNode::BinaryOp(node) => self.interpret_binary_op(node),
-            ClauseNode::Chaining(node) => self.interpret_chaining_expr(node),
+            ClauseNode::Unary(node, op) => self.interpret_unary_op(node, *op),
+            ClauseNode::Binary(node) => self.interpret_binary_op(node),
+            ClauseNode::RawValue(node) => self.interpret_raw_value_node(node),
+            ClauseNode::Identifier(node) => Ok(self.lookup_all_scope(node)),
+            ClauseNode::Group(node) => self.interpret_clause_expr(node),
+            ClauseNode::FnCall(node) => self.interpret_fn_call(node),
+            ClauseNode::Subscription(node) => self.interpret_subscription(node),
         }
-        .map(ValueReturn::new)
     }
 
-    fn interpret_primary_expr(&mut self, node: &PrimaryNode) -> Result<ValueReturn, Error> {
+    fn interpret_raw_value_node(&mut self, node: &RawValueNode) -> Result<Value, Error> {
         let val = match node {
-            PrimaryNode::Scalar(node) => self.interpret_scalar_expr(node),
-            PrimaryNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
-            PrimaryNode::MapLiteral(node) => self.interpret_map_literal(node)?,
-            PrimaryNode::FnDecl(node) => self.interpret_fn_decl(node)?,
+            RawValueNode::Scalar(node) => self.interpret_scalar_expr(node),
+            RawValueNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
+            RawValueNode::MapLiteral(node) => self.interpret_map_literal(node)?,
+            RawValueNode::FnDecl(node) => self.interpret_fn_decl(node)?,
         };
-        Ok(ValueReturn::new(val))
+        Ok(val)
     }
 
     fn interpret_scalar_expr(&mut self, node: &ScalarNode) -> Value {
@@ -310,19 +313,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let mut arr = Vec::with_capacity(clauses.len());
                 for expr in clauses {
                     let res = self.interpret_clause_expr(expr)?;
-                    // Even in literals, we must check if an expression bubbled a return
-                    // though usually return isn't allowed here syntactically.
-                    arr.push(res.get_or_error()?);
+                    arr.push(res);
                 }
                 Ok(self.environment.insert_array_variable(arr))
             }
             ArrayLiteralNode::Repeat(node) => {
-                let val_res = self.interpret_clause_expr(&node.value)?;
-                let rep_res = self.interpret_clause_expr(&node.repeat)?;
-
-                let value = val_res.get_or_error()?;
-                let repeat = rep_res.get_or_error()?.to_index()?;
-
+                let value = self.interpret_clause_expr(&node.value)?;
+                let repeat = self.interpret_clause_expr(&node.repeat)?.to_index()?;
                 Ok(self.environment.insert_array_variable(vec![value; repeat]))
             }
         }
@@ -333,7 +330,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         for kv in &node.nodes {
             let raw_key = self.interpret_scalar_expr(&kv.key);
             let key = MapKey::convert_from_value(raw_key)?;
-            let value = self.interpret_expr(&kv.value)?.get_or_error()?;
+            let value = self.interpret_clause_expr(&kv.value)?;
             map.insert(key, value);
         }
         Ok(self.environment.insert_map_variable(map))
@@ -346,10 +343,27 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }))
     }
 
+    fn interpret_subscription(&mut self, node: &SubscriptionNode) -> Result<Value, Error> {
+        let indexer = self.interpret_clause_expr(&node.indexer)?;
+        let indexee = self.interpret_clause_expr(&node.indexee)?;
+        indexer.get_at_index(indexee, self.environment)
+    }
+
+    fn interpret_fn_call(&mut self, node: &FnCallNode) -> Result<Value, Error> {
+        let value = self.interpret_clause_expr(&node.caller)?;
+        match value {
+            Value::Function(handle) => self.interpret_normal_fn_call_expr(handle, &node.args),
+            Value::BuiltinFunction(function) => {
+                self.intepret_builtin_fn_call_expr(function, &node.args)
+            }
+            _ => Err(Error::ValueNotCallable(value)),
+        }
+    }
+
     fn interpret_normal_fn_call_expr(
         &mut self,
-        node: &FnCallNode,
         handle: GcHandle,
+        args: &[Expression],
     ) -> Result<Value, Error> {
         let func = self.environment.get_function(handle)?;
 
@@ -359,11 +373,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // TODO: find a way to express this
         let Function { arg_ids, body } = func.clone();
 
-        if arg_ids.len() != node.args.len() {
+        if arg_ids.len() != args.len() {
             return Err(Error::WrongNumberOfArgument(
-                node.iden.create_name(self.input),
+                Value::Function(handle),
                 arg_ids.len(),
-                node.args.len(),
+                args.len(),
             ));
         }
 
@@ -371,7 +385,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // currently, later args can reference sonner args
         // TODO: make this go away
         self.environment.push_scope();
-        for (arg_id, arg_expr) in arg_ids.iter().zip(node.args.iter()) {
+        for (arg_id, arg_expr) in arg_ids.iter().zip(args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
             self.environment.insert_variable_current_scope(*arg_id, res);
         }
@@ -386,11 +400,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn intepret_builtin_fn_call_expr(
         &mut self,
-        node: &FnCallNode,
         function: BuiltinFn,
+        args: &[Expression],
     ) -> Result<Value, Error> {
-        let args = node
-            .args
+        let args = args
             .iter()
             .map(|expr| self.interpret_expr(expr).and_then(|v| v.get_or_error()))
             .collect::<Result<_, _>>()?;
@@ -398,7 +411,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_unary_op(&mut self, node: &ClauseNode, op: Token) -> Result<Value, Error> {
-        let res = self.interpret_clause_expr(node)?.get_or_error()?;
+        let res = self.interpret_clause_expr(node)?;
         match op {
             Token::Not => match res.get_bool() {
                 Some(v) => Ok(Value::make_bool(!v)),
@@ -416,8 +429,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         &mut self,
         BinaryOpNode { lhs, op, rhs }: &BinaryOpNode,
     ) -> Result<Value, Error> {
-        let lhs_val = self.interpret_clause_expr(lhs)?.get_or_error()?;
-        let rhs_val = self.interpret_clause_expr(rhs)?.get_or_error()?;
+        let lhs_val = self.interpret_clause_expr(lhs)?;
+        let rhs_val = self.interpret_clause_expr(rhs)?;
         let op = *op;
 
         match op {
@@ -441,36 +454,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_when_expr(&mut self, cases: &[WhenArmNode]) -> Result<ValueReturn, Error> {
         for WhenArmNode { cond, expr } in cases {
             if self.is_truthy(cond)? {
-                return self.interpret_clause_expr(expr);
+                return self.interpret_clause_expr(expr).map(ValueReturn::new);
             }
         }
         Ok(ValueReturn::new(Value::Unit))
-    }
-
-    fn interpret_chaining_expr(&mut self, node: &ChainingNode) -> Result<Value, Error> {
-        let mut value = match &node.base {
-            ChainingBase::Primary(v) => self.interpret_primary_expr(v)?.get_or_error()?,
-            ChainingBase::Group(v) => self.interpret_expr(v)?.get_or_error()?,
-            ChainingBase::Identifier(v) => self.lookup_all_scope(v),
-        };
-        for follow in &node.follows {
-            value = match follow {
-                // TODO: this one is not working right?, this is for a.b.c.d, should be lookup on the value's scope
-                ChainingFollow::Identifier(_node) => unimplemented!(),
-                ChainingFollow::FnCall(node) => match value {
-                    Value::Function(handle) => self.interpret_normal_fn_call_expr(node, handle)?,
-                    Value::BuiltinFunction(function) => {
-                        self.intepret_builtin_fn_call_expr(node, function)?
-                    }
-                    _ => return Err(Error::ValueNotCallable(value)),
-                },
-                ChainingFollow::Index(indexee_expr) => {
-                    let indexee = self.interpret_expr(indexee_expr)?.get_or_error()?;
-                    value.get_at_index(indexee, self.environment)?
-                }
-            }
-        }
-        Ok(value)
     }
 
     fn interpret_add(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
@@ -515,7 +502,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn is_truthy(&mut self, expr: &ClauseNode) -> Result<bool, Error> {
-        let b = self.interpret_clause_expr(expr)?.get_or_error()?;
+        let b = self.interpret_clause_expr(expr)?;
         match b.get_bool() {
             Some(v) => Ok(v),
             None => Err(Error::ConditionNotBool(b)),

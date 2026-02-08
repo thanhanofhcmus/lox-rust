@@ -41,8 +41,8 @@ pub enum Error {
     #[error("Value `{0:?}` is not a callable")]
     ValueNotCallable(Value),
 
-    #[error("Callable `{0}` accepts {1} number of arguments but received {2}")]
-    WrongNumberOfArgument(String, usize, usize),
+    #[error("Callable `{0:?}` accepts {1} number of arguments but received {2}")]
+    WrongNumberOfArgument(Value, usize, usize),
 
     #[error("Value `{0:?}` is not of the type array or map, hance not indexable")]
     ValueUnIndexable(Value),

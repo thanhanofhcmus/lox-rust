@@ -127,13 +127,7 @@ fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseErr
 
     state.consume_token(Token::Equal)?;
 
-    // validate the expression is a lvalue
-    let Expression::Clause(ClauseNode::Chaining(chaining_node)) = expr else {
-        // TODO: return actual error
-        panic!("not chaining node in the left side of assignment");
-    };
-
-    let node = convert_chaining(chaining_node)?;
+    let node = convert_chaining(expr)?;
 
     let expr = parse_expr(state)?;
     state.consume_token(Token::Semicolon)?;
@@ -227,58 +221,123 @@ fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode, ParseError> {
 }
 
 fn parse_clause_node(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    // parse_logical(state)
-    parse_binary_pratt(state, BindingPower::None)
+    parse_pratt(state, BindingPower::None)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum BindingPower {
-    None = 0,
-    Logical = 1,
-    Equality = 2,
-    Comparision = 3,
-    Term = 4,
-    Factor = 5,
-    Unary = 6,
+    None,
+    LogicalLeft,
+    LogicalRight,
+    EqualityLeft,
+    EqualityRight,
+    ComparisionLeft,
+    ComparisionRight,
+    TermLeft,
+    TermRight,
+    FactorLeft,
+    FactorRight,
+    // all three chain node (member access, subscription and function all have right associaction)
+    ChainRight,
+    ChainLeft,
 }
 
-fn get_binding_power(token: Token) -> Option<BindingPower> {
+fn get_binding_power(token: Token) -> Option<(BindingPower, BindingPower)> {
+    use BindingPower::*;
     use Token::*;
     let bp = match token {
-        And | Or => BindingPower::Logical,
-        EqualEqual | BangEqual => BindingPower::Equality,
-        Less | LessEqual | Greater | GreaterEqual => BindingPower::Comparision,
-        Plus | Minus => BindingPower::Term,
-        Star | Slash | Percentage => BindingPower::Factor,
-        _ => return None,
+        And | Or => (LogicalLeft, LogicalRight),
+        EqualEqual | BangEqual => (EqualityLeft, EqualityRight),
+        Less | LessEqual | Greater | GreaterEqual => (ComparisionLeft, ComparisionRight),
+        Plus | Minus => (TermLeft, TermRight),
+        Star | Slash | Percentage => (FactorLeft, FactorRight),
+
+        // postfix operators, we will only extract the left part
+        LSquareParen | LRoundParen | Dot => (ChainLeft, ChainRight),
+        _ => return Option::None,
     };
     Some(bp)
 }
 
-fn parse_binary_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode, ParseError> {
-    let mut lhs = parse_unary(state)?;
+fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode, ParseError> {
+    let mut lhs = parse_pratt_prefix(state)?;
 
     loop {
         if state.is_at_end() {
             break;
         }
         let li = state.get_curr().copied()?;
-        let Some(new_bp) = get_binding_power(li.token) else {
+        let Some((left_bp, right_bp)) = get_binding_power(li.token) else {
             break;
         };
-        if new_bp <= min_bp {
+        if left_bp < min_bp {
             break;
         }
-        state.consume_token(li.token)?;
-        let rhs = parse_binary_pratt(state, new_bp)?;
-        lhs = ClauseNode::Binary(BinaryOpNode {
-            lhs: Box::new(lhs),
-            op: li.token,
-            rhs: Box::new(rhs),
-        })
+        lhs = parse_pratt_infix(state, lhs, right_bp)?;
     }
 
     Ok(lhs)
+}
+
+fn parse_pratt_infix(
+    state: &mut Context,
+    lhs: ClauseNode,
+    min_bp: BindingPower,
+) -> Result<ClauseNode, ParseError> {
+    let li = state.get_curr().copied()?;
+    match li.token {
+        Token::Dot => unimplemented!(),
+
+        Token::LSquareParen => {
+            state.consume_token(li.token)?;
+            let indexee = parse_clause_node(state)?;
+            state.consume_token(Token::RSquareParen)?;
+            Ok(ClauseNode::Subscription(SubscriptionNode {
+                indexer: Box::new(lhs),
+                indexee: Box::new(indexee),
+            }))
+        }
+        Token::LRoundParen => {
+            let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
+            Ok(ClauseNode::FnCall(FnCallNode {
+                caller: Box::new(lhs),
+                args,
+            }))
+        }
+        token if is_binary_op(token) => {
+            state.consume_token(li.token)?;
+            let rhs = parse_pratt(state, min_bp)?;
+            Ok(ClauseNode::Binary(BinaryOpNode {
+                lhs: Box::new(lhs),
+                op: li.token,
+                rhs: Box::new(rhs),
+            }))
+        }
+        _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
+    }
+}
+
+fn parse_pratt_prefix(state: &mut Context) -> Result<ClauseNode, ParseError> {
+    parse_unary(state)
+}
+
+fn is_binary_op(token: Token) -> bool {
+    use Token::*;
+    matches!(
+        token,
+        And | Or
+            | EqualEqual
+            | BangEqual
+            | Less
+            | LessEqual
+            | Greater
+            | GreaterEqual
+            | Plus
+            | Minus
+            | Star
+            | Slash
+            | Percentage
+    )
 }
 
 fn parse_unary(state: &mut Context) -> Result<ClauseNode, ParseError> {
@@ -286,7 +345,7 @@ fn parse_unary(state: &mut Context) -> Result<ClauseNode, ParseError> {
     match li.token {
         Token::Not => parse_recursive_unary(state, Token::Not),
         Token::Minus => parse_recursive_unary(state, Token::Minus),
-        _ => parse_chaining(state),
+        _ => parse_primary(state),
     }
 }
 
@@ -300,61 +359,33 @@ fn parse_recursive_unary(
         let expr = parse_recursive_unary(state, match_token)?;
         Ok(ClauseNode::Unary(Box::new(expr), match_token))
     } else {
-        parse_chaining(state)
+        parse_primary(state)
     }
 }
 
-fn parse_chaining(state: &mut Context) -> Result<ClauseNode, ParseError> {
+fn parse_primary(state: &mut Context) -> Result<ClauseNode, ParseError> {
     let base = if state.peek(&[Token::Identifier]) {
         let node = parse_identifier_node(state)?;
-        ChainingBase::Identifier(node)
+        ClauseNode::Identifier(node)
     } else if state.peek(&[Token::LRoundParen]) {
         let node = parse_group(state)?;
-        ChainingBase::Group(Box::new(node))
+        ClauseNode::Group(Box::new(node))
     } else {
-        let node = parse_primary_node(state)?;
-        ChainingBase::Primary(node)
+        let node = parse_raw_value_node(state)?;
+        ClauseNode::RawValue(node)
     };
-
-    let mut follows = vec![];
-    loop {
-        if state.peek(&[Token::Identifier]) {
-            let id = parse_identifier_node(state)?;
-            follows.push(ChainingFollow::Identifier(id));
-        } else if state.peek(&[Token::LSquareParen]) {
-            state.consume_token(Token::LSquareParen)?;
-            let indexee = parse_expr(state)?;
-            state.consume_token(Token::RSquareParen)?;
-            follows.push(ChainingFollow::Index(Box::new(indexee)));
-        } else if state.peek(&[Token::LRoundParen]) {
-            // parse function
-            // TODO: make start position span the whole chain
-            let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
-            follows.push(ChainingFollow::FnCall(FnCallNode {
-                iden: IdentifierNode::new_from_name(
-                    // TODO: this span is wrong, also should not get from get_current_position
-                    Span::new(0, 0),
-                    state.get_input(),
-                ),
-                args,
-            }));
-        } else {
-            break;
-        }
-    }
-
-    Ok(ClauseNode::Chaining(ChainingNode { base, follows }))
+    Ok(base)
 }
 
-fn parse_primary_node(state: &mut Context) -> Result<PrimaryNode, ParseError> {
+fn parse_raw_value_node(state: &mut Context) -> Result<RawValueNode, ParseError> {
     let li = *state.get_curr()?;
     match li.token {
         Token::Nil | Token::True | Token::False | Token::String | Token::Number => {
-            parse_scalar_node(state).map(PrimaryNode::Scalar)
+            parse_scalar_node(state).map(RawValueNode::Scalar)
         }
-        Token::LSquareParen => parse_array_literal_node(state).map(PrimaryNode::ArrayLiteral),
-        Token::PercentLPointParent => parse_map_literal_node(state).map(PrimaryNode::MapLiteral),
-        Token::Fn => parse_function_decl(state).map(PrimaryNode::FnDecl),
+        Token::LSquareParen => parse_array_literal_node(state).map(RawValueNode::ArrayLiteral),
+        Token::PercentLPointParent => parse_map_literal_node(state).map(RawValueNode::MapLiteral),
+        Token::Fn => parse_function_decl(state).map(RawValueNode::FnDecl),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
@@ -396,11 +427,11 @@ fn parse_identifier_node(state: &mut Context) -> Result<IdentifierNode, ParseErr
     ))
 }
 
-fn parse_group(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_group(state: &mut Context) -> Result<ClauseNode, ParseError> {
     state.consume_token(Token::LRoundParen)?;
-    let expr = parse_expr(state)?;
+    let node = parse_clause_node(state)?;
     state.consume_token(Token::RRoundParen)?;
-    Ok(expr)
+    Ok(node)
 }
 
 fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, ParseError> {
@@ -440,7 +471,7 @@ fn parse_map_literal_element_node(
 ) -> Result<MapLiteralElementNode, ParseError> {
     let key = parse_scalar_node(state)?;
     state.consume_token(Token::RFArrtow)?;
-    let value = parse_expr(state)?;
+    let value = parse_clause_node(state)?;
     Ok(MapLiteralElementNode { key, value })
 }
 
@@ -548,26 +579,40 @@ where
     Ok(result)
 }
 
-fn convert_chaining(node: ChainingNode) -> Result<ChainingReassignTargetNode, ParseError> {
-    let base = match node.base {
-        ChainingBase::Primary(_) | ChainingBase::Group(_) => {
-            return Err(ParseError::ReassignRootIsNotAnIdentifier);
-        }
-        ChainingBase::Identifier(v) => v,
+fn convert_chaining(node: Expression) -> Result<ChainingReassignTargetNode, ParseError> {
+    let Expression::Clause(clause) = node else {
+        return Err(ParseError::ReassignRootIsNotAnIdentifier);
     };
 
-    let mut follows = vec![];
+    let mut index_chain = vec![];
+    let mut clause = clause;
 
-    for follow in node.follows {
-        match follow {
-            ChainingFollow::Identifier(_) | ChainingFollow::FnCall(_) => {
-                return Err(ParseError::ReassignFollowIsNotAnIndex);
+    loop {
+        match clause {
+            ClauseNode::Subscription(SubscriptionNode { indexer, indexee }) => {
+                index_chain.push(*indexee);
+                clause = *indexer;
             }
-            ChainingFollow::Index(indexee_expr) => {
-                follows.push(*indexee_expr);
+            v => {
+                index_chain.push(v);
+                break;
             }
-        };
+        }
     }
 
-    Ok(ChainingReassignTargetNode { base, follows })
+    let first = index_chain
+        .pop()
+        .ok_or(ParseError::ReassignRootIsNotAnIdentifier)?;
+
+    index_chain.reverse();
+
+    let base = match first {
+        ClauseNode::Identifier(node) => node.clone(),
+        _ => return Err(ParseError::ReassignRootIsNotAnIdentifier),
+    };
+
+    Ok(ChainingReassignTargetNode {
+        base,
+        follows: index_chain,
+    })
 }

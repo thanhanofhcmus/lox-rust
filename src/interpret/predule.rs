@@ -100,7 +100,11 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
 
 fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
     if args.len() != 2 {
-        return Err(Error::WrongNumberOfArgument("assert".into(), 2, args.len()));
+        return Err(Error::WrongNumberOfArgument(
+            Value::BuiltinFunction(assert_fn),
+            2,
+            args.len(),
+        ));
     }
 
     let mut args_iter = args.into_iter();

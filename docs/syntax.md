@@ -20,21 +20,17 @@ expr              = if | while | when | clause
 when              = "when" "{" ( clause "->" expr "," ... )* "}"
 if                = "if" clause block ("else" if | block)?
 while             = "while" clause block
-clause            = logical
-logical           = equality (( "and" | "or" ) equality)*
-equality          = comparison (("==" | "!=") comparison)*
-comparison        = term (("<" | "<" | "<=" | ">=") term)*
-term              = factor (("+" | "-") factor)*
-factor            = unary (("*" | "/" | "%") unary)*
-unary             = ("not" | "-")* unary | chaining
-chaining          = chaining_base (chaining_part)*
-chaining_base     = identifier | group | primary  
-chaining_part     = "." identifier | "[" expr "]" | "(" (expr "," ... ) ")"
-primary           = scalar | array_literal | map_literal | function_decl
+clause            = unary (( "and" | "or" )          unary)* 
+                  | unary (("==" | "!=")             unary)*
+                  | unary (("<" | "<=" | ">" | ">=") unary)*
+                  | unary (("+" | "-")               unary)*
+                  | unary (("*" | "/" | "%")         unary)*
+unary             = ("not" | "-")* unary | primary
+primary           = IDENTIFIER | group | raw_value
+raw_value         = scalar | array_literal | map_literal | function_decl
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
-identifier        = (IDENTIFIER "." ...)*
 function_decl     = "fn" "(" ( IDENTIFIER "," ... )* ")" (function_block | expr)
 array_literal     = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]"
-map_literal       = "%{" (primary "=>" expr , ...)* "}" 
+map_literal       = "%{" (primary "=>" clause , ...)* "}" 
 group             = "(" clause ")"
 ```
