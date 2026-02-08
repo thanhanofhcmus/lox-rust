@@ -8,6 +8,7 @@ const PRECEDENCES = {
   Term: 4,
   Factor: 5,
   Unary: 6,
+  Chaining: 7,
 };
 
 module.exports = grammar({
@@ -28,7 +29,7 @@ module.exports = grammar({
 
     clause: ($) => $._clause,
 
-    _clause: ($) => choice($.binary, $.unary, $.primary),
+    _clause: ($) => choice($.binary, $.unary, $.chaining),
 
     binary: ($) =>
       choice(
@@ -77,11 +78,27 @@ module.exports = grammar({
     unary: ($) =>
       prec.left(PRECEDENCES.Unary, seq(choice("-", "not"), $._clause)),
 
+    chaining: ($) =>
+      prec.left(
+        PRECEDENCES.Chaining,
+        seq($.chaining_base, optional(repeat($.chaining_follow))),
+      ),
+
+    chaining_base: ($) => choice($.identifier, $.primary),
+
+    chaining_follow: ($) =>
+      choice(
+        seq(".", $.identifier),
+        seq("[", $.expr, "]"), // indexing
+        seq("(", sep_by_optional(",", $.expr), ")"), // function call
+      ),
+
     primary: ($) => choice($.scalar, $.array_literal, $.map_literal),
 
     scalar: ($) => choice("true", "false", "nil", $.number, $.string),
 
     string: ($) => /"[^"]*"/,
+
     number: ($) => /\d+(\.\d+)?/,
 
     array_literal: ($) =>
@@ -93,7 +110,7 @@ module.exports = grammar({
     map_literal: ($) =>
       seq("%{", sep_by_optional(",", seq($.scalar, "=>", $.expr)), "}"),
 
-    identifier: ($) => sep_by(".", /[a-zA-Z_][a-zA-Z0-9_]*/),
+    identifier: ($) => /[a-zA-Z_][a-zA-Z0-9_]*/,
 
     unix_path_string: ($) => /"[^"]+"/,
 
