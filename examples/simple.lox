@@ -1,7 +1,7 @@
 # --- 1. Variables & Dynamic Types ---
 # Variables are declared with 'var'. Types are determined at runtime.
 var x = 10;                # Number
-var name = "Gemini";       # String
+var name = "A String";     # String
 var is_active = true;      # Boolean
 var empty = nil;           # Null type
 

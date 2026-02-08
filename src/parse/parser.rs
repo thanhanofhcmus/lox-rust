@@ -227,68 +227,55 @@ fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode, ParseError> {
 }
 
 fn parse_clause_node(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_logical(state)
+    // parse_logical(state)
+    parse_binary_pratt(state, BindingPower::None)
 }
 
-fn parse_logical(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_recursive_binary(state, &[Token::And, Token::Or], parse_equality)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum BindingPower {
+    None = 0,
+    Logical = 1,
+    Equality = 2,
+    Comparision = 3,
+    Term = 4,
+    Factor = 5,
+    Unary = 6,
 }
 
-fn parse_equality(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_recursive_binary(
-        state,
-        &[Token::EqualEqual, Token::BangEqual],
-        parse_comparison,
-    )
+fn get_binding_power(token: Token) -> Option<BindingPower> {
+    use Token::*;
+    let bp = match token {
+        And | Or => BindingPower::Logical,
+        EqualEqual | BangEqual => BindingPower::Equality,
+        Less | LessEqual | Greater | GreaterEqual => BindingPower::Comparision,
+        Plus | Minus => BindingPower::Term,
+        Star | Slash | Percentage => BindingPower::Factor,
+        _ => return None,
+    };
+    Some(bp)
 }
 
-fn parse_comparison(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_recursive_binary(
-        state,
-        &[
-            Token::Less,
-            Token::LessEqual,
-            Token::Greater,
-            Token::GreaterEqual,
-        ],
-        parse_term,
-    )
-}
+fn parse_binary_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode, ParseError> {
+    let mut lhs = parse_unary(state)?;
 
-fn parse_term(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_recursive_binary(state, &[Token::Plus, Token::Minus], parse_factor)
-}
-
-fn parse_factor(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_recursive_binary(
-        state,
-        &[Token::Star, Token::Slash, Token::PercentLPointParent],
-        parse_unary,
-    )
-}
-
-fn parse_recursive_binary<F>(
-    state: &mut Context,
-    match_tokens: &'static [Token],
-    lower_fn: F,
-) -> Result<ClauseNode, ParseError>
-where
-    F: Fn(&mut Context) -> Result<ClauseNode, ParseError>,
-{
-    // TODO: implement pratt-parsing
-    let mut lhs = lower_fn(state)?;
-
-    while let Ok(op) = state.get_curr().cloned() {
-        if !match_tokens.contains(&op.token) {
+    loop {
+        if state.is_at_end() {
             break;
         }
-        state.advance();
-        let rhs = lower_fn(state)?;
-        lhs = ClauseNode::BinaryOp(BinaryOpNode {
+        let li = state.get_curr().copied()?;
+        let Some(new_bp) = get_binding_power(li.token) else {
+            break;
+        };
+        if new_bp <= min_bp {
+            break;
+        }
+        state.consume_token(li.token)?;
+        let rhs = parse_binary_pratt(state, new_bp)?;
+        lhs = ClauseNode::Binary(BinaryOpNode {
             lhs: Box::new(lhs),
-            op: op.token,
+            op: li.token,
             rhs: Box::new(rhs),
-        });
+        })
     }
 
     Ok(lhs)
@@ -311,7 +298,7 @@ fn parse_recursive_unary(
     if li.token == match_token {
         state.advance();
         let expr = parse_recursive_unary(state, match_token)?;
-        Ok(ClauseNode::UnaryOp(Box::new(expr), match_token))
+        Ok(ClauseNode::Unary(Box::new(expr), match_token))
     } else {
         parse_chaining(state)
     }
