@@ -20,12 +20,15 @@ expr              = if | while | when | clause
 when              = "when" "{" ( clause "->" expr "," ... )* "}"
 if                = "if" clause block ("else" if | block)?
 while             = "while" clause block
-clause            = unary (( "and" | "or" )          unary)* 
-                  | unary (("==" | "!=")             unary)*
-                  | unary (("<" | "<=" | ">" | ">=") unary)*
-                  | unary (("+" | "-")               unary)*
-                  | unary (("*" | "/" | "%")         unary)*
+clause            = binary | unary | call | subscription
+binary            = clause ( "and" | "or" )          clause
+                  | clause ("==" | "!=")             clause
+                  | clause ("<" | "<=" | ">" | ">=") clause
+                  | clause ("+" | "-")               clause
+                  | clause ("*" | "/" | "%")         clause
 unary             = ("not" | "-")* unary | primary
+call              = clause "(" (clause, "," ...)* ")"
+subscription      = clause "[" clause "]"
 primary           = IDENTIFIER | group | raw_value
 raw_value         = scalar | array_literal | map_literal | function_decl
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
