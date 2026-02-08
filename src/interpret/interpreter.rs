@@ -5,7 +5,6 @@ use crate::ast::*;
 use crate::interpret::heap::GcHandle;
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar};
 use crate::parse;
-use crate::span::Span;
 use crate::token::Token;
 use std::panic;
 use std::path::Path;
@@ -285,11 +284,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_primary_expr(&mut self, node: &PrimaryNode) -> Result<ValueReturn, Error> {
         let val = match node {
-            PrimaryNode::Nil => Value::make_nil(),
-            PrimaryNode::Bool(v) => Value::make_bool(*v),
-            PrimaryNode::Integer(v) => Value::make_number(Number::Integer(*v)),
-            PrimaryNode::Floating(v) => Value::make_number(Number::Floating(*v)),
-            PrimaryNode::Str(v) => self.interpret_string_literal(*v)?,
+            PrimaryNode::Scalar(node) => self.interpret_scalar_expr(node),
             PrimaryNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
             PrimaryNode::MapLiteral(node) => self.interpret_map_literal(node)?,
             PrimaryNode::FnDecl(node) => self.interpret_fn_decl(node)?,
@@ -297,10 +292,16 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(ValueReturn::new(val))
     }
 
-    fn interpret_string_literal(&mut self, span: Span) -> Result<Value, Error> {
-        Ok(self
-            .environment
-            .insert_string_variable(span.string_from_source(self.input)))
+    fn interpret_scalar_expr(&mut self, node: &ScalarNode) -> Value {
+        match node {
+            ScalarNode::Nil => Value::make_nil(),
+            ScalarNode::Bool(v) => Value::make_bool(*v),
+            ScalarNode::Integer(v) => Value::make_number(Number::Integer(*v)),
+            ScalarNode::Floating(v) => Value::make_number(Number::Floating(*v)),
+            ScalarNode::Str(v) => self
+                .environment
+                .insert_string_variable(v.string_from_source(self.input)),
+        }
     }
 
     fn interpret_array_literal(&mut self, node: &ArrayLiteralNode) -> Result<Value, Error> {
@@ -330,7 +331,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
         let mut map = Map::new();
         for kv in &node.nodes {
-            let raw_key = self.interpret_primary_expr(&kv.key)?.get_or_error()?;
+            let raw_key = self.interpret_scalar_expr(&kv.key);
             let key = MapKey::convert_from_value(raw_key)?;
             let value = self.interpret_expr(&kv.value)?.get_or_error()?;
             map.insert(key, value);

@@ -361,27 +361,37 @@ fn parse_chaining(state: &mut Context) -> Result<ClauseNode, ParseError> {
 
 fn parse_primary_node(state: &mut Context) -> Result<PrimaryNode, ParseError> {
     let li = *state.get_curr()?;
+    match li.token {
+        Token::Nil | Token::True | Token::False | Token::String | Token::Number => {
+            parse_scalar_node(state).map(PrimaryNode::Scalar)
+        }
+        Token::LSquareParen => parse_array_literal_node(state).map(PrimaryNode::ArrayLiteral),
+        Token::PercentLPointParent => parse_map_literal_node(state).map(PrimaryNode::MapLiteral),
+        Token::Fn => parse_function_decl(state).map(PrimaryNode::FnDecl),
+        _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
+    }
+}
+
+fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
+    let li = *state.get_curr()?;
     let mut next = |expr| {
         state.advance();
         Ok(expr)
     };
 
     match li.token {
-        Token::Nil => next(PrimaryNode::Nil),
-        Token::True => next(PrimaryNode::Bool(true)),
-        Token::False => next(PrimaryNode::Bool(false)),
+        Token::Nil => next(ScalarNode::Nil),
+        Token::True => next(ScalarNode::Bool(true)),
+        Token::False => next(ScalarNode::Bool(false)),
         Token::String => {
             // Don't use the `next` closure here, the borrow checker will complain
             state.advance();
-            Ok(PrimaryNode::Str(
+            Ok(ScalarNode::Str(
                 // remove start '"' and end '"'
                 Span::new(li.span.start + 1, li.span.end - 1),
             ))
         }
         Token::Number => parse_number(state),
-        Token::LSquareParen => Ok(PrimaryNode::ArrayLiteral(parse_array_literal_node(state)?)),
-        Token::PercentLPointParent => Ok(PrimaryNode::MapLiteral(parse_map_literal_node(state)?)),
-        Token::Fn => parse_function_decl(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
@@ -441,13 +451,13 @@ fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode, ParseEr
 fn parse_map_literal_element_node(
     state: &mut Context,
 ) -> Result<MapLiteralElementNode, ParseError> {
-    let key = parse_primary_node(state)?;
+    let key = parse_scalar_node(state)?;
     state.consume_token(Token::RFArrtow)?;
     let value = parse_expr(state)?;
     Ok(MapLiteralElementNode { key, value })
 }
 
-fn parse_function_decl(state: &mut Context) -> Result<PrimaryNode, ParseError> {
+fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode, ParseError> {
     state.consume_token(Token::Fn)?;
     let arg_names = parse_comma_list(
         state,
@@ -473,20 +483,20 @@ fn parse_function_decl(state: &mut Context) -> Result<PrimaryNode, ParseError> {
         };
     }
 
-    Ok(PrimaryNode::FnDecl(FnDeclNode { arg_names, body }))
+    Ok(FnDeclNode { arg_names, body })
 }
 
-fn parse_number(state: &mut Context) -> Result<PrimaryNode, ParseError> {
+fn parse_number(state: &mut Context) -> Result<ScalarNode, ParseError> {
     let li = state.consume_token(Token::Number)?;
     let source = li.span.str_from_source(state.get_input());
 
     if let Ok(num) = source.parse::<i64>() {
-        return Ok(PrimaryNode::Integer(num));
+        return Ok(ScalarNode::Integer(num));
     }
 
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
-        Ok(num) => Ok(PrimaryNode::Floating(num)),
+        Ok(num) => Ok(ScalarNode::Floating(num)),
     }
 }
 

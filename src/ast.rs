@@ -72,14 +72,19 @@ pub enum ClauseNode {
 
 #[derive(Debug, Clone)]
 pub enum PrimaryNode {
+    Scalar(ScalarNode),
+    ArrayLiteral(ArrayLiteralNode),
+    MapLiteral(MapLiteralNode),
+    FnDecl(FnDeclNode),
+}
+
+#[derive(Debug, Clone)]
+pub enum ScalarNode {
     Nil,
     Bool(bool),
     Integer(i64),
     Floating(f64),
     Str(Span),
-    ArrayLiteral(ArrayLiteralNode),
-    MapLiteral(MapLiteralNode),
-    FnDecl(FnDeclNode),
 }
 
 #[derive(Debug, Clone)]
@@ -95,7 +100,7 @@ pub struct MapLiteralNode {
 
 #[derive(Debug, Clone)]
 pub struct MapLiteralElementNode {
-    pub key: PrimaryNode,
+    pub key: ScalarNode,
     pub value: Expression,
 }
 

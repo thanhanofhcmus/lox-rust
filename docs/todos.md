@@ -1,5 +1,5 @@
 ## Todos:
-- Implement more string stuff, multi-line, escape sequence, formatted string
+- Implement more string stuff, multi-line, escape sequence, raw, formatted string
 - List/Map comprehention
 - Rework module
 - And standard library module
