@@ -260,11 +260,11 @@ fn parse_term(state: &mut Context) -> Result<ClauseNode, ParseError> {
 }
 
 fn parse_factor(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_recursive_binary(state, &[Token::Star, Token::Slash], parse_modulo)
-}
-
-fn parse_modulo(state: &mut Context) -> Result<ClauseNode, ParseError> {
-    parse_recursive_binary(state, &[Token::Percentage], parse_unary)
+    parse_recursive_binary(
+        state,
+        &[Token::Star, Token::Slash, Token::PercentLPointParent],
+        parse_unary,
+    )
 }
 
 fn parse_recursive_binary<F>(

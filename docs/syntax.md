@@ -25,9 +25,8 @@ logical           = equality (( "and" | "or" ) equality)*
 equality          = comparison (("==" | "!=") comparison)*
 comparison        = term (("<" | "<" | "<=" | ">=") term)*
 term              = factor (("+" | "-") factor)*
-factor            = modulo (("*" | "/") modulo)*
-modulo            = unary ("%" unary)?
-unary             = ("!" | "-")* unary | chaining
+factor            = unary (("*" | "/" | "%") unary)*
+unary             = ("not" | "-")* unary | chaining
 chaining          = chaining_base (chaining_part)*
 chaining_base     = identifier | group | primary  
 chaining_part     = "." identifier | "[" expr "]" | "(" (expr "," ... ) ")"
