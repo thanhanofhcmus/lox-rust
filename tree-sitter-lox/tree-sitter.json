@@ -6,9 +6,8 @@
       "camelcase": "Lox",
       "title": "Lox",
       "scope": "source.lox",
-      "file-types": [
-        "lox"
-      ],
+      "file-types": ["lox"],
+      "highlights": "queries/highlights.scm",
       "injection-regex": "^lox$",
       "class-name": "TreeSitterLox"
     }
