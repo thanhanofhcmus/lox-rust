@@ -22,7 +22,9 @@ module.exports = grammar({
 
     import: ($) => seq("import", $.unix_path_string, "as", $.identifier),
 
-    stmt: ($) => choice($.declaration, $.expr),
+    stmt: ($) => choice($.declaration, seq($.expr, optional(";"))),
+
+    block: ($) => seq("{", repeat($.stmt), "}"),
 
     declaration: ($) => seq("var", $.identifier, "=", $.expr, ";"),
 
@@ -91,7 +93,8 @@ module.exports = grammar({
     primary: ($) =>
       prec.left(PRECEDENCES.Primay, choice($.identifier, $._raw_value)),
 
-    _raw_value: ($) => choice($.scalar, $.array_literal, $.map_literal),
+    _raw_value: ($) =>
+      choice($.scalar, $.array_literal, $.map_literal, $.fn_decl),
 
     scalar: ($) => choice("true", "false", "nil", $.number, $.string),
 
@@ -107,6 +110,17 @@ module.exports = grammar({
 
     map_literal: ($) =>
       seq("%{", sep_by_optional(",", seq($.scalar, "=>", $.expr)), "}"),
+
+    fn_decl: ($) =>
+      seq(
+        "fn",
+        "(",
+        field("parameters", optional($.parameter_list)),
+        ")",
+        choice($.expr, $.block),
+      ),
+
+    parameter_list: ($) => sep_by(",", $.identifier),
 
     identifier: ($) => /[a-zA-Z_][a-zA-Z0-9_]*/,
 
