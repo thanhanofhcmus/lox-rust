@@ -7,8 +7,8 @@ use super::lex::LexItem;
 use crate::span::Span;
 use crate::token::Token;
 
-pub fn parse(input: &str, items: &[LexItem]) -> Result<AST, ParseError> {
-    let mut state = Context::new(input, items);
+pub fn parse(input: &str, items: &[LexItem], should_eval_string: bool) -> Result<AST, ParseError> {
+    let mut state = Context::new(input, items, should_eval_string);
     let mut imports = vec![];
     let mut global_stmts = vec![];
     let mut is_parsing_import = true;
@@ -404,10 +404,14 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
         Token::String => {
             // Don't use the `next` closure here, the borrow checker will complain
             state.advance();
-            Ok(ScalarNode::Str(
-                // remove start '"' and end '"'
-                Span::new(li.span.start + 1, li.span.end - 1),
-            ))
+            // remove start '"' and end '"'
+            let span = Span::new(li.span.start + 1, li.span.end - 1);
+            if state.get_should_eval_string() {
+                let s = span.string_from_source(state.get_input());
+                Ok(ScalarNode::StrLiteral(s))
+            } else {
+                Ok(ScalarNode::Str(span))
+            }
         }
         Token::Number => parse_number(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),

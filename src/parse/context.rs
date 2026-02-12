@@ -7,18 +7,25 @@ pub struct Context<'a> {
     input: &'a str,
     items: &'a [LexItem],
     curr_pos: usize,
+
+    should_eval_string: bool,
     // Consider making setter getter for this
     pub is_in_fn: bool,
 }
 
 impl<'a> Context<'a> {
-    pub fn new(input: &'a str, items: &'a [LexItem]) -> Self {
+    pub fn new(input: &'a str, items: &'a [LexItem], should_eval_string: bool) -> Self {
         Self {
             input,
             items,
             curr_pos: 0,
+            should_eval_string,
             is_in_fn: false,
         }
+    }
+
+    pub fn get_should_eval_string(&self) -> bool {
+        self.should_eval_string
     }
 
     pub fn get_input(&self) -> &'a str {

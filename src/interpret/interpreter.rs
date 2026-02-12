@@ -110,7 +110,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let tokens = parse::lex(&content)
             .map_err(|err| Error::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
-        let statement = parse::parse(&content, &tokens)
+        // TODO: fix should_eval_string
+        let statement = parse::parse(&content, &tokens, true)
             .map_err(|err| Error::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         // interpret the file
@@ -301,6 +302,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ScalarNode::Bool(v) => Value::make_bool(*v),
             ScalarNode::Integer(v) => Value::make_number(Number::Integer(*v)),
             ScalarNode::Floating(v) => Value::make_number(Number::Floating(*v)),
+            ScalarNode::StrLiteral(v) => self.environment.insert_string_variable(v.to_owned()),
             ScalarNode::Str(v) => self
                 .environment
                 .insert_string_variable(v.string_from_source(self.input)),

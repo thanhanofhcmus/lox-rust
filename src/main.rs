@@ -9,7 +9,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::ast::AST;
 use log::{debug, error, info, trace};
-use rustyline::{error::ReadlineError, DefaultEditor};
+use rustyline::{DefaultEditor, error::ReadlineError};
 
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -42,7 +42,7 @@ fn repl(args: Vec<String>) -> DynResult {
 
     if let Some(line) = args.get(2) {
         rl.add_history_entry(line)?;
-        _ = run_stmt(line.trim_end(), &mut itp_env);
+        _ = run_stmt(line.trim_end(), &mut itp_env, true);
     }
 
     let mut line: String;
@@ -52,7 +52,7 @@ fn repl(args: Vec<String>) -> DynResult {
             Ok(repl_line) => {
                 line = repl_line;
                 rl.add_history_entry(&line)?;
-                _ = run_stmt(line.trim_end(), &mut itp_env);
+                _ = run_stmt(line.trim_end(), &mut itp_env, true);
             }
             Err(ReadlineError::Eof) => break,
             Err(ReadlineError::Interrupted) => break,
@@ -70,10 +70,10 @@ fn read_from_file(file_path: &str) -> DynResult {
     let contents = std::fs::read_to_string(file_path)?;
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut itp = interpret::Environment::new(rc);
-    run_stmt(&contents, &mut itp)
+    run_stmt(&contents, &mut itp, false)
 }
 
-fn parse(input: &str) -> Result<AST, Box<dyn std::error::Error>> {
+fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::error::Error>> {
     let tokens = match parse::lex(input) {
         Ok(list) => list,
         Err(err) => {
@@ -91,7 +91,7 @@ fn parse(input: &str) -> Result<AST, Box<dyn std::error::Error>> {
         );
     }
 
-    let ast = match parse::parse(input, &tokens) {
+    let ast = match parse::parse(input, &tokens, is_in_repl) {
         Ok(list) => list,
         Err(err) => {
             error!("Parse error {:?}: {}", err.get_source_start(input), err);
@@ -103,8 +103,12 @@ fn parse(input: &str) -> Result<AST, Box<dyn std::error::Error>> {
     Ok(ast)
 }
 
-fn run_stmt(input: &str, interpret_env: &mut interpret::Environment) -> DynResult {
-    let stmt = parse(input)?;
+fn run_stmt(
+    input: &str,
+    interpret_env: &mut interpret::Environment,
+    is_in_repl: bool,
+) -> DynResult {
+    let stmt = lex_and_parse(input, is_in_repl)?;
 
     match interpret::Interpreter::new(interpret_env, input).interpret(&stmt) {
         Ok(_) => {}

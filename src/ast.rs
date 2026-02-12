@@ -101,6 +101,8 @@ pub enum ScalarNode {
     Integer(i64),
     Floating(f64),
     Str(Span),
+    /// Store the actual string, for REPL intepreter
+    StrLiteral(String),
 }
 
 #[derive(Debug, Clone)]

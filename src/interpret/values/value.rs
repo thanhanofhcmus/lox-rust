@@ -28,6 +28,7 @@ pub type Map = BTreeMap<MapKey, Value>;
 pub enum Value {
     Unit,
 
+    #[debug("Scalar({:?})", _0)]
     Scalar(Scalar),
 
     // TODO: Error crate needs display method and is using this format
