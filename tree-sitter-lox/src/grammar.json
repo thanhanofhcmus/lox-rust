@@ -50,6 +50,10 @@
           "name": "declaration"
         },
         {
+          "type": "SYMBOL",
+          "name": "return"
+        },
+        {
           "type": "SEQ",
           "members": [
             {
@@ -69,6 +73,31 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    "return": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "return"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "expr"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": ";"
         }
       ]
     },
@@ -127,6 +156,23 @@
         {
           "type": "SYMBOL",
           "name": "when"
+        }
+      ]
+    },
+    "if_": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "if"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "clause"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "block"
         }
       ]
     },

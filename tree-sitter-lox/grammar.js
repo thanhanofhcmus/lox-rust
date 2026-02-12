@@ -22,7 +22,9 @@ module.exports = grammar({
 
     import: ($) => seq("import", $.unix_path_string, "as", $.identifier),
 
-    stmt: ($) => choice($.declaration, seq($.expr, optional(";"))),
+    stmt: ($) => choice($.declaration, $.return, seq($.expr, optional(";"))),
+
+    return: ($) => seq("return", optional($.expr), ";"),
 
     block: ($) => seq("{", repeat($.stmt), "}"),
 
