@@ -28,7 +28,11 @@ module.exports = grammar({
 
     declaration: ($) => seq("var", $.identifier, "=", $.expr, ";"),
 
-    expr: ($) => choice($.clause),
+    expr: ($) => choice($.clause, $.when),
+
+    when: ($) => seq("when", "{", sep_by_optional(",", $.when_clause), "}"),
+
+    when_clause: ($) => seq($.clause, "->", $.expr),
 
     clause: ($) => $._clause,
 

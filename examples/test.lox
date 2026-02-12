@@ -43,7 +43,7 @@ assert(registry["name"] == "Gemini", "Map string key failed");
 assert(registry[100] == "Centurion", "Map integer key failed");
 assert(registry[200] == 300, "Map integer key 200 failed");
 assert(registry[200.5] == 400, "Map floating key 200.5 failed");
-assert(registry["no-nane"] == nil, "Map string key not exist failed");
+assert(registry["no-name"] == nil, "Map string key not exist failed");
 assert(registry[250] == nil, "Map integer key not exist failed");
 assert(registry[125.234] == nil, "Map floating key not exist failed");
 assert(registry[false] == nil, "Map boolen key not exist failed");
