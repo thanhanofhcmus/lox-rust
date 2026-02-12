@@ -30,9 +30,9 @@ unary             = ("not" | "-")* unary | primary
 call              = clause "(" (clause, "," ...)* ")"
 subscription      = clause "[" clause "]"
 primary           = IDENTIFIER | group | raw_value
-raw_value         = scalar | array_literal | map_literal | function_decl
+raw_value         = scalar | array_literal | map_literal | fn_decl
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
-function_decl     = "fn" "(" ( IDENTIFIER "," ... )* ")" (function_block | expr)
+fn_decl           = "fn" "(" ( IDENTIFIER "," ... )* ")" (function_block | expr)
 array_literal     = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]"
 map_literal       = "%{" (primary "=>" clause , ...)* "}" 
 group             = "(" clause ")"
