@@ -410,7 +410,7 @@
     },
     "fn_call": {
       "type": "PREC_LEFT",
-      "value": 7,
+      "value": 8,
       "content": {
         "type": "SEQ",
         "members": [
@@ -464,7 +464,7 @@
     },
     "subscription": {
       "type": "PREC_LEFT",
-      "value": 7,
+      "value": 8,
       "content": {
         "type": "SEQ",
         "members": [
@@ -485,7 +485,7 @@
     },
     "primary": {
       "type": "PREC_LEFT",
-      "value": 8,
+      "value": 7,
       "content": {
         "type": "CHOICE",
         "members": [
@@ -514,6 +514,10 @@
         {
           "type": "SYMBOL",
           "name": "map_literal"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "clause_group"
         },
         {
           "type": "SYMBOL",
@@ -553,6 +557,23 @@
     "number": {
       "type": "PATTERN",
       "value": "\\d+(\\.\\d+)?"
+    },
+    "clause_group": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "("
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_clause"
+        },
+        {
+          "type": "STRING",
+          "value": ")"
+        }
+      ]
     },
     "array_literal": {
       "type": "CHOICE",

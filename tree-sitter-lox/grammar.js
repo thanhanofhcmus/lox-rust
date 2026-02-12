@@ -8,8 +8,8 @@ const PRECEDENCES = {
   Term: 4,
   Factor: 5,
   Unary: 6,
-  Chain: 7,
-  Primay: 8,
+  Primay: 7,
+  Chain: 8,
 };
 
 module.exports = grammar({
@@ -94,13 +94,21 @@ module.exports = grammar({
       prec.left(PRECEDENCES.Primay, choice($.identifier, $._raw_value)),
 
     _raw_value: ($) =>
-      choice($.scalar, $.array_literal, $.map_literal, $.fn_decl),
+      choice(
+        $.scalar,
+        $.array_literal,
+        $.map_literal,
+        $.clause_group,
+        $.fn_decl,
+      ),
 
     scalar: ($) => choice("true", "false", "nil", $.number, $.string),
 
     string: ($) => /"[^"]*"/,
 
     number: ($) => /\d+(\.\d+)?/,
+
+    clause_group: ($) => seq("(", $._clause, ")"),
 
     array_literal: ($) =>
       choice(
