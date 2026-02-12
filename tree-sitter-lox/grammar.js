@@ -8,7 +8,8 @@ const PRECEDENCES = {
   Term: 4,
   Factor: 5,
   Unary: 6,
-  Chaining: 7,
+  Chain: 7,
+  Primay: 8,
 };
 
 module.exports = grammar({
@@ -29,7 +30,8 @@ module.exports = grammar({
 
     clause: ($) => $._clause,
 
-    _clause: ($) => choice($.binary, $.unary, $.chaining),
+    _clause: ($) =>
+      choice($.binary, $.unary, $.fn_call, $.subscription, $.primary),
 
     binary: ($) =>
       choice(
@@ -78,22 +80,18 @@ module.exports = grammar({
     unary: ($) =>
       prec.left(PRECEDENCES.Unary, seq(choice("-", "not"), $._clause)),
 
-    chaining: ($) =>
+    fn_call: ($) =>
       prec.left(
-        PRECEDENCES.Chaining,
-        seq($.chaining_base, optional(repeat($.chaining_follow))),
+        PRECEDENCES.Chain,
+        seq($.identifier, "(", sep_by_optional(",", $._clause), ")"),
       ),
 
-    chaining_base: ($) => choice($.identifier, $.primary),
+    subscription: ($) => prec.left(PRECEDENCES.Chain, seq("[", $._clause, "]")),
 
-    chaining_follow: ($) =>
-      choice(
-        seq(".", $.identifier),
-        seq("[", $.expr, "]"), // indexing
-        seq("(", sep_by_optional(",", $.expr), ")"), // function call
-      ),
+    primary: ($) =>
+      prec.left(PRECEDENCES.Primay, choice($.identifier, $._raw_value)),
 
-    primary: ($) => choice($.scalar, $.array_literal, $.map_literal),
+    _raw_value: ($) => choice($.scalar, $.array_literal, $.map_literal),
 
     scalar: ($) => choice("true", "false", "nil", $.number, $.string),
 
@@ -103,8 +101,8 @@ module.exports = grammar({
 
     array_literal: ($) =>
       choice(
-        seq("[", sep_by_optional(",", $.clause), "]"),
-        seq("[", ":", $.clause, ":", $.clause, "]"),
+        seq("[", sep_by_optional(",", $._clause), "]"),
+        seq("[", ":", $._clause, ":", $._clause, "]"),
       ),
 
     map_literal: ($) =>
