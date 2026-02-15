@@ -8,7 +8,15 @@
       "required": false,
       "types": [
         {
+          "type": "array_literal",
+          "named": true
+        },
+        {
           "type": "binary",
+          "named": true
+        },
+        {
+          "type": "clause_group",
           "named": true
         },
         {
@@ -16,7 +24,23 @@
           "named": true
         },
         {
-          "type": "primary",
+          "type": "fn_decl",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "map_literal",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
           "named": true
         },
         {
@@ -39,20 +63,56 @@
         "required": true,
         "types": [
           {
+            "type": "array_literal",
+            "named": true
+          },
+          {
             "type": "binary",
             "named": true
+          },
+          {
+            "type": "clause_group",
+            "named": true
+          },
+          {
+            "type": "false",
+            "named": false
           },
           {
             "type": "fn_call",
             "named": true
           },
           {
-            "type": "primary",
+            "type": "fn_decl",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "map_literal",
+            "named": true
+          },
+          {
+            "type": "nil",
+            "named": false
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "string",
             "named": true
           },
           {
             "type": "subscription",
             "named": true
+          },
+          {
+            "type": "true",
+            "named": false
           },
           {
             "type": "unary",
@@ -123,20 +183,56 @@
         "required": true,
         "types": [
           {
+            "type": "array_literal",
+            "named": true
+          },
+          {
             "type": "binary",
             "named": true
+          },
+          {
+            "type": "clause_group",
+            "named": true
+          },
+          {
+            "type": "false",
+            "named": false
           },
           {
             "type": "fn_call",
             "named": true
           },
           {
-            "type": "primary",
+            "type": "fn_decl",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "map_literal",
+            "named": true
+          },
+          {
+            "type": "nil",
+            "named": false
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "string",
             "named": true
           },
           {
             "type": "subscription",
             "named": true
+          },
+          {
+            "type": "true",
+            "named": false
           },
           {
             "type": "unary",
@@ -162,46 +258,23 @@
     }
   },
   {
-    "type": "clause",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "binary",
-          "named": true
-        },
-        {
-          "type": "fn_call",
-          "named": true
-        },
-        {
-          "type": "primary",
-          "named": true
-        },
-        {
-          "type": "subscription",
-          "named": true
-        },
-        {
-          "type": "unary",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "clause_group",
     "named": true,
     "fields": {},
     "children": {
       "multiple": false,
-      "required": true,
+      "required": false,
       "types": [
         {
+          "type": "array_literal",
+          "named": true
+        },
+        {
           "type": "binary",
+          "named": true
+        },
+        {
+          "type": "clause_group",
           "named": true
         },
         {
@@ -209,7 +282,23 @@
           "named": true
         },
         {
-          "type": "primary",
+          "type": "fn_decl",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "map_literal",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
           "named": true
         },
         {
@@ -248,10 +337,54 @@
     "fields": {},
     "children": {
       "multiple": false,
-      "required": true,
+      "required": false,
       "types": [
         {
-          "type": "clause",
+          "type": "array_literal",
+          "named": true
+        },
+        {
+          "type": "binary",
+          "named": true
+        },
+        {
+          "type": "clause_group",
+          "named": true
+        },
+        {
+          "type": "fn_call",
+          "named": true
+        },
+        {
+          "type": "fn_decl",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "if_",
+          "named": true
+        },
+        {
+          "type": "map_literal",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        },
+        {
+          "type": "subscription",
+          "named": true
+        },
+        {
+          "type": "unary",
           "named": true
         },
         {
@@ -270,7 +403,15 @@
       "required": true,
       "types": [
         {
+          "type": "array_literal",
+          "named": true
+        },
+        {
           "type": "binary",
+          "named": true
+        },
+        {
+          "type": "clause_group",
           "named": true
         },
         {
@@ -278,11 +419,23 @@
           "named": true
         },
         {
+          "type": "fn_decl",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
         {
-          "type": "primary",
+          "type": "map_literal",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
           "named": true
         },
         {
@@ -327,6 +480,88 @@
     }
   },
   {
+    "type": "if_",
+    "named": true,
+    "fields": {
+      "condition": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_literal",
+            "named": true
+          },
+          {
+            "type": "binary",
+            "named": true
+          },
+          {
+            "type": "clause_group",
+            "named": true
+          },
+          {
+            "type": "false",
+            "named": false
+          },
+          {
+            "type": "fn_call",
+            "named": true
+          },
+          {
+            "type": "fn_decl",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "map_literal",
+            "named": true
+          },
+          {
+            "type": "nil",
+            "named": false
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "subscription",
+            "named": true
+          },
+          {
+            "type": "true",
+            "named": false
+          },
+          {
+            "type": "unary",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "block",
+          "named": true
+        },
+        {
+          "type": "if_",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "import",
     "named": true,
     "fields": {},
@@ -358,7 +593,11 @@
           "named": true
         },
         {
-          "type": "scalar",
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
           "named": true
         }
       ]
@@ -380,41 +619,6 @@
     }
   },
   {
-    "type": "primary",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "array_literal",
-          "named": true
-        },
-        {
-          "type": "clause_group",
-          "named": true
-        },
-        {
-          "type": "fn_decl",
-          "named": true
-        },
-        {
-          "type": "identifier",
-          "named": true
-        },
-        {
-          "type": "map_literal",
-          "named": true
-        },
-        {
-          "type": "scalar",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "return",
     "named": true,
     "fields": {},
@@ -424,25 +628,6 @@
       "types": [
         {
           "type": "expr",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "scalar",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": false,
-      "types": [
-        {
-          "type": "number",
-          "named": true
-        },
-        {
-          "type": "string",
           "named": true
         }
       ]
@@ -497,10 +682,18 @@
     "fields": {},
     "children": {
       "multiple": false,
-      "required": true,
+      "required": false,
       "types": [
         {
+          "type": "array_literal",
+          "named": true
+        },
+        {
           "type": "binary",
+          "named": true
+        },
+        {
+          "type": "clause_group",
           "named": true
         },
         {
@@ -508,7 +701,23 @@
           "named": true
         },
         {
-          "type": "primary",
+          "type": "fn_decl",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "map_literal",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
           "named": true
         },
         {
@@ -528,10 +737,18 @@
     "fields": {},
     "children": {
       "multiple": false,
-      "required": true,
+      "required": false,
       "types": [
         {
+          "type": "array_literal",
+          "named": true
+        },
+        {
           "type": "binary",
+          "named": true
+        },
+        {
+          "type": "clause_group",
           "named": true
         },
         {
@@ -539,7 +756,23 @@
           "named": true
         },
         {
-          "type": "primary",
+          "type": "fn_decl",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "map_literal",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
           "named": true
         },
         {
@@ -577,11 +810,51 @@
       "required": true,
       "types": [
         {
-          "type": "clause",
+          "type": "array_literal",
+          "named": true
+        },
+        {
+          "type": "binary",
+          "named": true
+        },
+        {
+          "type": "clause_group",
           "named": true
         },
         {
           "type": "expr",
+          "named": true
+        },
+        {
+          "type": "fn_call",
+          "named": true
+        },
+        {
+          "type": "fn_decl",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "map_literal",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        },
+        {
+          "type": "subscription",
+          "named": true
+        },
+        {
+          "type": "unary",
           "named": true
         }
       ]
@@ -685,6 +958,10 @@
     "extra": true
   },
   {
+    "type": "else",
+    "named": false
+  },
+  {
     "type": "false",
     "named": false
   },
@@ -695,6 +972,10 @@
   {
     "type": "identifier",
     "named": true
+  },
+  {
+    "type": "if",
+    "named": false
   },
   {
     "type": "import",

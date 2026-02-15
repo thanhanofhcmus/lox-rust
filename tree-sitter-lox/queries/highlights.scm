@@ -1,6 +1,6 @@
 
 
-["var" "import" "as" "fn" "return" "when"] @keyword
+["var" "import" "as" "fn" "return" "when" "if" "else"] @keyword
 ["true" "false" "nil"] @constant.builtin
 ["and" "or" "not"] @operator
 

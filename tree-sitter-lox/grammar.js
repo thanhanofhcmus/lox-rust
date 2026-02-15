@@ -30,16 +30,24 @@ module.exports = grammar({
 
     declaration: ($) => seq("var", $.identifier, "=", $.expr, ";"),
 
-    expr: ($) => choice($.clause, $.when),
+    expr: ($) => choice($._clause, $.when, $.if_),
+
+    if_: ($) =>
+      prec.right(
+        seq(
+          "if",
+          field("condition", $._clause),
+          $.block,
+          optional(seq("else", choice($.if_, $.block))),
+        ),
+      ),
 
     when: ($) => seq("when", "{", sep_by_optional(",", $.when_clause), "}"),
 
-    when_clause: ($) => seq($.clause, "->", $.expr),
-
-    clause: ($) => $._clause,
+    when_clause: ($) => seq($._clause, "->", $.expr),
 
     _clause: ($) =>
-      choice($.binary, $.unary, $.fn_call, $.subscription, $.primary),
+      choice($.binary, $.unary, $.fn_call, $.subscription, $._primary),
 
     binary: ($) =>
       choice(
@@ -96,19 +104,19 @@ module.exports = grammar({
 
     subscription: ($) => prec.left(PRECEDENCES.Chain, seq("[", $._clause, "]")),
 
-    primary: ($) =>
+    _primary: ($) =>
       prec.left(PRECEDENCES.Primay, choice($.identifier, $._raw_value)),
 
     _raw_value: ($) =>
       choice(
-        $.scalar,
+        $._scalar,
         $.array_literal,
         $.map_literal,
         $.clause_group,
         $.fn_decl,
       ),
 
-    scalar: ($) => choice("true", "false", "nil", $.number, $.string),
+    _scalar: ($) => choice("true", "false", "nil", $.number, $.string),
 
     string: ($) => /"[^"]*"/,
 
@@ -123,7 +131,7 @@ module.exports = grammar({
       ),
 
     map_literal: ($) =>
-      seq("%{", sep_by_optional(",", seq($.scalar, "=>", $.expr)), "}"),
+      seq("%{", sep_by_optional(",", seq($._scalar, "=>", $.expr)), "}"),
 
     fn_decl: ($) =>
       seq(
