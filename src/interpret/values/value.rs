@@ -197,13 +197,28 @@ impl DisplayWriter for Value {
 
                 w.write_all(b"%{").map_err(convert)?;
                 if let Some((first_key, first_value)) = entries.next() {
-                    first_key.write_display(env, w)?;
+                    // for type string, we want to add quotes ""
+                    if let MapKey::Str(_) = first_key {
+                        w.write_all(b"\"").map_err(convert)?;
+                        first_key.write_display(env, w)?;
+                        w.write_all(b"\"").map_err(convert)?;
+                    } else {
+                        // normal type, normal write
+                        first_key.write_display(env, w)?;
+                    }
                     write!(w, " => ").map_err(convert)?;
                     first_value.write_display(env, w)?;
 
                     for (k, v) in entries {
                         write!(w, ", ").map_err(convert)?;
-                        k.write_display(env, w)?;
+                        if let MapKey::Str(_) = k {
+                            w.write_all(b"\"").map_err(convert)?;
+                            k.write_display(env, w)?;
+                            w.write_all(b"\"").map_err(convert)?;
+                        } else {
+                            // normal type, normal write
+                            k.write_display(env, w)?;
+                        }
                         write!(w, " => ").map_err(convert)?;
                         v.write_display(env, w)?;
                     }
