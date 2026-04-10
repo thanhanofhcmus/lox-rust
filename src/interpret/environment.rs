@@ -17,40 +17,29 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeKind {
+    Block,
+    Function,
+    Global,
+}
+
 #[derive(Debug)]
 struct Scope {
     variables: HashMap<Id, Value>,
-    index: usize,
+    kind: ScopeKind,
 }
 
 impl Scope {
-    fn new(index: usize) -> Self {
+    fn new(kind: ScopeKind) -> Self {
         Self {
             variables: HashMap::new(),
-            index,
+            kind,
         }
     }
 
     fn get_variable(&self, id: Id) -> Option<Value> {
         self.variables.get(&id).copied()
-    }
-
-    fn get_variable_recursive<'a>(&'a self, id: Id, scopes: &'a Vec<Scope>) -> Option<Value> {
-        if let Some(value) = self.variables.get(&id) {
-            return Some(*value);
-        }
-        if let Some(parent_scope) = self.get_parent_scope(scopes) {
-            return parent_scope.get_variable_recursive(id, scopes);
-        }
-        None
-    }
-
-    fn get_parent_scope<'a>(&self, scopes: &'a [Scope]) -> Option<&'a Scope> {
-        if self.index == 0 {
-            None
-        } else {
-            Some(&scopes[self.index - 1])
-        }
     }
 
     fn insert_variable(&mut self, id: Id, value: Value) -> Option<Value> {
@@ -75,7 +64,7 @@ impl Module {
 }
 
 const CURRENT_MODULE_NAME: &str = "__current__";
-const SCOPE_SIZE_LIMIT: usize = 20;
+const SCOPE_SIZE_LIMIT: usize = 100;
 const GC_TRIGGER_POINT: usize = 100;
 
 macro_rules! decl_gc_type_methods {
@@ -128,7 +117,7 @@ impl Environment {
     pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>) -> Self {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
-        let scopes = vec![Scope::new(0)];
+        let scopes = vec![Scope::new(ScopeKind::Global)];
         let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
 
         Self {
@@ -182,12 +171,11 @@ impl Environment {
         self.modules.insert(self.current_module_id, module);
     }
 
-    pub fn push_scope(&mut self) {
-        let new_scope_index = self.scopes.len();
-        if new_scope_index > SCOPE_SIZE_LIMIT {
+    pub fn push_scope(&mut self, kind: ScopeKind) {
+        if self.scopes.len() > SCOPE_SIZE_LIMIT {
             panic!("Scope overflow");
         }
-        self.scopes.push(Scope::new(new_scope_index));
+        self.scopes.push(Scope::new(kind));
     }
 
     pub fn pop_scope(&mut self) {
@@ -213,17 +201,29 @@ impl Environment {
         self.get_current_scope().get_variable(id.into())
     }
 
+    pub fn get_variable_function_scope(&self, id: impl Into<Id>) -> Option<Value> {
+        let id = id.into();
+        for scope in self.scopes.iter().rev() {
+            if let Some(value) = scope.get_variable(id) {
+                return Some(value);
+            }
+            if scope.kind == ScopeKind::Function {
+                break;
+            }
+        }
+        None
+    }
+
     pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<Value> {
         self.get_variable_all_scope_by_id(node.get_id(), &node.prefix_ids)
     }
 
     pub fn get_variable_all_scope_by_id(&self, id: Id, prefix_ids: &[Id]) -> Option<Value> {
         // check scopes/stacks
-        if let Some(value) = self
-            .get_current_scope()
-            .get_variable_recursive(id, &self.scopes)
-        {
-            return Some(value);
+        for scope in self.scopes.iter().rev() {
+            if let Some(value) = scope.get_variable(id) {
+                return Some(value);
+            }
         }
 
         // get from built-in
@@ -231,20 +231,20 @@ impl Environment {
             return Some(*value);
         }
 
-        // No prefixes mean this code is trying to reference values from the trasparent scope only
+        // No prefixes mean this code is trying to reference values from the transparent scope only
         if prefix_ids.is_empty() {
             return None;
         }
 
         // For now, we expect a variable from another module is in the form
         // module_name.variable_name (1 dot, 2 parts)
-        // TODO: Fix this when modules are better speced
+        // TODO: Fix this when modules are better spec-ed
         let module_id = prefix_ids[0];
         let module = self.modules.get(&module_id)?;
 
         // This code is allowing code to un-imported module
-        // for example print(a.b) -> nil eventhough we have not import the module `a` yet
-        // TODO: Make this an error when modules are better speced
+        // for example print(a.b) -> nil even though we have not import the module `a` yet
+        // TODO: Make this an error when modules are better spec-ed
         module.variables.get(&id).copied()
     }
 
@@ -253,11 +253,11 @@ impl Environment {
         id: impl Into<Id>,
         value: Value,
     ) -> Option<Value> {
-        let result = self
+        let old_value = self
             .get_current_scope_mut()
             .insert_variable(id.into(), value);
         self.shallow_copy_value(value);
-        result
+        old_value
     }
 
     pub fn shallow_copy_value(&mut self, value: Value) {
@@ -270,16 +270,24 @@ impl Environment {
         }
     }
 
-    pub fn replace_variable_current_scope(
+    pub fn replace_variable_function_scope(
         &mut self,
         id: impl Into<Id>,
         value: Value,
     ) -> Option<Value> {
         let id = id.into();
-        if let Some(old_value) = self.get_variable_current_scope(id) {
-            self.heap.shallow_dispose_value(old_value);
-        };
-        self.insert_variable_current_scope(id, value)
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(old_value) = scope.get_variable(id) {
+                self.heap.shallow_dispose_value(old_value);
+                // insert new value and return the old one
+                // the return value should be the same as old_value
+                scope.insert_variable(id, value);
+            }
+            if scope.kind == ScopeKind::Function {
+                break;
+            }
+        }
+        None
     }
 
     fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {

@@ -95,7 +95,7 @@ impl Value {
     pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, Error> {
         use Value::*;
         match (self, other) {
-            // TODO
+            // TODO: Unit should not be comparable, make this a "friendly" error
             (Unit, _) => panic!("compare where lhs is unit"),
             (_, Unit) => panic!("compare where rhs is unit"),
 

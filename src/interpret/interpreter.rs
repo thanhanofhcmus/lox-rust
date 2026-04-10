@@ -2,6 +2,7 @@ use super::environment::Environment;
 use super::error::Error;
 use super::values::Value;
 use crate::ast::*;
+use crate::interpret::environment::ScopeKind;
 use crate::interpret::heap::GcHandle;
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar};
 use crate::parse;
@@ -171,7 +172,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         let iden = &node.base;
 
-        let Some(current_root_value) = self.environment.get_variable_current_scope(iden) else {
+        let Some(current_root_value) = self.environment.get_variable_function_scope(iden) else {
             return match self.environment.get_variable_all_scope(iden) {
                 Some(_) => Err(Error::VariableReadOnly(iden.create_name(self.input))),
                 None => Err(Error::NotFoundVariable(iden.create_name(self.input))),
@@ -187,11 +188,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                     reassigning_value,
                 )?;
                 self.environment
-                    .replace_variable_current_scope(iden, new_root_value)
+                    .replace_variable_function_scope(iden, new_root_value)
             }
             None => self
                 .environment
-                .replace_variable_current_scope(iden, reassigning_value),
+                .replace_variable_function_scope(iden, reassigning_value),
         };
 
         Ok(ValueReturn::none())
@@ -220,13 +221,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_block_node(&mut self, node: &BlockNode) -> Result<ValueReturn, Error> {
-        // we cannot push_scope and then pop_scope here
-        // since if a variable is create outside of an if-else or while scope
-        // we want it to be not-readonly here
-        // but we still want gc to delete values created in this scope
-        // when the scope ends
-        // TODO: find a better way for scope
+        self.environment.push_scope(ScopeKind::Block);
+        let result = self.interpret_block_node_inner(node);
+        self.environment.pop_scope();
+        result
+    }
 
+    fn interpret_block_node_inner(&mut self, node: &BlockNode) -> Result<ValueReturn, Error> {
         for stmt in &node.stmts {
             let res = self.interpret_stmt(stmt)?;
             if res.should_bubble_up {
@@ -250,7 +251,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             }
             let res = self.interpret_block_node(body)?;
             // If the block contains a 'return', stop the loop and bubble it up
-            // TODO: while shoud disallow yeilding value
+            // TODO: while should disallow yielding value
             if res.should_bubble_up {
                 return Ok(res);
             }
@@ -384,15 +385,15 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
 
         // create a new stack for the function call
-        // currently, later args can reference sonner args
+        // currently, later args can reference sooner args
         // TODO: make this go away
-        self.environment.push_scope();
+        self.environment.push_scope(ScopeKind::Function);
         for (arg_id, arg_expr) in arg_ids.iter().zip(args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
             self.environment.insert_variable_current_scope(*arg_id, res);
         }
 
-        let result = self.interpret_block_node(&body);
+        let result = self.interpret_block_node_inner(&body);
         self.environment.pop_scope();
 
         // Convert the ValueReturn back to a raw Value.
