@@ -4,6 +4,8 @@
 
 /.env
 
+/.local
+
 /.vscode
 /.idea
 /.zed
