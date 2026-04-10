@@ -16,11 +16,11 @@ return            = "return" expr? ";"
 import            = "import" UNIX_PATH_STRING "as" IDENTIFIER ";"
 declaration       = "var" IDENTIFIER "=" expr ";"
 reassignment      = IDENTIFIER "=" expr ";"
-expr              = if | while | when | clause
+expr              = while | when | clause
 when              = "when" "{" ( clause "->" expr "," ... )* "}"
-if                = "if" clause block ("else" if | block)?
 while             = "while" clause block
-clause            = binary | unary | call | subscription
+clause            = binary | unary | call | subscription | if
+if                = "if" clause block ("else" if | block)?
 binary            = clause ( "and" | "or" )          clause
                   | clause ("==" | "!=")             clause
                   | clause ("<" | "<=" | ">" | ">=") clause
