@@ -1,6 +1,6 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-const DEBUG_NAME_SIZE: usize = 32;
+const DEBUG_NAME_SIZE: usize = 16;
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[debug("Id({hash:020}{})", self.debug_name())]
