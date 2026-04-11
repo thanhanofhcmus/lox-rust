@@ -49,6 +49,17 @@ fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
     // TODO: handle write! error
     for value in args {
         write!(print_writer, "{:?}", value).unwrap();
+        match value {
+            Value::Str(str_id) => {
+                let s = itp.environment.get_string(str_id)?;
+                write!(print_writer, ": {}", s.escape_debug()).unwrap();
+            }
+            Value::Function(handle) => match itp.environment.heap.get_object(handle) {
+                Some(obj) => write!(print_writer, ": {:?}", obj).unwrap(),
+                None => write!(print_writer, ": No Object").unwrap(),
+            },
+            _ => {}
+        }
     }
     writeln!(print_writer).unwrap();
 

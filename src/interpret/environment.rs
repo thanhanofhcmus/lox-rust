@@ -70,7 +70,7 @@ const GC_TRIGGER_POINT: usize = 100;
 macro_rules! decl_gc_type_methods {
     ($name:ident, $variant:ident, $type:ty, $kind:expr, $val_variant:ident) => {
         paste::item! {
-            // Generates get_string, get_array, etc.
+            // Generates get_array, get_function, etc.
             pub fn [<get_ $name>](&self, handle: GcHandle) -> Result<&$type, Error> {
                 let Some(obj) = self.get_gc_object(handle) else {
                     return Err(Error::GcObjectNotFound(handle));
@@ -85,7 +85,7 @@ macro_rules! decl_gc_type_methods {
                 Ok(inner)
             }
 
-            // Generates insert_string_variable, etc.
+            // Generates insert_array_variable, etc.
             pub fn [<insert_ $name _variable>](&mut self, data: $type) -> Value {
                 let object = GcObject::$variant(data);
                 let handle = self.insert_gc_object(object);
