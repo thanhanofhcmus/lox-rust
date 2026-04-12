@@ -25,9 +25,19 @@ fn main() -> DynResult {
 
     match input.as_str() {
         "-i" => repl(args),
+        "-p" => promt(args),
         "-f" => read_from_file(args.get(2).expect("must provide file name")),
         _ => panic!("expect a mode"),
     }
+}
+
+fn promt(args: Vec<String>) -> DynResult {
+    let line = args.get(2).expect("must provide prompt");
+
+    let rc = Rc::new(RefCell::new(std::io::stdout()));
+    let mut itp_env = interpret::Environment::new(rc);
+
+    run_stmt(line, &mut itp_env, false)
 }
 
 fn repl(args: Vec<String>) -> DynResult {

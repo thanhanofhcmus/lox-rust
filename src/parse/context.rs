@@ -8,7 +8,11 @@ pub struct Context<'a> {
     items: &'a [LexItem],
     curr_pos: usize,
 
+    /// Tell the parser to copy the string content to the AST node
+    /// or defer later, use full in the case of running in a REPL
+    /// when the source might got already deleted when the actual string is needed
     should_eval_string: bool,
+
     // Consider making setter getter for this
     pub is_in_fn: bool,
 }
