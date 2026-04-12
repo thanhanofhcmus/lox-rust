@@ -129,6 +129,8 @@ fn run_stmt(
 ) -> DynResult {
     let stmt = lex_and_parse(input, is_in_repl)?;
 
+    info!("interpreting start");
+
     match interpret::Interpreter::new(interpret_env, input).interpret(&stmt) {
         Ok(_) => {}
         Err(err) => {
@@ -136,6 +138,8 @@ fn run_stmt(
             return Err(Box::new(err));
         }
     }
+
+    info!("interpreting done");
 
     Ok(())
 }
