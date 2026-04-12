@@ -33,6 +33,8 @@ fn main() -> DynResult {
 }
 
 fn promt(args: Vec<String>) -> DynResult {
+    info!("Running in Prompt mode");
+
     let line = args.get(2).expect("must provide prompt");
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
@@ -95,7 +97,7 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::erro
         }
     };
 
-    info!("Lexing done, with tokens:");
+    debug!("Lexing done, with tokens:");
 
     for token in &tokens {
         debug!(
@@ -106,7 +108,7 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::erro
         );
     }
 
-    info!("Parsing start");
+    debug!("Parsing start");
 
     let ast = match parse::parse(input, &tokens, is_in_repl) {
         Ok(list) => list,
@@ -116,7 +118,7 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::erro
         }
     };
 
-    info!("Parsing done");
+    debug!("Parsing done");
 
     trace!("{:?}", &ast);
 
@@ -130,7 +132,7 @@ fn run_stmt(
 ) -> DynResult {
     let stmt = lex_and_parse(input, is_in_repl)?;
 
-    info!("interpreting start");
+    debug!("interpreting start");
 
     match interpret::Interpreter::new(interpret_env, input).interpret(&stmt) {
         Ok(_) => {}
@@ -140,7 +142,7 @@ fn run_stmt(
         }
     }
 
-    info!("interpreting done");
+    debug!("interpreting done");
 
     Ok(())
 }

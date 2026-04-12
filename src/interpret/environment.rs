@@ -106,7 +106,6 @@ pub struct Environment {
     #[debug(skip)]
     preludes: HashMap<Id, Value>,
 
-    #[debug(skip)]
     current_module_id: Id,
 
     #[debug(skip)]
