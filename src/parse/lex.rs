@@ -56,7 +56,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
 
     let utf8_bytes = input.as_bytes();
 
-    while let Some(c) = utf8_bytes.get(curr_offset) {
+    while let Some(&c) = utf8_bytes.get(curr_offset) {
         let const_offset = curr_offset; // we don't want to borrow mutate of curr_offset
         let tok_one = |t| LexItem::new(t, Span::one(const_offset));
 
@@ -134,13 +134,14 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             b'#' => result.push(lex_comment(utf8_bytes, &mut curr_offset)),
 
             v if v.is_ascii_digit() => result.push(lex_number(utf8_bytes, &mut curr_offset)?),
-            &v if is_keyword_or_identifier_char(v) => {
+            v if is_keyword_or_identifier_char(v) => {
                 result.push(lex_keyword_or_identifier(utf8_bytes, &mut curr_offset))
             }
             _ => {
                 return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
             }
         }
+
         curr_offset += 1;
     }
 
@@ -183,20 +184,40 @@ fn lex_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
 
     *offset += 1; // consume '"'
     while let Some(&c) = input.get(*offset) {
-        if c == b'"' {
-            break;
-        }
-        *offset += 1;
+        match c {
+            // closing '"'
+            b'"' => {
+                let end_offset = *offset;
+
+                return Ok(LexItem::new(
+                    Token::String,
+                    Span::new(start_offset, end_offset),
+                ));
+            }
+
+            // escape char
+            b'\\' => {
+                // Skip the current char '\'
+                *offset += 1;
+
+                if *offset > input.len() {
+                    return Err(ParseError::UnclosedString(start_offset));
+                }
+
+                // we skip a single byte since we only handle the case of \"
+                // TODO: Handle Unicode escape
+                *offset += 1;
+            }
+
+            // normal char
+            _ => {
+                *offset += 1;
+            }
+        };
     }
 
-    if input.get(*offset).is_none() {
-        return Err(ParseError::UnclosedString(start_offset));
-    }
-
-    Ok(LexItem::new(
-        Token::String,
-        Span::new(start_offset, *offset),
-    ))
+    // We hit the end with out hitting the closing '"'
+    Err(ParseError::UnclosedString(start_offset))
 }
 
 fn lex_keyword_or_identifier(input: &[u8], offset: &mut usize) -> LexItem {
