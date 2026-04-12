@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::{ast::*, string_utils};
 
 use super::context::Context;
 use super::error::ParseError;
@@ -408,7 +408,7 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
             // remove start '"' and end '"'
             let span = Span::new(li.span.start + 1, li.span.end - 1);
             if state.get_should_eval_string() {
-                let s = span.string_from_source(state.get_input());
+                let s = string_utils::unescape(span.str_from_source(state.get_input()));
                 Ok(ScalarNode::StrLiteral(s))
             } else {
                 Ok(ScalarNode::Str(span))

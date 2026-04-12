@@ -3,6 +3,7 @@ mod id;
 mod interpret;
 mod parse;
 mod span;
+mod string_utils;
 mod token;
 
 use std::{cell::RefCell, rc::Rc};
