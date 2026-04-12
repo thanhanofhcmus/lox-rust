@@ -13,6 +13,7 @@ pub fn parse(input: &str, items: &[LexItem], should_eval_string: bool) -> Result
     let mut global_stmts = vec![];
     let mut is_parsing_import = true;
     while !state.is_at_end() {
+        // parse import then parse stmts
         if state.peek(&[Token::Import]) {
             if !is_parsing_import {
                 let li = state.get_curr()?;
@@ -25,7 +26,6 @@ pub fn parse(input: &str, items: &[LexItem], should_eval_string: bool) -> Result
 
         is_parsing_import = false;
 
-        // parse import then parse stmts
         state.prepare_next();
         let stmt = parse_stmt(&mut state)?;
         match &stmt {
@@ -237,7 +237,7 @@ enum BindingPower {
     TermRight,
     FactorLeft,
     FactorRight,
-    // all three chain node (member access, subscription and function all have right associaction)
+    // all three chain node (member access, subscription and function all have right association)
     ChainRight,
     ChainLeft,
 }
@@ -286,6 +286,7 @@ fn parse_pratt_infix(
 ) -> Result<ClauseNode, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
+        // TODO: Fix this when supporting member/module call
         Token::Dot => unimplemented!(),
 
         Token::LSquareParen => {

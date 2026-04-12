@@ -123,10 +123,15 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let mut itp = Interpreter::new(self.environment, &content);
 
         // We treat the module evaluation as a top-level interpret call
-        itp.interpret(&statement)
-            .map_err(|err| Error::InterpretModuleFailed(name, path, Box::new(err)))?;
+        let result = itp
+            .interpret(&statement)
+            .map_err(|err| Error::InterpretModuleFailed(name, path, Box::new(err)));
 
         self.environment.deinit_module();
+
+        // TODO: Maybe do something with the return value of a module
+        // if that actually make sense
+        _ = result?;
 
         // TODO: detect circular dependency
 
@@ -371,7 +376,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let func = self.environment.get_function(handle)?;
 
         // Technically, we does not need the clone for args_ids and body here
-        // since when intepreting functions, we cannot create reassign it to an new value
+        // since when interpreting functions, we cannot create reassign it to an new value
         // but we don't have a way in rust to formally express this
         // TODO: find a way to express this
         let Function { arg_ids, body } = func.clone();
