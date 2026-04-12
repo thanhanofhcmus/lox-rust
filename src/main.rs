@@ -84,6 +84,8 @@ fn read_from_file(file_path: &str) -> DynResult {
 }
 
 fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::error::Error>> {
+    trace!("Lexing start");
+
     let tokens = match parse::lex(input) {
         Ok(list) => list,
         Err(err) => {
@@ -91,6 +93,8 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::erro
             return Err(Box::new(err));
         }
     };
+
+    info!("Lexing done, with tokens:");
 
     for token in &tokens {
         debug!(
@@ -101,6 +105,8 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::erro
         );
     }
 
+    info!("Parsing start");
+
     let ast = match parse::parse(input, &tokens, is_in_repl) {
         Ok(list) => list,
         Err(err) => {
@@ -108,6 +114,9 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::erro
             return Err(Box::new(err));
         }
     };
+
+    info!("Parsing done");
+
     trace!("{:?}", &ast);
 
     Ok(ast)
