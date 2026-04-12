@@ -3,27 +3,27 @@ use crate::token::Token;
 
 use super::error::ParseError;
 
-static KEYWORDS: phf::Map<&'static str, Token> = phf::phf_map!(
-    "and" => Token::And,
-    "or" => Token::Or,
-    "not" => Token::Not,
+static KEYWORDS: phf::Map<&'static [u8], Token> = phf::phf_map!(
+    b"and" => Token::And,
+    b"or" => Token::Or,
+    b"not" => Token::Not,
 
-    "true" => Token::True,
-    "false" => Token::False,
-    "nil" => Token::Nil,
+    b"true" => Token::True,
+    b"false" => Token::False,
+    b"nil" => Token::Nil,
 
-    "var" => Token::Var,
+    b"var" => Token::Var,
 
-    "if" => Token::If,
-    "else" => Token::Else,
-    "while" => Token::While,
-    "when" => Token::When,
+    b"if" => Token::If,
+    b"else" => Token::Else,
+    b"while" => Token::While,
+    b"when" => Token::When,
 
-    "fn" => Token::Fn,
-    "return" => Token::Return,
+    b"fn" => Token::Fn,
+    b"return" => Token::Return,
 
-    "import" => Token::Import,
-    "as" => Token::As,
+    b"import" => Token::Import,
+    b"as" => Token::As,
 );
 
 #[derive(Debug, Clone, Copy)]
@@ -38,15 +38,15 @@ impl LexItem {
     }
 }
 
-fn is_keyword_or_identifier_char(c: char) -> bool {
+fn is_keyword_or_identifier_char(c: u8) -> bool {
+    let c = c as char;
     c == '_' || c.is_ascii_alphanumeric()
 }
 
-fn is_next_char(input: &str, curr_offset: usize, expect: char) -> bool {
+fn is_next_char(input: &[u8], curr_offset: usize, expect: u8) -> bool {
     input
-        .chars()
-        .nth(curr_offset + 1)
-        .map(|next| next == expect)
+        .get(curr_offset + 1)
+        .map(|next| *next == expect)
         .unwrap_or(false)
 }
 
@@ -54,12 +54,14 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     let mut curr_offset = 0;
     let mut result = vec![];
 
-    while let Some(c) = input.chars().nth(curr_offset) {
+    let utf8_bytes = input.as_bytes();
+
+    while let Some(c) = utf8_bytes.get(curr_offset) {
         let const_offset = curr_offset; // we don't want to borrow mutate of curr_offset
         let tok_one = |t| LexItem::new(t, Span::one(const_offset));
 
         let mut push_with_equal = |token_has_equal, token_no_equal| {
-            if is_next_char(input, curr_offset, '=') {
+            if is_next_char(utf8_bytes, curr_offset, b'=') {
                 result.push(LexItem::new(token_has_equal, Span::two(curr_offset)));
                 curr_offset += 1;
             } else {
@@ -68,23 +70,23 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
         };
 
         match c {
-            ' ' | '\t' | '\r' | '\n' => { /* skip */ }
-            '(' => result.push(tok_one(Token::LRoundParen)),
-            ')' => result.push(tok_one(Token::RRoundParen)),
-            '[' => result.push(tok_one(Token::LSquareParen)),
-            ']' => result.push(tok_one(Token::RSquareParen)),
-            '{' => result.push(tok_one(Token::LPointParen)),
-            '}' => result.push(tok_one(Token::RPointParen)),
-            '.' => result.push(tok_one(Token::Dot)),
-            ',' => result.push(tok_one(Token::Comma)),
-            ':' => result.push(tok_one(Token::Colon)),
-            ';' => result.push(tok_one(Token::Semicolon)),
-            '+' => result.push(tok_one(Token::Plus)),
-            '*' => result.push(tok_one(Token::Star)),
-            '/' => result.push(tok_one(Token::Slash)),
+            b' ' | b'\t' | b'\r' | b'\n' => { /* skip */ }
+            b'(' => result.push(tok_one(Token::LRoundParen)),
+            b')' => result.push(tok_one(Token::RRoundParen)),
+            b'[' => result.push(tok_one(Token::LSquareParen)),
+            b']' => result.push(tok_one(Token::RSquareParen)),
+            b'{' => result.push(tok_one(Token::LPointParen)),
+            b'}' => result.push(tok_one(Token::RPointParen)),
+            b'.' => result.push(tok_one(Token::Dot)),
+            b',' => result.push(tok_one(Token::Comma)),
+            b':' => result.push(tok_one(Token::Colon)),
+            b';' => result.push(tok_one(Token::Semicolon)),
+            b'+' => result.push(tok_one(Token::Plus)),
+            b'*' => result.push(tok_one(Token::Star)),
+            b'/' => result.push(tok_one(Token::Slash)),
 
-            '%' => {
-                if is_next_char(input, curr_offset, '{') {
+            b'%' => {
+                if is_next_char(utf8_bytes, curr_offset, b'{') {
                     result.push(LexItem::new(
                         Token::PercentLPointParent,
                         Span::two(curr_offset),
@@ -95,8 +97,8 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 }
             }
 
-            '-' => {
-                if is_next_char(input, curr_offset, '>') {
+            b'-' => {
+                if is_next_char(utf8_bytes, curr_offset, b'>') {
                     result.push(LexItem::new(Token::RTArrow, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else {
@@ -104,11 +106,11 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 }
             }
 
-            '=' => {
-                if is_next_char(input, curr_offset, '=') {
+            b'=' => {
+                if is_next_char(utf8_bytes, curr_offset, b'=') {
                     result.push(LexItem::new(Token::EqualEqual, Span::two(curr_offset)));
                     curr_offset += 1;
-                } else if is_next_char(input, curr_offset, '>') {
+                } else if is_next_char(utf8_bytes, curr_offset, b'>') {
                     result.push(LexItem::new(Token::RFArrtow, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else {
@@ -116,8 +118,8 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 }
             }
 
-            '!' => {
-                if is_next_char(input, curr_offset, '=') {
+            b'!' => {
+                if is_next_char(utf8_bytes, curr_offset, b'=') {
                     result.push(LexItem::new(Token::BangEqual, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else {
@@ -125,15 +127,15 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 }
             }
 
-            '<' => push_with_equal(Token::LessEqual, Token::Less),
-            '>' => push_with_equal(Token::GreaterEqual, Token::Greater),
-            '"' => result.push(lex_string(input, &mut curr_offset)?),
+            b'<' => push_with_equal(Token::LessEqual, Token::Less),
+            b'>' => push_with_equal(Token::GreaterEqual, Token::Greater),
+            b'"' => result.push(lex_string(utf8_bytes, &mut curr_offset)?),
 
-            '#' => result.push(lex_comment(input, &mut curr_offset)),
+            b'#' => result.push(lex_comment(utf8_bytes, &mut curr_offset)),
 
-            v if v.is_ascii_digit() => result.push(lex_number(input, &mut curr_offset)?),
-            v if is_keyword_or_identifier_char(v) => {
-                result.push(lex_keyword_or_identifier(input, &mut curr_offset))
+            v if v.is_ascii_digit() => result.push(lex_number(utf8_bytes, &mut curr_offset)?),
+            &v if is_keyword_or_identifier_char(v) => {
+                result.push(lex_keyword_or_identifier(utf8_bytes, &mut curr_offset))
             }
             _ => {
                 return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
@@ -145,15 +147,15 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     Ok(result)
 }
 
-fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
+fn lex_number(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
     let start_offset = *offset;
     let mut has_parsed_dot = false;
 
-    while let Some(c) = input.chars().nth(*offset + 1) {
-        if !(c.is_ascii_digit() || c == '.') {
+    while let Some(&c) = input.get(*offset + 1) {
+        if !(c.is_ascii_digit() || c == b'.') {
             break;
         }
-        if c == '.' {
+        if c == b'.' {
             if has_parsed_dot {
                 return Err(ParseError::UnexpectedCharacter(Span::one(*offset)));
             }
@@ -164,8 +166,8 @@ fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
 
     // check if the last thing we parsed is a dot
     let end_offset = *offset;
-    if let Some(c) = input.chars().nth(end_offset)
-        && c == '.'
+    if let Some(&c) = input.get(end_offset)
+        && c == b'.'
     {
         return Err(ParseError::UnexpectedCharacter(Span::one(end_offset)));
     }
@@ -176,17 +178,18 @@ fn lex_number(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
     ))
 }
 
-fn lex_string(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
+fn lex_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
     let start_offset = *offset;
+
     *offset += 1; // consume '"'
-    while let Some(c) = input.chars().nth(*offset) {
-        if c == '"' {
+    while let Some(&c) = input.get(*offset) {
+        if c == b'"' {
             break;
         }
         *offset += 1;
     }
 
-    if input.chars().nth(*offset).is_none() {
+    if input.get(*offset).is_none() {
         return Err(ParseError::UnclosedString(start_offset));
     }
 
@@ -196,10 +199,10 @@ fn lex_string(input: &str, offset: &mut usize) -> Result<LexItem, ParseError> {
     ))
 }
 
-fn lex_keyword_or_identifier(input: &str, offset: &mut usize) -> LexItem {
+fn lex_keyword_or_identifier(input: &[u8], offset: &mut usize) -> LexItem {
     let start_offset = *offset;
 
-    while let Some(c) = input.chars().nth(*offset + 1) {
+    while let Some(&c) = input.get(*offset + 1) {
         if !is_keyword_or_identifier_char(c) {
             break;
         }
@@ -215,12 +218,12 @@ fn lex_keyword_or_identifier(input: &str, offset: &mut usize) -> LexItem {
     }
 }
 
-fn lex_comment(input: &str, offset: &mut usize) -> LexItem {
+fn lex_comment(input: &[u8], offset: &mut usize) -> LexItem {
     let start_offset = *offset;
 
-    while let Some(c) = input.chars().nth(*offset) {
+    while let Some(&c) = input.get(*offset) {
         // skip until we get a new line
-        if c == '\n' {
+        if c == b'\n' {
             break;
         }
         *offset += 1;

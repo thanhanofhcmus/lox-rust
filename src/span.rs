@@ -35,10 +35,11 @@ impl Span {
     pub fn to_start_row_col(self, input: &str) -> (usize, usize) {
         let mut row = 1;
         let mut col = 1;
+        let utf8_bytes = input.as_bytes();
         for i in 0..self.start {
-            if let Some(c) = input.chars().nth(i) {
+            if let Some(c) = utf8_bytes.get(i) {
                 match c {
-                    '\n' => {
+                    b'\n' => {
                         row += 1;
                         col = 0;
                     }
