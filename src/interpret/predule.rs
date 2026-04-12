@@ -97,8 +97,8 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
 
     // TODO: handle write! error
     for value in args {
-        if let Value::Str(handle) = value {
-            let s = itp.environment.get_string(handle)?;
+        if let Value::Str(str_id) = value {
+            let s = itp.environment.get_string(str_id)?;
             write!(print_writer, "{}", s).unwrap();
         } else {
             value.write_display(itp.environment, &mut *print_writer)?;
