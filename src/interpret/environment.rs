@@ -109,7 +109,6 @@ impl Module {
 
 const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 100;
-const GC_TRIGGER_POINT: usize = 100;
 
 #[derive(derive_more::Debug)]
 pub struct Environment {
@@ -290,25 +289,11 @@ impl Environment {
             .scope_stack
             .get_current_mut()
             .insert_variable(id.into(), value);
-        self.shallow_copy_value(value);
+        self.heap.shallow_copy_value(value);
         old_value
     }
 
-    pub fn shallow_copy_value(&mut self, value: Value) {
-        self.heap.shallow_copy_value(value);
-
-        if self.heap.get_stats().number_of_used_objects >= GC_TRIGGER_POINT {
-            let root_values = self.collect_all_variables();
-            self.heap.mark(root_values);
-            self.heap.sweep();
-        }
-    }
-
-    pub fn replace_variable_function_scope(
-        &mut self,
-        id: impl Into<Id>,
-        value: Value,
-    ) -> Option<Value> {
+    pub fn replace_variable_function_scope(&mut self, id: impl Into<Id>, value: Value) -> bool {
         let id = id.into();
         for scope in self.scope_stack.iter_outward_mut() {
             if let Some(old_value) = scope.get_variable(id) {
@@ -318,13 +303,13 @@ impl Environment {
                 self.heap.shallow_copy_value(value);
                 self.heap.shallow_dispose_value(old_value);
                 scope.insert_variable(id, value);
-                return None;
+                return true;
             }
             if scope.kind == ScopeKind::Function {
                 break;
             }
         }
-        None
+        false
     }
 
     pub fn get_string(&self, id: StrId) -> Result<&str, Error> {
