@@ -48,6 +48,50 @@ impl Scope {
 }
 
 #[derive(Debug)]
+struct ScopeStack(Vec<Scope>);
+
+impl ScopeStack {
+    fn new() -> Self {
+        Self(vec![Scope::new(ScopeKind::Global)])
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn push(&mut self, kind: ScopeKind) {
+        if self.0.len() > SCOPE_SIZE_LIMIT {
+            panic!("Scope overflow");
+        }
+        self.0.push(Scope::new(kind));
+    }
+
+    fn pop(&mut self) -> Scope {
+        self.0.pop().expect("Scope underflow")
+    }
+
+    fn get_current(&self) -> &Scope {
+        self.0.last().expect("There must be at least one scope")
+    }
+
+    fn get_current_mut(&mut self) -> &mut Scope {
+        self.0.last_mut().expect("There must be at least one scope")
+    }
+
+    fn iter_outward(&self) -> impl Iterator<Item = &Scope> {
+        self.0.iter().rev()
+    }
+
+    fn iter_outward_mut(&mut self) -> impl Iterator<Item = &mut Scope> {
+        self.0.iter_mut().rev()
+    }
+
+    fn iter_all(&self) -> impl Iterator<Item = &Scope> {
+        self.0.iter()
+    }
+}
+
+#[derive(Debug)]
 struct Module {
     variables: HashMap<Id, Value>,
     #[allow(unused)]
@@ -99,7 +143,7 @@ macro_rules! decl_gc_type_methods {
 pub struct Environment {
     pub(super) heap: Heap,
 
-    scopes: Vec<Scope>,
+    scope_stack: ScopeStack,
 
     modules: HashMap<Id, Module>,
 
@@ -116,12 +160,11 @@ impl Environment {
     pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>) -> Self {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
-        let scopes = vec![Scope::new(ScopeKind::Global)];
         let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
 
         Self {
             heap: Heap::new(),
-            scopes,
+            scope_stack: ScopeStack::new(),
             modules,
             preludes: predule::create(),
             current_module_id,
@@ -136,8 +179,8 @@ impl Environment {
 
     pub(super) fn collect_all_variables(&self) -> Vec<Value> {
         let mut variables = self
-            .scopes
-            .iter()
+            .scope_stack
+            .iter_all()
             .flat_map(|s| s.variables.values().copied())
             .collect::<Vec<_>>();
         let module_vars = self
@@ -161,9 +204,12 @@ impl Environment {
 
     pub fn deinit_module(&mut self) {
         let mut module = Module::new(self.current_module_id);
-        // after a module is parsed, the should only be the "global" scope
-        assert!(self.scopes.len() == 1);
-        module.variables = std::mem::take(&mut self.get_current_scope_mut().variables);
+        // after a module is parsed, there should only be the "global" scope
+        assert!(self.scope_stack.len() == 1);
+        // Transfer variables to the module instead of disposing them —
+        // do NOT call pop_scope() here, which would shallow_dispose every value.
+        let last_scope = self.scope_stack.pop();
+        module.variables = last_scope.variables;
 
         // TODO: handle heap
 
@@ -171,38 +217,23 @@ impl Environment {
     }
 
     pub fn push_scope(&mut self, kind: ScopeKind) {
-        if self.scopes.len() > SCOPE_SIZE_LIMIT {
-            panic!("Scope overflow");
-        }
-        self.scopes.push(Scope::new(kind));
+        self.scope_stack.push(kind);
     }
 
     pub fn pop_scope(&mut self) {
-        let last_scope = self.scopes.pop().expect("Scope underflow");
+        let last_scope = self.scope_stack.pop();
         for (_, value) in last_scope.variables {
             self.heap.shallow_dispose_value(value);
         }
     }
 
-    fn get_current_scope(&self) -> &Scope {
-        self.scopes
-            .last()
-            .expect("There must be at least one scope")
-    }
-
-    fn get_current_scope_mut(&mut self) -> &mut Scope {
-        self.scopes
-            .last_mut()
-            .expect("There must be at least one scope")
-    }
-
     pub fn get_variable_current_scope(&self, id: impl Into<Id>) -> Option<Value> {
-        self.get_current_scope().get_variable(id.into())
+        self.scope_stack.get_current().get_variable(id.into())
     }
 
     pub fn get_variable_function_scope(&self, id: impl Into<Id>) -> Option<Value> {
         let id = id.into();
-        for scope in self.scopes.iter().rev() {
+        for scope in self.scope_stack.iter_outward() {
             if let Some(value) = scope.get_variable(id) {
                 return Some(value);
             }
@@ -219,7 +250,7 @@ impl Environment {
 
     pub fn get_variable_all_scope_by_id(&self, id: Id, prefix_ids: &[Id]) -> Option<Value> {
         // check scopes/stacks
-        for scope in self.scopes.iter().rev() {
+        for scope in self.scope_stack.iter_outward() {
             if let Some(value) = scope.get_variable(id) {
                 return Some(value);
             }
@@ -253,7 +284,8 @@ impl Environment {
         value: Value,
     ) -> Option<Value> {
         let old_value = self
-            .get_current_scope_mut()
+            .scope_stack
+            .get_current_mut()
             .insert_variable(id.into(), value);
         self.shallow_copy_value(value);
         old_value
@@ -275,12 +307,15 @@ impl Environment {
         value: Value,
     ) -> Option<Value> {
         let id = id.into();
-        for scope in self.scopes.iter_mut().rev() {
+        for scope in self.scope_stack.iter_outward_mut() {
             if let Some(old_value) = scope.get_variable(id) {
-                self.heap.shallow_dispose_value(old_value);
                 // insert new value and return the old one
                 // the return value should be the same as old_value
+                // we can use either to dispose the actual value in the heap
+                self.heap.shallow_copy_value(value);
+                self.heap.shallow_dispose_value(old_value);
                 scope.insert_variable(id, value);
+                return None;
             }
             if scope.kind == ScopeKind::Function {
                 break;
