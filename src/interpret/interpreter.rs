@@ -2,14 +2,13 @@ use super::environment::Environment;
 use super::error::Error;
 use super::values::Value;
 use crate::ast::*;
-use crate::interpret::environment::ScopeKind;
 use crate::interpret::heap::GcHandle;
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar};
 use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
 use std::panic;
-use std::path::Path;
+use std::path::{Path, is_separator};
 
 #[derive(Debug)]
 struct ValueReturn {
@@ -178,12 +177,14 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
         let iden = &node.base;
 
-        let Some(current_root_value) = self.environment.get_variable_function_scope(iden) else {
-            return match self.environment.get_variable_all_scope(iden) {
-                Some(_) => Err(Error::VariableReadOnly(iden.create_name(self.input))),
-                None => Err(Error::NotFoundVariable(iden.create_name(self.input))),
-            };
+        let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden)
+        else {
+            return Err(Error::NotFoundVariable(iden.create_name(self.input)));
         };
+
+        if is_readonly {
+            return Err(Error::VariableReadOnly(iden.create_name(self.input)));
+        }
 
         match index_chain.split_last() {
             Some((last, chain)) => {
@@ -211,6 +212,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Expression::Clause(node) => self.interpret_clause_expr(node).map(ValueReturn::new),
             Expression::Block(node) => self.interpret_block_node(node),
             Expression::While(node) => self.interpret_while_expr(node),
+            Expression::For(node) => self.interpret_for_expr(node),
             Expression::IfChain(node) => self.interpret_if_chain_expr(node),
         }
     }
@@ -227,7 +229,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_block_node(&mut self, node: &BlockNode) -> Result<ValueReturn, Error> {
-        self.environment.push_scope(ScopeKind::Block);
+        self.environment.push_scope(false);
         let result = self.interpret_block_node_inner(node);
         self.environment.pop_scope();
         result
@@ -245,6 +247,42 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             Some(expr) => self.interpret_expr(expr),
             None => Ok(ValueReturn::none()),
         }
+    }
+
+    fn interpret_for_expr(
+        &mut self,
+        ForNode {
+            iden,
+            collection,
+            body,
+        }: &ForNode,
+    ) -> Result<ValueReturn, Error> {
+        let collection = self.interpret_clause_expr(collection)?;
+
+        let Value::Array(handle) = collection else {
+            // TODO: Make this error array specific
+            return Err(Error::ValueUnIndexable(collection));
+        };
+
+        // The array here could be from temporary or from an actual value
+        // DO NOT try to decrease ref count here
+        let arr = self.environment.get_array(handle)?.clone();
+
+        for collection_value in arr {
+            // collection_value should not be reassignable from the lesser scope
+            self.environment.push_scope(true);
+            self.environment
+                .insert_variable_current_scope(iden, collection_value);
+            let result = self.interpret_block_node(body);
+            self.environment.pop_scope();
+
+            let value_return = result?;
+            if value_return.should_bubble_up {
+                return Ok(value_return);
+            }
+        }
+
+        Ok(ValueReturn::none())
     }
 
     fn interpret_while_expr(
@@ -292,6 +330,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ClauseNode::Identifier(node) => Ok(self
                 .environment
                 .get_variable_all_scope(node)
+                .map(|v| v.0)
                 .unwrap_or(Value::make_nil())),
         }
     }
@@ -401,13 +440,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // create a new stack for the function call
         // currently, later args can reference sooner args
         // TODO: make this go away
-        self.environment.push_scope(ScopeKind::Function);
+        self.environment.push_scope(true);
         for (arg_id, arg_expr) in arg_ids.iter().zip(args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
             self.environment.insert_variable_current_scope(*arg_id, res);
         }
 
-        let result = self.interpret_block_node_inner(&body);
+        let result = self.interpret_block_node(&body);
         self.environment.pop_scope();
 
         // Convert the ValueReturn back to a raw Value.

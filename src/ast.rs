@@ -41,6 +41,7 @@ pub enum Expression {
     Block(BlockNode),
     IfChain(IfChainNode),
     While(WhileNode),
+    For(ForNode),
     Return(Option<Box<Expression>>),
 }
 
@@ -55,6 +56,13 @@ pub struct IfChainNode {
 pub struct ElseIfNode {
     pub cond: ClauseNode,
     pub stmts: BlockNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForNode {
+    pub iden: IdentifierNode,
+    pub collection: ClauseNode,
+    pub body: BlockNode,
 }
 
 #[derive(Debug, Clone)]

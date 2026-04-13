@@ -17,7 +17,9 @@ static KEYWORDS: phf::Map<&'static [u8], Token> = phf::phf_map!(
     b"if" => Token::If,
     b"else" => Token::Else,
     b"while" => Token::While,
+    b"for" => Token::For,
     b"when" => Token::When,
+    b"in" => Token::In,
 
     b"fn" => Token::Fn,
     b"return" => Token::Return,

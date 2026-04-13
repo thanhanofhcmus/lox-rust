@@ -17,24 +17,17 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeKind {
-    Block,
-    Function,
-    Global,
-}
-
 #[derive(Debug)]
 struct Scope {
     variables: HashMap<Id, Value>,
-    kind: ScopeKind,
+    is_readonly: bool,
 }
 
 impl Scope {
-    fn new(kind: ScopeKind) -> Self {
+    fn new(is_readonly: bool) -> Self {
         Self {
             variables: HashMap::new(),
-            kind,
+            is_readonly,
         }
     }
 
@@ -52,18 +45,18 @@ struct ScopeStack(Vec<Scope>);
 
 impl ScopeStack {
     fn new() -> Self {
-        Self(vec![Scope::new(ScopeKind::Global)])
+        Self(vec![Scope::new(false)])
     }
 
     fn len(&self) -> usize {
         self.0.len()
     }
 
-    fn push(&mut self, kind: ScopeKind) {
+    fn push(&mut self, is_readonly: bool) {
         if self.0.len() > SCOPE_SIZE_LIMIT {
             panic!("Scope overflow");
         }
-        self.0.push(Scope::new(kind));
+        self.0.push(Scope::new(is_readonly));
     }
 
     fn pop(&mut self) -> Scope {
@@ -219,8 +212,8 @@ impl Environment {
 
     // Scope functions
 
-    pub fn push_scope(&mut self, kind: ScopeKind) {
-        self.scope_stack.push(kind);
+    pub fn push_scope(&mut self, is_readonly: bool) {
+        self.scope_stack.push(is_readonly);
     }
 
     pub fn pop_scope(&mut self) {
@@ -236,31 +229,23 @@ impl Environment {
         self.scope_stack.get_current().get_variable(id.into())
     }
 
-    pub fn get_variable_function_scope(&self, id: impl Into<Id>) -> Option<Value> {
-        let id = id.into();
-        for scope in self.scope_stack.iter_outward() {
-            if let Some(value) = scope.get_variable(id) {
-                return Some(value);
-            }
-            if scope.kind == ScopeKind::Function {
-                break;
-            }
-        }
-        None
-    }
-
-    pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<Value> {
+    pub fn get_variable_all_scope(
+        &self,
+        node: &IdentifierNode,
+    ) -> Option<(Value, bool /* is_readonly */)> {
         let id = node.get_id();
         // check scopes/stacks
         for scope in self.scope_stack.iter_outward() {
             if let Some(value) = scope.get_variable(id) {
-                return Some(value);
+                return Some((value, scope.is_readonly));
             }
         }
 
+        // from now on, the variable is always readonly
+
         // get from built-in
         if let Some(value) = self.preludes.get(&id) {
-            return Some(*value);
+            return Some((*value, true));
         }
 
         // No prefixes mean this code is trying to reference values from the transparent scope only
@@ -277,7 +262,7 @@ impl Environment {
         // This code is allowing code to un-imported module
         // for example print(a.b) -> nil even though we have not import the module `a` yet
         // TODO: Make this an error when modules are better spec-ed
-        module.variables.get(&id).copied()
+        module.variables.get(&id).map(|v| (*v, true))
     }
 
     pub fn insert_variable_current_scope(
@@ -296,6 +281,9 @@ impl Environment {
     pub fn replace_variable_function_scope(&mut self, id: impl Into<Id>, value: Value) -> bool {
         let id = id.into();
         for scope in self.scope_stack.iter_outward_mut() {
+            if scope.is_readonly {
+                continue;
+            }
             if let Some(old_value) = scope.get_variable(id) {
                 // insert new value and return the old one
                 // the return value should be the same as old_value
@@ -304,9 +292,6 @@ impl Environment {
                 self.heap.shallow_dispose_value(old_value);
                 scope.insert_variable(id, value);
                 return true;
-            }
-            if scope.kind == ScopeKind::Function {
-                break;
             }
         }
         false

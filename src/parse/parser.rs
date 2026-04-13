@@ -140,6 +140,7 @@ fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
         Token::When => parse_when(state),
         Token::While => parse_while(state),
         Token::If => parse_if(state),
+        Token::For => parse_for(state),
         Token::LPointParen => parse_block_node(state).map(Expression::Block),
         _ => parse_clause_node(state).map(Expression::Clause),
     }
@@ -165,6 +166,19 @@ fn parse_while(state: &mut Context) -> Result<Expression, ParseError> {
     let cond = parse_clause_node(state)?;
     let body = parse_block_node(state)?;
     Ok(Expression::While(WhileNode { cond, body }))
+}
+
+fn parse_for(state: &mut Context) -> Result<Expression, ParseError> {
+    state.consume_token(Token::For)?;
+    let iden_li = state.consume_token(Token::Identifier)?;
+    state.consume_token(Token::In)?;
+    let collection = parse_clause_node(state)?;
+    let body = parse_block_node(state)?;
+    Ok(Expression::For(ForNode {
+        iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
+        collection,
+        body,
+    }))
 }
 
 fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {

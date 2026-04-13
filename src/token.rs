@@ -42,11 +42,13 @@ pub enum Token {
     If,     // if
     Else,   // else
     While,  // while
+    For,    // for
     Fn,     // fn
     Return, // return
     When,   // when
     Import, // import
     As,     // as
+    In,     // in
 
     Identifier,
     Number,
