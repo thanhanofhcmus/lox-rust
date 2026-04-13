@@ -286,10 +286,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ClauseNode::Unary(node, op) => self.interpret_unary_op(node, *op),
             ClauseNode::Binary(node) => self.interpret_binary_op(node),
             ClauseNode::RawValue(node) => self.interpret_raw_value_node(node),
-            ClauseNode::Identifier(node) => Ok(self.lookup_all_scope(node)),
             ClauseNode::Group(node) => self.interpret_clause_expr(node),
             ClauseNode::FnCall(node) => self.interpret_fn_call(node),
             ClauseNode::Subscription(node) => self.interpret_subscription(node),
+            ClauseNode::Identifier(node) => Ok(self
+                .environment
+                .get_variable_all_scope(node)
+                .unwrap_or(Value::make_nil())),
         }
     }
 
@@ -502,12 +505,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             }
             _ => Err(Error::InvalidOperationOnType(op, lhs)),
         }
-    }
-
-    fn lookup_all_scope(&self, node: &IdentifierNode) -> Value {
-        self.environment
-            .get_variable_all_scope(node)
-            .unwrap_or(Value::make_nil())
     }
 
     fn is_truthy(&mut self, expr: &ClauseNode) -> Result<bool, Error> {

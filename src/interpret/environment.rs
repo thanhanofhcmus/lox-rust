@@ -111,34 +111,6 @@ const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 100;
 const GC_TRIGGER_POINT: usize = 100;
 
-macro_rules! decl_gc_type_methods {
-    ($name:ident, $variant:ident, $type:ty, $kind:expr, $val_variant:ident) => {
-        paste::item! {
-            // Generates get_array, get_function, etc.
-            pub fn [<get_ $name>](&self, handle: GcHandle) -> Result<&$type, Error> {
-                let Some(obj) = self.get_gc_object(handle) else {
-                    return Err(Error::GcObjectNotFound(handle));
-                };
-                let GcObject::$variant(inner) = obj else {
-                    return Err(Error::GcObjectWrongType(
-                        handle,
-                        obj.get_kind(),
-                        $kind,
-                    ));
-                };
-                Ok(inner)
-            }
-
-            // Generates insert_array_variable, etc.
-            pub fn [<insert_ $name _variable>](&mut self, data: $type) -> Value {
-                let object = GcObject::$variant(data);
-                let handle = self.insert_gc_object(object);
-                Value::$val_variant(handle)
-            }
-        }
-    };
-}
-
 #[derive(derive_more::Debug)]
 pub struct Environment {
     pub(super) heap: Heap,
@@ -154,6 +126,34 @@ pub struct Environment {
 
     #[debug(skip)]
     print_writer: Rc<RefCell<dyn std::io::Write>>,
+}
+
+macro_rules! decl_gc_type_methods {
+    ($name:ident, $variant:ident, $type:ty, $kind:expr, $val_variant:ident) => {
+        paste::item! {
+            // Generates get_array, get_function, etc.
+            pub fn [<get_ $name>](&self, handle: GcHandle) -> Result<&$type, Error> {
+                let Some(obj) = self.heap.get_object(handle) else {
+                    return Err(Error::GcObjectNotFound(handle));
+                };
+                let GcObject::$variant(inner) = obj else {
+                    return Err(Error::GcObjectWrongType(
+                        handle,
+                        obj.get_kind(),
+                        $kind,
+                    ));
+                };
+                Ok(inner)
+            }
+
+            // Generates insert_array_variable, etc.
+            pub fn [<insert_ $name _variable>](&mut self, data: $type) -> Value {
+                let object = GcObject::$variant(data);
+                let handle = self.heap.insert_object(object);
+                Value::$val_variant(handle)
+            }
+        }
+    };
 }
 
 impl Environment {
@@ -192,6 +192,8 @@ impl Environment {
         variables
     }
 
+    // Module functions
+
     pub fn contains_module(&self, id: Id) -> bool {
         self.modules.contains_key(&id)
     }
@@ -216,6 +218,8 @@ impl Environment {
         self.modules.insert(self.current_module_id, module);
     }
 
+    // Scope functions
+
     pub fn push_scope(&mut self, kind: ScopeKind) {
         self.scope_stack.push(kind);
     }
@@ -226,6 +230,8 @@ impl Environment {
             self.heap.shallow_dispose_value(value);
         }
     }
+
+    // Variable functions
 
     pub fn get_variable_current_scope(&self, id: impl Into<Id>) -> Option<Value> {
         self.scope_stack.get_current().get_variable(id.into())
@@ -245,10 +251,7 @@ impl Environment {
     }
 
     pub fn get_variable_all_scope(&self, node: &IdentifierNode) -> Option<Value> {
-        self.get_variable_all_scope_by_id(node.get_id(), &node.prefix_ids)
-    }
-
-    pub fn get_variable_all_scope_by_id(&self, id: Id, prefix_ids: &[Id]) -> Option<Value> {
+        let id = node.get_id();
         // check scopes/stacks
         for scope in self.scope_stack.iter_outward() {
             if let Some(value) = scope.get_variable(id) {
@@ -262,14 +265,14 @@ impl Environment {
         }
 
         // No prefixes mean this code is trying to reference values from the transparent scope only
-        if prefix_ids.is_empty() {
+        if node.prefix_ids.is_empty() {
             return None;
         }
 
         // For now, we expect a variable from another module is in the form
         // module_name.variable_name (1 dot, 2 parts)
         // TODO: Fix this when modules are better spec-ed
-        let module_id = prefix_ids[0];
+        let module_id = node.prefix_ids[0];
         let module = self.modules.get(&module_id)?;
 
         // This code is allowing code to un-imported module
@@ -322,14 +325,6 @@ impl Environment {
             }
         }
         None
-    }
-
-    fn insert_gc_object(&mut self, object: GcObject) -> GcHandle {
-        self.heap.insert_object(object)
-    }
-
-    pub fn get_gc_object(&self, handle: GcHandle) -> Option<&GcObject> {
-        self.heap.get_object(handle)
     }
 
     pub fn get_string(&self, id: StrId) -> Result<&str, Error> {

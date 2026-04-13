@@ -200,7 +200,9 @@ impl Heap {
 
     pub fn sweep(&mut self) {
         for (index, entry) in self.slots.iter_mut().enumerate() {
-            if let Some(v) = entry && v.is_marked_for_delete {
+            if let Some(v) = entry
+                && v.is_marked_for_delete
+            {
                 entry.take();
                 self.free_list.push(index);
             }
@@ -288,12 +290,10 @@ impl Heap {
         self.string_interner.intern(&s)
     }
 
-    pub fn get_string(&self, id: StrId) -> Option<&str> {
-        self.string_interner.get(id)
-    }
-
     pub fn get_string_or_error(&self, id: StrId) -> Result<&str, Error> {
-        self.get_string(id).ok_or(Error::StringNotFoundOnHeap(id))
+        self.string_interner
+            .get(id)
+            .ok_or(Error::StringNotFoundOnHeap(id))
     }
 
     /// Move the GcObject to the heap

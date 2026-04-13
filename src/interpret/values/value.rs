@@ -150,7 +150,8 @@ impl Value {
         let Some(handle) = self.get_handle() else {
             return Err(Error::ValueUnIndexable(*self));
         };
-        env.get_gc_object(handle)
+        env.heap
+            .get_object(handle)
             .ok_or(Error::GcObjectNotFound(handle))?
             .get_at_index(indexee)
     }
