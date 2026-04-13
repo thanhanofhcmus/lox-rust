@@ -100,7 +100,10 @@ pub enum ScalarNode {
     Bool(bool),
     Integer(i64),
     Floating(f64),
-    Str(Span),
+    LazyStr {
+        span: Span,
+        is_raw: bool,
+    },
     /// Store the actual string, for REPL intepreter
     StrLiteral(String),
 }

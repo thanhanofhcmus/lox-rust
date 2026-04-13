@@ -201,6 +201,57 @@ assert(early_return(false) == "late", "Explicit return inside implicit block fai
 
 print();
 
+# --- 9. String Escape Sequences ---
+print("--- Running String Escape Sequence Tests...");
+
+assert("\n" != "n", "Newline escape should not equal letter n");
+assert("\t" != "t", "Tab escape should not equal letter t");
+assert("\"" != "", "Escaped quote should not be empty");
+assert("hello\nworld" != "helloworld", "Newline escape should produce a longer string");
+
+# Escaped backslash followed by n is two chars, same as raw \n
+assert("\\n" == r"\n", "Escaped-backslash + n should equal raw \\n");
+assert("\\t" == r"\t", "Escaped-backslash + t should equal raw \\t");
+
+print();
+
+# --- 10. Raw Strings ---
+print("--- Running Raw String Tests...");
+
+assert(r"hello" == "hello", "Raw string with no special chars should equal regular string");
+assert(r"\n" != "\n", "Raw \\n should not equal escaped newline");
+assert(r"\t" != "\t", "Raw \\t should not equal escaped tab");
+assert(r"C:\Users\foo" != "C:\\Users\\foo", "Raw path should differ from double-escaped path");
+
+print();
+
+# --- 11. Block Scoping ---
+print("--- Running Block Scoping Tests...");
+
+# var declared inside a while body is fresh each iteration
+# (before block scoping this would hit ReDeclareVariable on iteration 2)
+var scope_sum = 0;
+var scope_i = 0;
+while scope_i < 3 {
+    var item = scope_i * 2;
+    scope_sum = scope_sum + item;
+    scope_i = scope_i + 1;
+}
+assert(scope_sum == 6, "Loop-local var should be re-declarable each iteration");
+
+# Assignment from inside a block propagates to outer scope
+var outer = 10;
+if true {
+    outer = 20;
+}
+assert(outer == 20, "Assignment inside block should affect outer variable");
+
+# if-else as expression (block scoping does not break implicit return)
+var picked = if true { "yes" } else { "no" };
+assert(picked == "yes", "Block-scoped if-else expression return failed");
+
+print();
+
 _dbg_heap_stats();
 
 _dbg_gc_mark();

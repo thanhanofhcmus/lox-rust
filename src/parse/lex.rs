@@ -133,6 +133,11 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
 
             b'#' => result.push(lex_comment(utf8_bytes, &mut curr_offset)),
 
+            // need to be before the is_keyword_or_identifier_char check
+            b'r' if is_next_char(utf8_bytes, curr_offset, b'"') => {
+                result.push(lex_raw_string(utf8_bytes, &mut curr_offset)?)
+            }
+
             v if v.is_ascii_digit() => result.push(lex_number(utf8_bytes, &mut curr_offset)?),
             v if is_keyword_or_identifier_char(v) => {
                 result.push(lex_keyword_or_identifier(utf8_bytes, &mut curr_offset))
@@ -207,6 +212,39 @@ fn lex_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
                 // we skip a single byte since we only handle the case of \"
                 // TODO: Handle Unicode escape
                 *offset += 1;
+            }
+
+            // normal char
+            _ => {
+                *offset += 1;
+            }
+        };
+    }
+
+    // We hit the end with out hitting the closing '"'
+    Err(ParseError::UnclosedString(start_offset))
+}
+
+fn lex_raw_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
+    let start_offset = *offset;
+
+    *offset += 2; // consume 'r' and '"'
+    while let Some(&c) = input.get(*offset) {
+        match c {
+            // closing '"'
+            b'"' => {
+                let end_offset = *offset;
+
+                return Ok(LexItem::new(
+                    Token::RawString,
+                    Span::new(start_offset, end_offset),
+                ));
+            }
+
+            // escape char
+            b'\\' if is_next_char(input, *offset, b'"') => {
+                // Skip the current char '\' and '"'
+                *offset += 2;
             }
 
             // normal char

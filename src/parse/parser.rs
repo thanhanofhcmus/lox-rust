@@ -381,9 +381,12 @@ fn parse_primary(state: &mut Context) -> Result<ClauseNode, ParseError> {
 fn parse_raw_value_node(state: &mut Context) -> Result<RawValueNode, ParseError> {
     let li = *state.get_curr()?;
     match li.token {
-        Token::Nil | Token::True | Token::False | Token::String | Token::Number => {
-            parse_scalar_node(state).map(RawValueNode::Scalar)
-        }
+        Token::Nil
+        | Token::True
+        | Token::False
+        | Token::Number
+        | Token::String
+        | Token::RawString => parse_scalar_node(state).map(RawValueNode::Scalar),
         Token::LSquareParen => parse_array_literal_node(state).map(RawValueNode::ArrayLiteral),
         Token::PercentLPointParent => parse_map_literal_node(state).map(RawValueNode::MapLiteral),
         Token::Fn => parse_function_decl(state).map(RawValueNode::FnDecl),
@@ -402,19 +405,8 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
         Token::Nil => next(ScalarNode::Nil),
         Token::True => next(ScalarNode::Bool(true)),
         Token::False => next(ScalarNode::Bool(false)),
-        Token::String => {
-            // Don't use the `next` closure here, the borrow checker will complain
-            state.advance();
-            // remove start '"' and end '"'
-            let span = Span::new(li.span.start + 1, li.span.end - 1);
-            if state.get_should_eval_string() {
-                let s = string_utils::unescape(span.str_from_source(state.get_input()));
-                Ok(ScalarNode::StrLiteral(s))
-            } else {
-                Ok(ScalarNode::Str(span))
-            }
-        }
         Token::Number => parse_number(state),
+        Token::String | Token::RawString => parse_string(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
@@ -520,6 +512,29 @@ fn parse_number(state: &mut Context) -> Result<ScalarNode, ParseError> {
     match source.parse::<f64>() {
         Err(_) => Err(ParseError::ParseToNumber(li.span)),
         Ok(num) => Ok(ScalarNode::Floating(num)),
+    }
+}
+
+fn parse_string(state: &mut Context) -> Result<ScalarNode, ParseError> {
+    let li = *state.get_curr()?;
+
+    let is_raw = li.token == Token::RawString;
+    // remove start 'r' (if has) and '"' and end '"'
+    let span_start = li.span.start + if is_raw { 2 } else { 1 };
+    let span_end = li.span.end - 1;
+
+    // Don't use the `next` closure here, the borrow checker will complain
+    state.advance();
+    let span = Span::new(span_start, span_end);
+    if state.get_should_eval_string() {
+        let string = if is_raw {
+            span.string_from_source(state.get_input())
+        } else {
+            string_utils::unescape(span.str_from_source(state.get_input()))
+        };
+        Ok(ScalarNode::StrLiteral(string))
+    } else {
+        Ok(ScalarNode::LazyStr { span, is_raw })
     }
 }
 

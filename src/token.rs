@@ -51,6 +51,7 @@ pub enum Token {
     Identifier,
     Number,
     String,
+    RawString,
 
     Dot,       // .
     Comma,     // ,

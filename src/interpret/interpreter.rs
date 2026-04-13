@@ -313,9 +313,14 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ScalarNode::Integer(v) => Value::make_number(Number::Integer(*v)),
             ScalarNode::Floating(v) => Value::make_number(Number::Floating(*v)),
             ScalarNode::StrLiteral(v) => self.environment.insert_string_variable(v.to_owned()),
-            ScalarNode::Str(v) => self
-                .environment
-                .insert_string_variable(string_utils::unescape(v.str_from_source(self.input))),
+            ScalarNode::LazyStr { span, is_raw } => {
+                let string = if *is_raw {
+                    span.string_from_source(self.input)
+                } else {
+                    string_utils::unescape(span.str_from_source(self.input))
+                };
+                self.environment.insert_string_variable(string)
+            }
         }
     }
 
