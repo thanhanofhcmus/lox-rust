@@ -145,6 +145,7 @@ pub struct ArrayForComprehentionNode {
     pub iden: IdentifierNode,
     pub collection: ClauseNode,
     pub transformer: ClauseNode,
+    pub filter: Option<ClauseNode>,
 }
 
 #[derive(Debug, Clone)]

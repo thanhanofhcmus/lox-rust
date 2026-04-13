@@ -463,16 +463,29 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, Par
         state.consume_token(Token::LSquareParen)?;
         state.consume_token(Token::For)?;
         let iden_li = state.consume_token(Token::Identifier)?;
+
         state.consume_token(Token::In)?;
         let collection = parse_clause_node(state)?;
+
+        let filter = if state.peek(&[Token::If]) {
+            state.consume_token(Token::If)?;
+            let clause = parse_clause_node(state)?;
+            Some(clause)
+        } else {
+            None
+        };
+
         state.consume_token(Token::Colon)?;
-        let transform = parse_clause_node(state)?;
+
+        let transformer = parse_clause_node(state)?;
         state.consume_token(Token::RSquareParen)?;
+
         Ok(ArrayLiteralNode::ForComprehension(Box::new(
             ArrayForComprehentionNode {
                 iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
                 collection,
-                transformer: transform,
+                transformer,
+                filter,
             },
         )))
     } else {

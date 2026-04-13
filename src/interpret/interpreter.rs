@@ -374,14 +374,30 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                     self.environment.push_scope(true);
                     self.environment
                         .insert_variable_current_scope(&node.iden, collection_value);
-                    let result = self.interpret_clause_expr(&node.transformer);
+                    let result = self.interpret_array_literal_comprehension_inner(node);
                     self.environment.pop_scope();
                     let value = result?;
-                    arr.push(value);
+                    if let Some(value) = value {
+                        arr.push(value);
+                    }
                 }
                 Ok(self.environment.insert_array_variable(arr))
             }
         }
+    }
+
+    fn interpret_array_literal_comprehension_inner(
+        &mut self,
+        node: &ArrayForComprehentionNode,
+    ) -> Result<Option<Value>, Error> {
+        // filter
+        if let Some(filter) = &node.filter
+            && !(self.is_truthy(filter)?)
+        {
+            return Ok(None);
+        }
+        let value = self.interpret_clause_expr(&node.transformer)?;
+        Ok(Some(value))
     }
 
     fn interpret_map_literal(&mut self, node: &MapLiteralNode) -> Result<Value, Error> {
