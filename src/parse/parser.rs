@@ -446,6 +446,7 @@ fn parse_group(state: &mut Context) -> Result<ClauseNode, ParseError> {
 }
 
 fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, ParseError> {
+    // [:1 : 2 ]
     if state.peek_2_token(&[Token::Colon]) {
         state.consume_token(Token::LSquareParen)?;
         state.consume_token(Token::Colon)?;
@@ -453,18 +454,36 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, Par
         state.consume_token(Token::Colon)?;
         let repeat = parse_clause_node(state)?;
         state.consume_token(Token::RSquareParen)?;
-        return Ok(ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode {
+        Ok(ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode {
             repeat,
             value,
-        })));
+        })))
+    // [for a in b: c]
+    } else if state.peek_2_token(&[Token::For]) {
+        state.consume_token(Token::LSquareParen)?;
+        state.consume_token(Token::For)?;
+        let iden_li = state.consume_token(Token::Identifier)?;
+        state.consume_token(Token::In)?;
+        let collection = parse_clause_node(state)?;
+        state.consume_token(Token::Colon)?;
+        let transform = parse_clause_node(state)?;
+        state.consume_token(Token::RSquareParen)?;
+        Ok(ArrayLiteralNode::ForComprehension(Box::new(
+            ArrayForComprehentionNode {
+                iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
+                collection,
+                transformer: transform,
+            },
+        )))
+    } else {
+        let exprs = parse_comma_list(
+            state,
+            Token::LSquareParen,
+            Token::RSquareParen,
+            parse_clause_node,
+        )?;
+        Ok(ArrayLiteralNode::List(exprs))
     }
-    let exprs = parse_comma_list(
-        state,
-        Token::LSquareParen,
-        Token::RSquareParen,
-        parse_clause_node,
-    )?;
-    Ok(ArrayLiteralNode::List(exprs))
 }
 
 fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode, ParseError> {

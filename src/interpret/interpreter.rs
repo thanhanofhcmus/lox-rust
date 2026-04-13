@@ -3,12 +3,12 @@ use super::error::Error;
 use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
-use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar};
+use crate::interpret::values::{Array, BuiltinFn, Function, Map, MapKey, Number, Scalar};
 use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
 use std::panic;
-use std::path::{Path, is_separator};
+use std::path::Path;
 
 #[derive(Debug)]
 struct ValueReturn {
@@ -181,7 +181,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         else {
             return Err(Error::NotFoundVariable(iden.create_name(self.input)));
         };
-
         if is_readonly {
             return Err(Error::VariableReadOnly(iden.create_name(self.input)));
         }
@@ -257,17 +256,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             body,
         }: &ForNode,
     ) -> Result<ValueReturn, Error> {
-        let collection = self.interpret_clause_expr(collection)?;
-
-        let Value::Array(handle) = collection else {
-            // TODO: Make this error array specific
-            return Err(Error::ValueUnIndexable(collection));
-        };
-
-        // The array here could be from temporary or from an actual value
-        // DO NOT try to decrease ref count here
-        let arr = self.environment.get_array(handle)?.clone();
-
+        let arr = self.interpret_and_get_array(collection)?.clone();
         for collection_value in arr {
             // collection_value should not be reassignable from the lesser scope
             self.environment.push_scope(true);
@@ -281,7 +270,6 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 return Ok(value_return);
             }
         }
-
         Ok(ValueReturn::none())
     }
 
@@ -377,6 +365,21 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let value = self.interpret_clause_expr(&node.value)?;
                 let repeat = self.interpret_clause_expr(&node.repeat)?.to_index()?;
                 Ok(self.environment.insert_array_variable(vec![value; repeat]))
+            }
+            ArrayLiteralNode::ForComprehension(node) => {
+                let collection_arr = self.interpret_and_get_array(&node.collection)?.clone();
+                let mut arr = Vec::with_capacity(collection_arr.len());
+                for collection_value in collection_arr {
+                    // collection_value should not be reassignable from the lesser scope
+                    self.environment.push_scope(true);
+                    self.environment
+                        .insert_variable_current_scope(&node.iden, collection_value);
+                    let result = self.interpret_clause_expr(&node.transformer);
+                    self.environment.pop_scope();
+                    let value = result?;
+                    arr.push(value);
+                }
+                Ok(self.environment.insert_array_variable(arr))
             }
         }
     }
@@ -549,6 +552,19 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             }
             _ => Err(Error::InvalidOperationOnType(op, lhs)),
         }
+    }
+
+    fn interpret_and_get_array(&mut self, clause: &ClauseNode) -> Result<&Array, Error> {
+        let collection = self.interpret_clause_expr(clause)?;
+
+        let Value::Array(handle) = collection else {
+            // TODO: Make this error array specific
+            return Err(Error::ValueUnIndexable(collection));
+        };
+
+        // The array here could be from temporary or from an actual value
+        // DO NOT try to decrease ref count here
+        self.environment.get_array(handle)
     }
 
     fn is_truthy(&mut self, expr: &ClauseNode) -> Result<bool, Error> {

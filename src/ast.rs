@@ -120,6 +120,7 @@ pub enum ScalarNode {
 pub enum ArrayLiteralNode {
     List(Vec<ClauseNode>),
     Repeat(Box<ArrayRepeatNode>),
+    ForComprehension(Box<ArrayForComprehentionNode>),
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +138,13 @@ pub struct MapLiteralElementNode {
 pub struct ArrayRepeatNode {
     pub value: ClauseNode,
     pub repeat: ClauseNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrayForComprehentionNode {
+    pub iden: IdentifierNode,
+    pub collection: ClauseNode,
+    pub transformer: ClauseNode,
 }
 
 #[derive(Debug, Clone)]
