@@ -101,7 +101,6 @@ impl HeapEntry {
 }
 
 #[derive(derive_more::Debug)]
-#[allow(dead_code)]
 pub struct HeapStats {
     pub slots_size: usize,
     pub free_list_size: usize,
