@@ -33,7 +33,7 @@ primary           = IDENTIFIER | group | raw_value
 raw_value         = scalar | array_literal | map_literal | fn_decl
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
 fn_decl           = "fn" "(" ( IDENTIFIER "," ... )* ")" (function_block | expr)
-array_literal     = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]" | "[" "for" IDENTIFIER "in" claude ("if" clause)? ":" clause "]"
+array_literal     = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]" | "[" "for" IDENTIFIER "in" clause ("if" clause)? ":" clause "]"
 map_literal       = "%{" (primary "=>" clause , ...)* "}" 
 group             = "(" clause ")"
 ```

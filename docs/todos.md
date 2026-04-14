@@ -1,6 +1,7 @@
 ## Todos:
-- Implement more string stuff, multi-line, escape sequence, raw, formatted string
-- List/Map comprehention
+- Implement more string stuff, formatted string
+- Map comprehension (`%{ k => v for k, v in map }`)
+- Map for loop (`for k, v in map { ... }`)
 - Rework module
 - And standard library module
 - More docs
@@ -15,3 +16,9 @@
 - [X] Make last expression in a block return the value of the block (like rust)
 - [X] Add prelude
 - [X] Implement `map` data structure
+- [X] String escape sequences (`\n`, `\t`, `\r`, `\"`, `\\`)
+- [X] Block scoping — blocks now create their own `ScopeKind::Block` scope; variables no longer leak into enclosing scope
+- [X] Raw strings — `r"..."` syntax; backslashes are literal, `\"` prevents early close without consuming the backslash
+- [X] Multiline string — already supported by lexer; newlines inside `"..."` and `r"..."` are consumed as-is
+- [X] For loop — `for x in array { ... }`; loop variable is readonly inside the body
+- [X] Array for comprehension — `[for x in array: expr]` with optional `if` filter; loop variable readonly

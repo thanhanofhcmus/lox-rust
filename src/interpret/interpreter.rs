@@ -570,6 +570,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
+    // Returns a reference into the heap. Callers that need to iterate while
+    // also calling other interpreter methods (which borrow &mut self) must
+    // .clone() the result immediately — the clone is the owned copy that
+    // survives the subsequent mutable borrows.
     fn interpret_and_get_array(&mut self, clause: &ClauseNode) -> Result<&Array, Error> {
         let collection = self.interpret_clause_expr(clause)?;
 
