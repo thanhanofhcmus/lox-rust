@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::interpret::{
+    debug_string::DebugString,
     error::Error,
     string_interner::{StrId, StringInterner},
     values::{Array, Function, Map, MapKey, Value},
@@ -363,5 +364,101 @@ impl Heap {
         }
 
         Some(entry)
+    }
+}
+
+impl DebugString for HeapStats {
+    fn debug_string(&self) -> String {
+        use std::fmt::Write as FmtWrite;
+        let mut s = String::new();
+
+        writeln!(s, "=== Heap Stats ===").unwrap();
+        writeln!(
+            s,
+            "GC Objects  live: {}  |  dead: {}  |  total: {}",
+            self.number_of_used_objects,
+            self.number_of_to_be_deleted_objects,
+            self.number_of_total_objects,
+        )
+        .unwrap();
+        writeln!(
+            s,
+            "Slots       allocated: {}  |  free: {}",
+            self.slots_size, self.free_list_size,
+        )
+        .unwrap();
+
+        let kinds = [GcKind::Array, GcKind::Map, GcKind::Function];
+        let fmt_kind = |map: &HashMap<GcKind, usize>| -> String {
+            kinds
+                .iter()
+                .map(|k| format!("{}={}", k.type_name(), map.get(k).copied().unwrap_or(0)))
+                .collect::<Vec<_>>()
+                .join("  ")
+        };
+        let live_by_kind: HashMap<GcKind, usize> = kinds
+            .iter()
+            .map(|k| {
+                let total = self.total_objects_stats.get(k).copied().unwrap_or(0);
+                let dead = self.to_be_deleted_objects_stats.get(k).copied().unwrap_or(0);
+                (*k, total - dead)
+            })
+            .collect();
+
+        writeln!(s, "Live by kind:  {}", fmt_kind(&live_by_kind)).unwrap();
+        writeln!(s, "Dead by kind:  {}", fmt_kind(&self.to_be_deleted_objects_stats)).unwrap();
+
+        s
+    }
+}
+
+impl DebugString for Heap {
+    fn debug_string(&self) -> String {
+        use std::fmt::Write as FmtWrite;
+        let mut s = String::new();
+
+        writeln!(
+            s,
+            "Heap (slots={}, free={}):",
+            self.slots.len(),
+            self.free_list.len()
+        )
+        .unwrap();
+
+        for (i, slot) in self.slots.iter().enumerate() {
+            let Some(entry) = slot else { continue };
+            let status = if entry.is_marked_for_delete {
+                "dead"
+            } else {
+                "live"
+            };
+            let ref_count = entry.ref_count;
+            let type_name = entry.object.get_kind().type_name();
+            writeln!(
+                s,
+                "  [{i:3}] type = {type_name:<8} ref_count = {ref_count:<3} status = {status}"
+            )
+            .unwrap();
+            match &entry.object {
+                GcObject::Array(arr) => {
+                    for (j, v) in arr.iter().enumerate() {
+                        writeln!(s, "    [{j:3}] {v:?}").unwrap();
+                    }
+                }
+                GcObject::Map(map) => {
+                    for (k, v) in map.iter() {
+                        writeln!(s, "    {k:?} => {v:?}").unwrap();
+                    }
+                }
+                GcObject::Function(f) => {
+                    writeln!(s, "    args: {:?}", f.arg_ids).unwrap();
+                }
+            }
+            writeln!(s).unwrap();
+        }
+
+        writeln!(s).unwrap();
+        s += &self.string_interner.debug_string();
+        s
     }
 }

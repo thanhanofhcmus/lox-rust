@@ -6,6 +6,7 @@ use crate::{
     interpret::{
         error::Error,
         heap::{GcHandle, GcObject},
+        debug_string::DebugString,
         interpreter,
         values::{BuiltinFn, MapKey, Number, SerialValue, Value},
     },
@@ -53,8 +54,7 @@ pub fn create() -> HashMap<Id, Value> {
 }
 
 fn dbg_state_fn(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
-    let env = &itp.environment;
-    dbg!(&env);
+    eprintln!("{}", itp.environment.debug_state_string());
     Ok(Value::make_nil())
 }
 
@@ -82,8 +82,7 @@ fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
 }
 
 fn dbg_heap_stats(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
-    let stats = itp.environment.heap.get_stats();
-    dbg!(stats);
+    eprintln!("{}", itp.environment.heap.get_stats().debug_string());
     Ok(Value::make_nil())
 }
 

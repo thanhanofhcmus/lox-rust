@@ -9,6 +9,7 @@ use crate::{
     ast::IdentifierNode,
     id::Id,
     interpret::{
+        debug_string::DebugString,
         error::Error,
         heap::{GcHandle, GcKind, GcObject, Heap},
         predule,
@@ -111,12 +112,11 @@ pub struct Environment {
 
     modules: HashMap<Id, Module>,
 
-    #[debug(skip)]
     preludes: HashMap<Id, Value>,
 
     current_module_id: Id,
 
-    #[debug(skip)]
+    #[debug("<writer>")]
     print_writer: Rc<RefCell<dyn std::io::Write>>,
 }
 
@@ -312,4 +312,48 @@ impl Environment {
     decl_gc_type_methods!(array, Array, Array, GcKind::Array, Array);
     decl_gc_type_methods!(map, Map, Map, GcKind::Map, Map);
     decl_gc_type_methods!(function, Function, Function, GcKind::Function, Function);
+
+    pub fn debug_state_string(&self) -> String {
+        use std::fmt::Write as FmtWrite;
+        let mut s = String::new();
+
+        writeln!(s, "=== Environment ===").unwrap();
+        writeln!(s, "Scope Stack [depth={}]:", self.scope_stack.len()).unwrap();
+        for (i, scope) in self.scope_stack.iter_all().enumerate() {
+            let kind = if scope.is_readonly {
+                "readonly"
+            } else {
+                "writable"
+            };
+            writeln!(s, "  [{i}] ({kind}):").unwrap();
+            if scope.variables.is_empty() {
+                writeln!(s, "    (empty)").unwrap();
+            } else {
+                for (id, value) in &scope.variables {
+                    writeln!(s, "    {id:?} = {value:?}").unwrap();
+                }
+            }
+        }
+        writeln!(s).unwrap();
+
+        writeln!(s, "Current module: {:?}", self.current_module_id).unwrap();
+        writeln!(s).unwrap();
+        writeln!(s, "Modules:").unwrap();
+        for module in self.modules.values() {
+            if module.variables.is_empty() {
+                writeln!(s, "  {:?}: (empty)", module.id).unwrap();
+            } else {
+                writeln!(s, "  {:?}:", module.id).unwrap();
+                for (id, value) in &module.variables {
+                    writeln!(s, "    {id:?} = {value:?}").unwrap();
+                }
+            }
+        }
+        writeln!(s).unwrap();
+
+        s += &self.heap.debug_string();
+        writeln!(s).unwrap();
+
+        s
+    }
 }

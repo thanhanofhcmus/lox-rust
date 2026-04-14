@@ -1,3 +1,4 @@
+mod debug_string;
 mod environment;
 mod error;
 mod heap;

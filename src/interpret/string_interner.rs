@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use derive_more::Display;
 
+use super::debug_string::DebugString;
+
 /// The Ordering in this type does not mean anything, just to be used as map key
 #[derive(Display, derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[debug("StrId({_0})")]
@@ -59,5 +61,29 @@ impl StringInterner {
             self.id_to_string.remove(&id);
             self.string_to_id.remove(&s);
         }
+    }
+}
+
+impl DebugString for StringInterner {
+    fn debug_string(&self) -> String {
+        use std::fmt::Write as FmtWrite;
+        let mut s = String::new();
+        writeln!(
+            s,
+            "  String Interner (count={}, next_id={}):",
+            self.id_to_string.len(),
+            self.next_id
+        )
+        .unwrap();
+        if self.id_to_string.is_empty() {
+            writeln!(s, "    (empty)").unwrap();
+        } else {
+            let mut entries: Vec<_> = self.id_to_string.iter().collect();
+            entries.sort_by_key(|(id, _)| id.0);
+            for (id, string) in entries {
+                writeln!(s, "    {id:?} = {string:?}").unwrap();
+            }
+        }
+        s
     }
 }
