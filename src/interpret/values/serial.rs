@@ -22,8 +22,8 @@ impl SerialMapKey {
     pub fn convert_from_map_key(value: &MapKey, env: &Environment) -> Result<Self, Error> {
         let v = match value {
             MapKey::Scalar(v) => Self::Scalar(*v),
-            MapKey::Str(handle) => {
-                let s = env.get_string(*handle)?;
+            MapKey::Str(str_id) => {
+                let s = env.get_string(*str_id)?;
                 Self::Str(s.to_string())
             }
         };

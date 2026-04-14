@@ -76,6 +76,13 @@ impl Value {
         }
     }
 
+    pub fn get_str_id(self) -> Option<StrId> {
+        match self {
+            Value::Str(str_id) => Some(str_id),
+            _ => None,
+        }
+    }
+
     pub fn get_handle(self) -> Option<GcHandle> {
         match self {
             Value::Array(handle) | Value::Map(handle) | Value::Function(handle) => Some(handle),
@@ -248,16 +255,23 @@ impl MapKey {
             _ => Err(Error::ValueCannotBeUsedAsKey(value)),
         }
     }
+
+    pub fn get_str_id(self) -> Option<StrId> {
+        match self {
+            Self::Str(str_id) => Some(str_id),
+            _ => None,
+        }
+    }
 }
 
 impl DisplayWriter for MapKey {
     fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
         match self {
             MapKey::Scalar(v) => v.write_display(env, w),
-            MapKey::Str(handle) => {
-                let s = env.get_string(handle)?;
+            MapKey::Str(str_id) => {
+                let s = env.get_string(str_id)?;
                 w.write_all(s.as_bytes())
-                    .map_err(|e| Error::WriteValueFailed(Value::Str(handle), e))
+                    .map_err(|e| Error::WriteValueFailed(Value::Str(str_id), e))
             }
         }
     }

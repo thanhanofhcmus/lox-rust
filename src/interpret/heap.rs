@@ -170,8 +170,13 @@ impl Heap {
         for entry in self.slots.iter_mut().flatten() {
             entry.is_marked_for_delete = true;
         }
+        self.string_interner.reset_marks();
 
-        // TODO: mark for string_interner
+        // mark strings in root values
+        root_values
+            .iter()
+            .filter_map(|v| v.get_str_id())
+            .for_each(|id| self.string_interner.mark_to_keep(id));
 
         let mut trace_list = root_values
             .iter()
@@ -184,15 +189,24 @@ impl Heap {
             };
             entry.is_marked_for_delete = false;
 
-            match &mut entry.object {
-                GcObject::Function(_) => { /* do nothing */ }
+            // string_interner is a separate field from slots, so borrowing both
+            // simultaneously via field projection is allowed by the borrow checker
+            match &entry.object {
+                GcObject::Function(_) => {}
                 GcObject::Array(arr) => {
-                    let it = arr.iter().filter_map(|v| v.get_handle());
-                    trace_list.extend(it);
+                    arr.iter()
+                        .filter_map(|v| v.get_str_id())
+                        .for_each(|id| self.string_interner.mark_to_keep(id));
+                    trace_list.extend(arr.iter().filter_map(|v| v.get_handle()));
                 }
                 GcObject::Map(map) => {
-                    let value_it = map.iter().filter_map(|(_, v)| v.get_handle());
-                    trace_list.extend(value_it);
+                    map.keys()
+                        .filter_map(|k| k.get_str_id())
+                        .for_each(|id| self.string_interner.mark_to_keep(id));
+                    map.values()
+                        .filter_map(|v| v.get_str_id())
+                        .for_each(|id| self.string_interner.mark_to_keep(id));
+                    trace_list.extend(map.values().filter_map(|v| v.get_handle()));
                 }
             }
         }
@@ -209,6 +223,8 @@ impl Heap {
         }
         self.free_list.sort();
         self.free_list.reverse();
+
+        self.string_interner.sweep();
     }
 
     pub fn shallow_copy_value(&mut self, value: Value) {
