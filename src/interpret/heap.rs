@@ -372,7 +372,6 @@ impl DebugString for HeapStats {
         use std::fmt::Write as FmtWrite;
         let mut s = String::new();
 
-        writeln!(s, "=== Heap Stats ===").unwrap();
         writeln!(
             s,
             "GC Objects  live: {}  |  dead: {}  |  total: {}",
@@ -400,13 +399,22 @@ impl DebugString for HeapStats {
             .iter()
             .map(|k| {
                 let total = self.total_objects_stats.get(k).copied().unwrap_or(0);
-                let dead = self.to_be_deleted_objects_stats.get(k).copied().unwrap_or(0);
+                let dead = self
+                    .to_be_deleted_objects_stats
+                    .get(k)
+                    .copied()
+                    .unwrap_or(0);
                 (*k, total - dead)
             })
             .collect();
 
         writeln!(s, "Live by kind:  {}", fmt_kind(&live_by_kind)).unwrap();
-        writeln!(s, "Dead by kind:  {}", fmt_kind(&self.to_be_deleted_objects_stats)).unwrap();
+        writeln!(
+            s,
+            "Dead by kind:  {}",
+            fmt_kind(&self.to_be_deleted_objects_stats)
+        )
+        .unwrap();
 
         s
     }

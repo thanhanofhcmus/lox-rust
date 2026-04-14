@@ -317,7 +317,6 @@ impl Environment {
         use std::fmt::Write as FmtWrite;
         let mut s = String::new();
 
-        writeln!(s, "=== Environment ===").unwrap();
         writeln!(s, "Scope Stack [depth={}]:", self.scope_stack.len()).unwrap();
         for (i, scope) in self.scope_stack.iter_all().enumerate() {
             let kind = if scope.is_readonly {
