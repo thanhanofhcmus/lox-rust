@@ -44,6 +44,12 @@ pub enum Error {
     #[error("Callable `{0:?}` accepts {1} number of arguments but received {2}")]
     WrongNumberOfArgument(Value, usize, usize),
 
+    #[error("Callable `{0:?}` requires at least {1} argument(s) but received {2}")]
+    WrongNumberOfArgumentAtLeast(Value, usize, usize),
+
+    #[error("Callable `{0:?}` received argument `{1:?}` but expected type {2}")]
+    WrongArgumentType(Value, Value, &'static str),
+
     #[error("Value `{0:?}` is not of the type array or map, hance not indexable")]
     ValueUnIndexable(Value),
 
