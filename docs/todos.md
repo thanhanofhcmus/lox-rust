@@ -22,3 +22,5 @@
 - [X] Multiline string — already supported by lexer; newlines inside `"..."` and `r"..."` are consumed as-is
 - [X] For loop — `for x in array { ... }`; loop variable is readonly inside the body
 - [X] Array for comprehension — `[for x in array: expr]` with optional `if` filter; loop variable readonly
+- [X] Array prelude functions — `array_len`, `array_push`, `array_pop`, `array_insert`
+- [X] Map prelude functions — `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`

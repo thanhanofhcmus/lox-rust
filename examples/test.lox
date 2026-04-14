@@ -252,12 +252,89 @@ assert(picked == "yes", "Block-scoped if-else expression return failed");
 
 print();
 
-_dbg_heap_stats();
+# --- 12. Array Prelude Functions ---
+print("--- Running Array Prelude Function Tests...");
+
+var af_arr = [10, 20, 30];
+
+assert(array_len(af_arr) == 3, "array_len failed");
+assert(array_len([]) == 0, "array_len on empty array failed");
+
+# array_push — single and variadic, in-place
+array_push(af_arr, 40);
+assert(array_len(af_arr) == 4, "array_push single: length check failed");
+assert(af_arr[3] == 40, "array_push single: value check failed");
+
+array_push(af_arr, 50, 60);
+assert(array_len(af_arr) == 6, "array_push variadic: length check failed");
+assert(af_arr[5] == 60, "array_push variadic: last value check failed");
+
+# array_pop — returns the removed element; Unit on empty (not comparable via ==)
+var popped = array_pop(af_arr);
+assert(popped == 60, "array_pop: return value failed");
+assert(array_len(af_arr) == 5, "array_pop: length check failed");
+
+var empty_for_pop = [];
+array_pop(empty_for_pop);  # must not crash
+assert(array_len(empty_for_pop) == 0, "array_pop on empty: length unchanged");
+
+# array_insert — single and variadic, in-place
+var ins_arr = [1, 2, 4];
+array_insert(ins_arr, 2, 3);
+assert(ins_arr[2] == 3, "array_insert single: value check failed");
+assert(array_len(ins_arr) == 4, "array_insert single: length check failed");
+
+array_insert(ins_arr, 4, 5, 6);
+assert(array_len(ins_arr) == 6, "array_insert variadic: length check failed");
+assert(ins_arr[4] == 5, "array_insert variadic: first inserted value failed");
+assert(ins_arr[5] == 6, "array_insert variadic: second inserted value failed");
+
+print();
+
+# --- 13. Map Prelude Functions ---
+print("--- Running Map Prelude Function Tests...");
+
+var mf_map = %{ "a" => 1, "b" => 2, "c" => 3 };
+
+assert(map_length(mf_map) == 3, "map_length failed");
+assert(map_length(%{}) == 0, "map_length on empty map failed");
+
+# map_keys / map_values return a new array each call
+var mk = map_keys(mf_map);
+assert(array_len(mk) == 3, "map_keys: length check failed");
+assert(mk == ["a", "b", "c"], "map_keys: content check failed");
+
+var mv = map_values(mf_map);
+assert(array_len(mv) == 3, "map_values: length check failed");
+assert(mv == [1, 2, 3], "map_values: content check failed");
+
+# map_insert — returns old value when key already exists
+var old_val = map_insert(mf_map, "a", 99);
+assert(old_val == 1, "map_insert: old value return failed");
+assert(mf_map["a"] == 99, "map_insert: updated value check failed");
+
+# map_insert — returns Unit when key is new (not comparable via ==)
+map_insert(mf_map, "d", 4);  # must not crash
+assert(mf_map["d"] == 4, "map_insert new key: value check failed");
+assert(map_length(mf_map) == 4, "map_insert new key: length check failed");
+
+# map_remove — returns the removed value when key exists
+var removed = map_remove(mf_map, "d");
+assert(removed == 4, "map_remove: return value failed");
+assert(map_length(mf_map) == 3, "map_remove: length check failed");
+
+# map_remove — returns Unit when key is absent (not comparable via ==)
+map_remove(mf_map, "nonexistent");  # must not crash
+assert(map_length(mf_map) == 3, "map_remove missing key: length unchanged");
+
+print();
+
+# _dbg_heap_stats();
 
 _dbg_gc_mark();
-_dbg_heap_stats();
+# _dbg_heap_stats();
 
 _dbg_gc_sweep();
 
 # _dbg_state();
-_dbg_heap_stats();
+# _dbg_heap_stats();
