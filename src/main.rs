@@ -5,6 +5,8 @@ mod parse;
 mod span;
 mod string_utils;
 mod token;
+mod typecheck;
+mod types;
 
 use std::{cell::RefCell, rc::Rc};
 

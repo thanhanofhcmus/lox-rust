@@ -112,10 +112,11 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
     state.consume_token(Token::Semicolon)?;
-    Ok(Statement::Declare(
-        IdentifierNode::new_from_name(id_item.span, state.get_input()),
+    Ok(Statement::Declare(DeclareStatementNode {
+        iden: IdentifierNode::new_from_name(id_item.span, state.get_input()),
+        type_: None,
         expr,
-    ))
+    }))
 }
 
 fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
@@ -520,15 +521,12 @@ fn parse_map_literal_element_node(
 
 fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode, ParseError> {
     state.consume_token(Token::Fn)?;
-    let arg_names = parse_comma_list(
+    let params = parse_comma_list(
         state,
         Token::LRoundParen,
         Token::RRoundParen,
-        get_identifier,
-    )?
-    .into_iter()
-    .map(|li| IdentifierNode::new_from_name(li.span, state.get_input()))
-    .collect();
+        parse_fn_param,
+    )?;
 
     let body;
 
@@ -544,7 +542,20 @@ fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode, ParseError> {
         };
     }
 
-    Ok(FnDeclNode { arg_names, body })
+    Ok(FnDeclNode {
+        params,
+        body,
+        // TODO:
+        return_type: None,
+    })
+}
+
+fn parse_fn_param(state: &mut Context) -> Result<FnParamNode, ParseError> {
+    let li = get_identifier(state)?;
+    Ok(FnParamNode {
+        id: IdentifierNode::new_from_name(li.span, state.get_input()),
+        type_: None,
+    })
 }
 
 fn parse_number(state: &mut Context) -> Result<ScalarNode, ParseError> {
@@ -582,11 +593,6 @@ fn parse_string(state: &mut Context) -> Result<ScalarNode, ParseError> {
     } else {
         Ok(ScalarNode::LazyStr { span, is_raw })
     }
-}
-
-fn get_identifier(state: &mut Context) -> Result<LexItem, ParseError> {
-    let li = state.consume_token(Token::Identifier)?;
-    Ok(li)
 }
 
 fn parse_repeated_with_separator<F, T>(
@@ -643,6 +649,11 @@ where
         parse_repeated_with_separator(state, Token::Comma, lower_fn, |t| t == right_paren)?;
     state.consume_token(right_paren)?;
     Ok(result)
+}
+
+fn get_identifier(state: &mut Context) -> Result<LexItem, ParseError> {
+    let li = state.consume_token(Token::Identifier)?;
+    Ok(li)
 }
 
 fn convert_chaining(node: Expression) -> Result<ChainingReassignTargetNode, ParseError> {

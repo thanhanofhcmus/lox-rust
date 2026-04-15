@@ -3,6 +3,7 @@ use super::error::Error;
 use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
+
 use crate::interpret::values::{Array, BuiltinFn, Function, Map, MapKey, Number, Scalar};
 use crate::parse;
 use crate::string_utils;
@@ -77,7 +78,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_stmt(&mut self, stmt: &Statement) -> Result<ValueReturn, Error> {
         match stmt {
-            Statement::Declare(name, expr) => self.interpret_declare_stmt(name, expr),
+            Statement::Declare(node) => self.interpret_declare_stmt(node),
             Statement::ReassignIden(node, expr) => self.interpret_reassign_id_stmt(node, expr),
             Statement::Expr(expr) => self.interpret_expr(expr),
         }
@@ -140,13 +141,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_declare_stmt(
         &mut self,
-        iden: &IdentifierNode,
-        expr: &Expression,
+        node: &DeclareStatementNode,
     ) -> Result<ValueReturn, Error> {
+        let iden = &node.iden;
         if self.environment.get_variable_current_scope(iden).is_some() {
             return Err(Error::ReDeclareVariable(iden.create_name(self.input)));
         }
-        let res = self.interpret_expr(expr)?;
+        let res = self.interpret_expr(&node.expr)?;
         if res.should_bubble_up {
             return Ok(res);
         }
@@ -413,8 +414,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_fn_decl(&mut self, node: &FnDeclNode) -> Result<Value, Error> {
         Ok(self.environment.insert_function_variable(Function {
-            arg_ids: node.arg_names.iter().map(|a| a.get_id()).collect(),
-            body: node.body.to_owned(),
+            params: node.params.clone(),
+            body: node.body.clone(),
         }))
     }
 
@@ -446,12 +447,12 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // since when interpreting functions, we cannot create reassign it to an new value
         // but we don't have a way in rust to formally express this
         // TODO: find a way to express this
-        let Function { arg_ids, body } = func.clone();
+        let Function { params, body } = func.clone();
 
-        if arg_ids.len() != args.len() {
+        if params.len() != args.len() {
             return Err(Error::WrongNumberOfArgument(
                 Value::Function(handle),
-                arg_ids.len(),
+                params.len(),
                 args.len(),
             ));
         }
@@ -460,9 +461,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // currently, later args can reference sooner args
         // TODO: make this go away
         self.environment.push_scope(true);
-        for (arg_id, arg_expr) in arg_ids.iter().zip(args.iter()) {
+        for (param, arg_expr) in params.iter().zip(args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
-            self.environment.insert_variable_current_scope(*arg_id, res);
+            self.environment
+                .insert_variable_current_scope(&param.id, res);
         }
 
         let result = self.interpret_block_node(&body);

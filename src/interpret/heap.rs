@@ -458,7 +458,7 @@ impl DebugString for Heap {
                     }
                 }
                 GcObject::Function(f) => {
-                    writeln!(s, "    args: {:?}", f.arg_ids).unwrap();
+                    writeln!(s, "    params: {:?}", f.params).unwrap();
                 }
             }
             writeln!(s).unwrap();

@@ -1,4 +1,4 @@
-use crate::{id::Id, span::Span, token::Token};
+use crate::{id::Id, span::Span, token::Token, types::Type};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
@@ -9,9 +9,16 @@ pub struct AST {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Declare(IdentifierNode, Expression),
+    Declare(DeclareStatementNode),
     ReassignIden(ChainingReassignTargetNode, Expression),
     Expr(Expression),
+}
+
+#[derive(Debug, Clone)]
+pub struct DeclareStatementNode {
+    pub iden: IdentifierNode,
+    pub type_: Option<Type>,
+    pub expr: Expression,
 }
 
 pub type StatementList = Vec<Statement>;
@@ -149,9 +156,16 @@ pub struct ArrayForComprehentionNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct FnParamNode {
+    pub id: IdentifierNode,
+    pub type_: Option<Type>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FnDeclNode {
-    pub arg_names: Vec<IdentifierNode>,
+    pub params: Vec<FnParamNode>,
     pub body: BlockNode,
+    pub return_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
