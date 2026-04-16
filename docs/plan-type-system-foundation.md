@@ -64,7 +64,15 @@ Two additions: params become `Vec<ParamNode>`, and there is a new `Option<TypeEx
 
 ### Updated `Statement::Declare`
 
-Add an `Option<TypeExpr>` between the identifier and the expression to support `var x: i64 = 5`. The interpreter ignores it. When absent it is `None`.
+Add an `Option<TypeExpr>` between the target and the expression to support `var x: i64 = 5`. The interpreter ignores it. When absent it is `None`.
+
+The final combined form — agreed with `plan-struct.md` — is:
+
+```
+Declare(DeclareTarget, Option<TypeExpr>, Expression)
+```
+
+`DeclareTarget` is either a plain `IdentifierNode` or a `StructDestructureNode` (added by `plan-struct.md`). The type annotation only applies to `DeclareTarget::Ident`. When `plan-struct.md` Phase 5 is implemented, `Statement::Declare` gets `DeclareTarget` at the same time as this plan's `Option<TypeExpr>` — do both together.
 
 ---
 
@@ -108,15 +116,23 @@ Every place that pattern-matches `Statement::Declare(iden, expr)` needs to add a
 
 ## Part 5 — The `Type` enum
 
-Lives in a new module `src/typecheck/`. The primitive types are:
+Lives in `src/types.rs` (not under `typecheck/` — see Part 10). The primitive types mirror JSON's type system:
 
-- `Nil`, `Bool`, `Int` (i64), `Float` (f64), `Str`
-- `Array(Type)`, `Map(Type, Type)`, `Fn(Vec<Type>, Type)`
+- `Bool`, `Number`, `Str`
+- `Array(Box<Type>)`, `Map(Box<Type>, Box<Type>)`
+- `Fn(Vec<Type>, Box<Type>)`
 - `Struct(Id)` — for user-defined types; nominal (identity is the name, not the shape)
 - `Any` — the gradual typing escape hatch
-- `Never` — the bottom type for expressions that never produce a value (a bare `return`, a panic)
+- `Never` — internal bottom type for expressions that never produce a value (bare `return`). **Do not name this `Unit`** — `Unit` conventionally means "always returns, just nothing meaningful" (like Rust `()`), which is the opposite of never-returns. Use `Never`.
+- `Nil` — open question, see below
 
-**Numeric coercion rule**: `Int` op `Float` produces `Float`. This matches what the runtime already does in `Number`. `Int` and `Float` are not otherwise interchangeable — assigning a literal `5` to a `f64`-annotated variable is a type error unless literal widening is implemented (see open questions).
+There is one numeric type: `Number`. The runtime's `Number::Integer` and `Number::Floating` distinction is invisible to the type system — both are `Type::Number`. The runtime numeric coercion rules (`integer + float = float`) are a runtime-only concern; the type checker simply sees `Number op Number → Number` for all arithmetic.
+
+This matches JSON's type set: JSON has `boolean`, `number`, `string`, `array`, `object` (map), and `null`. Our `Map` corresponds to JSON `object`, `Array` to JSON `array`. No type information is lost when converting to or from JSON.
+
+**Nil**: whether `nil` is a first-class type or an absence marker is left as an open question. In the meantime, `nil` is treated as `Type::Nil` — a distinct type, not a subtype of anything. Functions with no return expression produce `Nil`. This can be revisited.
+
+**`Never`** is an internal type only — it is not writable by users in annotations. It exists so `return` expressions in the middle of a block have a well-defined type that the checker can reason about. A block ending in a bare `return` has type `Never`, which is assignable to any expected type.
 
 **Assignability rule**: a type `A` is assignable to type `B` when they are the same type, or when either is `Any`, or when `A` is `Never`. Arrays and maps are covariant. Functions are structurally typed. Structs are nominal (must be the exact same `Id`).
 
@@ -126,7 +142,7 @@ Lives in a new module `src/typecheck/`. The primitive types are:
 
 The type checker needs its own scope stack that maps `Id` → `Type`, mirroring how the interpreter's `Environment` maps `Id` → `Value`. It pushes a new scope at block boundaries, pops on exit, and looks up outward through scopes.
 
-It should be seeded with the prelude functions and their types (e.g. `print: fn(any) -> nil`, `array_len: fn([any]) -> i64`, etc.).
+It should be seeded with the prelude functions and their types (e.g. `print: fn(any) -> nil`, `array_len: fn([any]) -> number`, etc.).
 
 This lives in `src/typecheck/` as a separate struct — not in the interpreter's environment.
 
@@ -167,7 +183,7 @@ Each method returns the `Type` of the expression it checked. Errors are collecte
 - `var x = expr` without annotation: `x` gets the inferred type of `expr`.
 - `var x: T = expr` with annotation: verify `expr`'s type is assignable to `T`; `x` gets type `T`.
 - Identifiers look up the `TypeEnv`.
-- Binary operators: arithmetic produces numeric result type per the coercion rules; comparisons produce `Bool`; logical `and`/`or` produce `Bool` if both sides are `Bool`, else `Any`.
+- Binary operators: arithmetic on `Number` operands produces `Number`; comparisons produce `Bool`; logical `and`/`or` produce `Bool` if both sides are `Bool`, else `Any`; `+` on `Str` operands produces `Str`.
 - Array literal: infer element type from the first element; verify the rest are compatible; produce `[elem_type]`. If elements are heterogeneous, produce `[any]`.
 - Map literal: infer key and value types similarly.
 - Function declarations produce a `Fn(param_types, return_type)` type. Check the body in a new scope with params bound. Verify body type against annotated return type if present.
@@ -181,7 +197,7 @@ Each method returns the `Type` of the expression it checked. Errors are collecte
 
 A helper method on `TypeChecker` that resolves a `TypeExpr` to a `Type`:
 
-- Named primitives map directly: `"i64"` → `Int`, `"f64"` → `Float`, `"bool"` → `Bool`, `"str"` → `Str`, `"nil"` → `Nil`, `"any"` → `Any`, `"never"` → `Never`.
+- Named primitives map directly: `"number"` → `Number`, `"bool"` → `Bool`, `"str"` → `Str`, `"nil"` → `Nil`, `"any"` → `Any`. `"never"` is not user-writable and should produce `UnknownType` if someone writes it in an annotation.
 - Named non-primitives: look up in a struct registry (not yet populated; emit `UnknownType` for now and return `Any` as recovery). When struct support lands, this lookup becomes real.
 - `Array`, `Map`, `Fn` variants: recursively resolve inner `TypeExpr`s.
 
@@ -189,31 +205,53 @@ A helper method on `TypeChecker` that resolves a `TypeExpr` to a `Type`:
 
 ## Part 10 — Module layout
 
-Everything type-related goes in `src/typecheck/`:
+`Type` lives in its own standalone module with no upstream dependencies, because it is used in three places: the AST (annotations), the interpreter (runtime value tags), and the type checker (semantic analysis). Putting it under `typecheck/` would create circular imports once the checker needs to walk the AST.
 
-- `mod.rs` — re-exports the public surface (`TypeChecker`, `Type`, `TypeError`)
-- `types.rs` — the `Type` enum, `TypeEnv`, assignability logic
-- `error.rs` — `TypeError`, `TypeErrorKind`, `Display` impl
-- `checker.rs` — `TypeChecker`, all `check_*` methods
+```
+src/
+  types.rs          ← Type enum only; imports nothing from ast or interpret
+  ast.rs            ← imports types::Type for FnParamNode, FnDeclNode, DeclareStatementNode
+  interpret/        ← imports types::Type for runtime value type tags
+  typecheck/
+    mod.rs          ← re-exports TypeChecker, TypeError
+    env.rs          ← TypeEnv, assignability logic; imports types::Type
+    error.rs        ← TypeError, TypeErrorKind, Display impl
+    checker.rs      ← TypeChecker, all check_* methods; imports ast + types
+```
 
-This module has no dependency on `src/interpret/`. Both depend on `src/ast.rs` and `src/id.rs`.
+Dependency graph (no cycles):
+
+```
+types ← ast ← typecheck
+types ← interpret
+```
+
+`typecheck/` has no dependency on `interpret/`. Both share `ast` and `types`.
 
 ---
 
 ## Part 11 — Integration into `main.rs`
 
-After parsing (which now produces the richer AST with optional `TypeExpr` nodes), optionally run the type checker:
+The pipeline is linear: parse → type check → interpret. Type errors are fatal — the interpreter does not run if the type checker reports any errors.
 
-- Controlled by a `--check` CLI flag, or always-on — your choice.
-- Print errors to stderr with span information.
-- Do **not** block interpretation — the interpreter runs regardless.
-- Later: a `--strict` flag could make type errors fatal.
+```
+tokens  = lex(source)
+ast     = parse(tokens)     -- fatal on parse errors
+errors  = TypeChecker::new().check(&ast)
+if !errors.is_empty() {
+    report_errors(errors)   -- to stderr
+    exit(1)                 -- interpreter does NOT run
+}
+Interpreter::new().run(&ast)
+```
+
+This is safe because of gradual typing: unannotated code produces type `Any` everywhere, and `Any` is compatible with every other type in both directions. A completely unannotated program always passes type checking with zero errors. Type errors only appear when annotations are written and violated.
 
 ---
 
 ## Implementation order
 
-**Phase 1 — AST and parser (no behavior change)**  
+**Phase 1 — AST and parser (no behavior change)** *(implement together with `plan-struct.md` Phase 1)*  
 Add `TypeExpr`. Update `FnDeclNode`, `ParamNode`, `Statement::Declare`. Update the parser to parse optional annotations. Update the interpreter mechanically to handle the new field shapes. Run all existing tests — nothing should change.
 
 **Phase 2 — Type infrastructure (no user-visible effect)**  
@@ -232,14 +270,12 @@ Implement function declaration type inference, function call arg checking, retur
 
 ## Open questions
 
-**Literal widening**: should `var x: f64 = 5` (integer literal, float annotation) be allowed? The runtime coerces seamlessly. Allowing it is more ergonomic; rejecting it is stricter. Most languages allow literal widening for numeric literals. Decision needed before Phase 3.
-
-**`nil` as the bottom or as a unit**: is `nil` the type of the `nil` literal only, or is it also the implicit return type of functions that don't return a value? Recommendation: `nil` is the explicit "no value" type; blocks with no `last_expr` produce `nil`. `Never` is reserved for expressions that abort (bare `return`, future panics).
+**`nil` as the bottom or as a unit**: is `nil` the type of the `nil` literal only, or is it also the implicit return type of functions that don't return a value? Recommendation: `nil` is the explicit "no value" type; blocks with no `last_expr` produce `nil`. `Never` is reserved for expressions that abort (bare `return`, future panics). This is deferred — both uses of `nil` are reasonable and non-breaking to decide later.
 
 **`string` concatenation with `+`**: the runtime allows `"a" + "b"`. Should the type checker permit `str + str → str`? Straightforward to add as a special case in the binary operator rules.
 
 **`when` expression result type**: if all arms produce the same type, the result is that type. If arms differ, use `Any` for now. Union types would make this precise later.
 
-**Error recovery strategy**: when a type error is found, the checker returns `Any` for the problematic expression and continues. This can cause cascading false positives. If cascading is annoying in practice, add a "poisoned" flag to suppress downstream errors after a root cause.
+**Error recovery strategy**: when a type error is found, the checker returns `Any` for the problematic expression and continues checking. This surfaces as many independent errors as possible in a single run rather than stopping at the first. The interpreter is still blocked — recovering inside the type checker is about finding more errors, not about letting bad code through.
 
 **Span gaps**: many AST nodes (`BinaryOpNode`, `FnCallNode`, `SubscriptionNode`) do not currently carry `Span` fields. Type errors on those nodes will have imprecise source locations. This can be improved incrementally — it does not block the foundation. Track gaps with `// TODO: span` and fix when the checker is otherwise stable.

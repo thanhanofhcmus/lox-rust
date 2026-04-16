@@ -1,38 +1,44 @@
-use crate::{id::Id, span::Span, token::Token, types::Type};
+use crate::{
+    id::Id,
+    span::Span,
+    token::Token,
+    types::{ComputeType, Type},
+};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
-pub struct AST {
+pub struct AST<T> {
     pub imports: Vec<ImportNode>,
-    pub global_stmts: StatementList,
+    pub global_stmts: StatementList<T>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Declare(DeclareStatementNode),
-    ReassignIden(ChainingReassignTargetNode, Expression),
-    Expr(Expression),
+pub enum Statement<T> {
+    Declare(DeclareStatementNode<T>),
+    ReassignIden(ChainingReassignTargetNode<T>, Expression<T>),
+    Expr(Expression<T>),
 }
 
 #[derive(Debug, Clone)]
-pub struct DeclareStatementNode {
+pub struct DeclareStatementNode<T> {
     pub iden: IdentifierNode,
+    /// User-declared type annotation (e.g. `: Int`, `: Any`, or inferred). Not a computed type.
     pub type_: Type,
-    pub expr: Expression,
+    pub expr: Expression<T>,
 }
 
-pub type StatementList = Vec<Statement>;
+pub type StatementList<T> = Vec<Statement<T>>;
 
 #[derive(Debug, Clone)]
-pub struct ChainingReassignTargetNode {
+pub struct ChainingReassignTargetNode<T> {
     pub base: IdentifierNode,
-    pub follows: Vec<ClauseNode>,
+    pub follows: Vec<ClauseNode<T>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockNode {
-    pub stmts: StatementList,
-    pub last_expr: Option<Box<Expression>>,
+pub struct BlockNode<T> {
+    pub stmts: StatementList<T>,
+    pub last_expr: Option<Box<Expression<T>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,86 +48,106 @@ pub struct ImportNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct Expression {
-    pub type_: Type,
-    pub case: ExprCase,
+pub struct Expression<T> {
+    pub type_: T,
+    pub case: ExprCase<T>,
 }
 
-impl Expression {
-    pub fn new(case: ExprCase) -> Self {
-        Self {
-            type_: Type::Infered,
-            case,
-        }
+impl Expression<()> {
+    pub fn new(case: ExprCase<()>) -> Self {
+        Self { type_: (), case }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprCase {
-    When(Vec<WhenArmNode>),
-    Clause(ClauseNode),
-    Block(BlockNode),
-    IfChain(IfChainNode),
-    While(WhileNode),
-    For(ForNode),
-    Return(Option<Box<Expression>>),
+pub enum ExprCase<T> {
+    When(Vec<WhenArmNode<T>>),
+    Clause(ClauseNode<T>),
+    Block(BlockNode<T>),
+    IfChain(IfChainNode<T>),
+    While(WhileNode<T>),
+    For(ForNode<T>),
+    Return(Option<Box<Expression<T>>>),
 }
 
 #[derive(Debug, Clone)]
-pub struct IfChainNode {
-    pub if_node: ElseIfNode,
-    pub else_if_nodes: Vec<ElseIfNode>,
-    pub else_stmts: Option<BlockNode>,
+pub struct IfChainNode<T> {
+    pub if_node: ElseIfNode<T>,
+    pub else_if_nodes: Vec<ElseIfNode<T>>,
+    pub else_stmts: Option<BlockNode<T>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ElseIfNode {
-    pub cond: ClauseNode,
-    pub stmts: BlockNode,
+pub struct ElseIfNode<T> {
+    pub cond: ClauseNode<T>,
+    pub stmts: BlockNode<T>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ForNode {
+pub struct ForNode<T> {
     pub iden: IdentifierNode,
-    pub collection: ClauseNode,
-    pub body: BlockNode,
+    pub collection: ClauseNode<T>,
+    pub body: BlockNode<T>,
 }
 
 #[derive(Debug, Clone)]
-pub struct WhileNode {
-    pub cond: ClauseNode,
-    pub body: BlockNode,
+pub struct WhileNode<T> {
+    pub cond: ClauseNode<T>,
+    pub body: BlockNode<T>,
 }
 
 #[derive(Debug, Clone)]
-pub enum ClauseNode {
-    Unary(Box<ClauseNode>, Token),
-    Binary(BinaryOpNode),
-    RawValue(RawValueNode),
-    Group(Box<ClauseNode>),
+pub struct ClauseNode<T> {
+    pub type_: T,
+    pub case: ClauseCase<T>,
+}
+
+impl ClauseNode<()> {
+    pub fn new(case: ClauseCase<()>) -> Self {
+        Self { type_: (), case }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ClauseCase<T> {
+    Unary(Box<ClauseNode<T>>, Token),
+    Binary(BinaryOpNode<T>),
+    RawValue(RawValueNode<T>),
+    Group(Box<ClauseNode<T>>),
     Identifier(IdentifierNode),
-    Subscription(SubscriptionNode),
-    FnCall(FnCallNode),
+    Subscription(SubscriptionNode<T>),
+    FnCall(FnCallNode<T>),
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionNode {
-    pub indexer: Box<ClauseNode>,
-    pub indexee: Box<ClauseNode>,
+pub struct SubscriptionNode<T> {
+    pub indexer: Box<ClauseNode<T>>,
+    pub indexee: Box<ClauseNode<T>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct FnCallNode {
-    pub caller: Box<ClauseNode>,
-    pub args: Vec<Expression>,
+pub struct FnCallNode<T> {
+    pub caller: Box<ClauseNode<T>>,
+    pub args: Vec<Expression<T>>,
 }
 
 #[derive(Debug, Clone)]
-pub enum RawValueNode {
+pub enum RawValueNode<T> {
     Scalar(ScalarNode),
-    ArrayLiteral(ArrayLiteralNode),
-    MapLiteral(MapLiteralNode),
-    FnDecl(FnDeclNode),
+    ArrayLiteral(ArrayLiteralNode<T>),
+    MapLiteral(MapLiteralNode<T>),
+    FnDecl(FnDeclNode<T>),
+}
+
+impl<T> ComputeType for RawValueNode<T> {
+    fn compute_type(&self) -> Type {
+        match self {
+            Self::Scalar(v) => v.compute_type(),
+            Self::ArrayLiteral(v) => v.compute_type(),
+            Self::MapLiteral(_map_literal_node) => Type::Any,
+            Self::FnDecl(_fn_decl_node) => Type::Any,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,36 +164,64 @@ pub enum ScalarNode {
     StrLiteral(String),
 }
 
-#[derive(Debug, Clone)]
-pub enum ArrayLiteralNode {
-    List(Vec<ClauseNode>),
-    Repeat(Box<ArrayRepeatNode>),
-    ForComprehension(Box<ArrayForComprehentionNode>),
+impl ComputeType for ScalarNode {
+    fn compute_type(&self) -> Type {
+        match self {
+            Self::Nil => Type::Nil,
+            Self::Bool(_) => Type::Bool,
+            Self::Integer(_) | Self::Floating(_) => Type::Number,
+            Self::LazyStr { is_raw: _, span: _ } | Self::StrLiteral(_) => Type::Str,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct MapLiteralNode {
-    pub nodes: Vec<MapLiteralElementNode>,
+pub enum ArrayLiteralNode<T> {
+    List(Vec<ClauseNode<T>>),
+    Repeat(Box<ArrayRepeatNode<T>>),
+    ForComprehension(Box<ArrayForComprehentionNode<T>>),
+}
+
+impl<T> ComputeType for ArrayLiteralNode<T> {
+    fn compute_type(&self) -> Type {
+        // TODO
+        Type::Array(Box::new(Type::Any))
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct MapLiteralElementNode {
+pub struct MapLiteralNode<T> {
+    pub nodes: Vec<MapLiteralElementNode<T>>,
+}
+
+impl<T> ComputeType for MapLiteralNode<T> {
+    // TODO
+    fn compute_type(&self) -> Type {
+        Type::Map {
+            key: Box::new(Type::Any),
+            value: Box::new(Type::Any),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MapLiteralElementNode<T> {
     pub key: ScalarNode,
-    pub value: ClauseNode,
+    pub value: ClauseNode<T>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ArrayRepeatNode {
-    pub value: ClauseNode,
-    pub repeat: ClauseNode,
+pub struct ArrayRepeatNode<T> {
+    pub value: ClauseNode<T>,
+    pub repeat: ClauseNode<T>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ArrayForComprehentionNode {
+pub struct ArrayForComprehentionNode<T> {
     pub iden: IdentifierNode,
-    pub collection: ClauseNode,
-    pub transformer: ClauseNode,
-    pub filter: Option<ClauseNode>,
+    pub collection: ClauseNode<T>,
+    pub transformer: ClauseNode<T>,
+    pub filter: Option<ClauseNode<T>>,
 }
 
 #[derive(Debug, Clone)]
@@ -177,23 +231,33 @@ pub struct FnParamNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct FnDeclNode {
+pub struct FnDeclNode<T> {
     pub params: Vec<FnParamNode>,
-    pub body: BlockNode,
+    pub body: BlockNode<T>,
     pub return_type: Option<Type>,
 }
 
-#[derive(Debug, Clone)]
-pub struct BinaryOpNode {
-    pub lhs: Box<ClauseNode>,
-    pub op: Token,
-    pub rhs: Box<ClauseNode>,
+impl<T> ComputeType for FnDeclNode<T> {
+    fn compute_type(&self) -> Type {
+        // TODO
+        Type::Function {
+            params: vec![],
+            return_: Box::new(Type::Any),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct WhenArmNode {
-    pub cond: ClauseNode,
-    pub expr: ClauseNode,
+pub struct BinaryOpNode<T> {
+    pub lhs: Box<ClauseNode<T>>,
+    pub op: Token,
+    pub rhs: Box<ClauseNode<T>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhenArmNode<T> {
+    pub cond: ClauseNode<T>,
+    pub expr: ClauseNode<T>,
 }
 
 #[derive(Debug, Clone)]
@@ -252,3 +316,13 @@ impl From<&IdentifierNode> for Id {
         val.get_id()
     }
 }
+
+// Type aliases for pipeline stages
+pub type UntypedAST = AST<()>;
+pub type TypedAST = AST<Type>;
+pub type UntypedBlockNode = BlockNode<()>;
+pub type TypedBlockNode = BlockNode<Type>;
+pub type UntypedExpr = Expression<()>;
+pub type TypedExpr = Expression<Type>;
+pub type UntypedClause = ClauseNode<()>;
+pub type TypedClause = ClauseNode<Type>;

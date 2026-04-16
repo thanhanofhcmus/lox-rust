@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    ast::{BlockNode, FnParamNode},
+    ast::{FnParamNode, TypedBlockNode},
     interpret::{
         Environment, Interpreter,
         error::Error,
@@ -16,7 +16,7 @@ pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
 #[derive(Debug, Clone)]
 pub struct Function {
     pub params: Vec<FnParamNode>,
-    pub body: BlockNode,
+    pub body: TypedBlockNode,
 }
 
 pub type Array = Vec<Value>;

@@ -8,7 +8,7 @@ use super::lex::LexItem;
 use crate::span::Span;
 use crate::token::Token;
 
-pub fn parse(input: &str, items: &[LexItem], should_eval_string: bool) -> Result<AST, ParseError> {
+pub fn parse(input: &str, items: &[LexItem], should_eval_string: bool) -> Result<UntypedAST, ParseError> {
     let mut state = Context::new(input, items, should_eval_string);
     let mut imports = vec![];
     let mut global_stmts = vec![];
@@ -60,7 +60,7 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
     })
 }
 
-fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
+fn parse_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Var => parse_declaration(state),
@@ -69,7 +69,7 @@ fn parse_stmt(state: &mut Context) -> Result<Statement, ParseError> {
     }
 }
 
-fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
+fn parse_block_node(state: &mut Context) -> Result<UntypedBlockNode, ParseError> {
     state.consume_token(Token::LPointParen)?;
 
     let mut stmts = vec![];
@@ -106,12 +106,12 @@ fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
     Ok(BlockNode { stmts, last_expr })
 }
 
-fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
+fn parse_expr_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
     let expr = parse_expr(state)?;
     Ok(Statement::Expr(expr))
 }
 
-fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
+fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
     state.consume_token(Token::Var)?;
     let id_item = state.consume_token(Token::Identifier)?;
     let type_ = if state.peek(&[Token::Colon]) {
@@ -146,7 +146,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
     }))
 }
 
-fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseError> {
+fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement<()>, ParseError> {
     let expr = parse_expr(state)?;
 
     if !state.peek(&[Token::Equal]) {
@@ -162,7 +162,7 @@ fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement, ParseErr
     Ok(Statement::ReassignIden(node, expr))
 }
 
-fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_expr(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     match state.get_curr()?.token {
         Token::Return => parse_return(state),
         Token::When => parse_when(state),
@@ -174,7 +174,7 @@ fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
     }
 }
 
-fn parse_return(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_return(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     let li = state.consume_token(Token::Return)?;
     if !state.is_in_fn {
         return Err(ParseError::UnexpectedReturn(li.span));
@@ -189,14 +189,14 @@ fn parse_return(state: &mut Context) -> Result<Expression, ParseError> {
     Ok(Expression::new(ExprCase::Return(return_expr)))
 }
 
-fn parse_while(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_while(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     state.consume_token(Token::While)?;
     let cond = parse_clause_node(state)?;
     let body = parse_block_node(state)?;
     Ok(Expression::new(ExprCase::While(WhileNode { cond, body })))
 }
 
-fn parse_for(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_for(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     state.consume_token(Token::For)?;
     let iden_li = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::In)?;
@@ -209,7 +209,7 @@ fn parse_for(state: &mut Context) -> Result<Expression, ParseError> {
     })))
 }
 
-fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_if(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     state.consume_token(Token::If)?;
 
     let cond = parse_clause_node(state)?;
@@ -244,7 +244,7 @@ fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {
     })))
 }
 
-fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {
+fn parse_when(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     state.consume_token(Token::When)?;
     let case_nodes = parse_comma_list(
         state,
@@ -255,14 +255,14 @@ fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {
     Ok(Expression::new(ExprCase::When(case_nodes)))
 }
 
-fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode, ParseError> {
+fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode<()>, ParseError> {
     let cond = parse_clause_node(state)?;
     state.consume_token(Token::RTArrow)?;
     let expr = parse_clause_node(state)?;
     Ok(WhenArmNode { cond, expr })
 }
 
-fn parse_clause_node(state: &mut Context) -> Result<ClauseNode, ParseError> {
+fn parse_clause_node(state: &mut Context) -> Result<UntypedClause, ParseError> {
     parse_pratt(state, BindingPower::None)
 }
 
@@ -301,7 +301,7 @@ fn get_binding_power(token: Token) -> Option<(BindingPower, BindingPower)> {
     Some(bp)
 }
 
-fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode, ParseError> {
+fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<UntypedClause, ParseError> {
     let mut lhs = parse_pratt_prefix(state)?;
 
     loop {
@@ -323,9 +323,9 @@ fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode, 
 
 fn parse_pratt_infix(
     state: &mut Context,
-    lhs: ClauseNode,
+    lhs: UntypedClause,
     min_bp: BindingPower,
-) -> Result<ClauseNode, ParseError> {
+) -> Result<UntypedClause, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
         // TODO: Fix this when supporting member/module call
@@ -335,32 +335,34 @@ fn parse_pratt_infix(
             state.consume_token(li.token)?;
             let indexee = parse_clause_node(state)?;
             state.consume_token(Token::RSquareParen)?;
-            Ok(ClauseNode::Subscription(SubscriptionNode {
-                indexer: Box::new(lhs),
-                indexee: Box::new(indexee),
-            }))
+            Ok(ClauseNode::new(ClauseCase::Subscription(
+                SubscriptionNode {
+                    indexer: Box::new(lhs),
+                    indexee: Box::new(indexee),
+                },
+            )))
         }
         Token::LRoundParen => {
             let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
-            Ok(ClauseNode::FnCall(FnCallNode {
+            Ok(ClauseNode::new(ClauseCase::FnCall(FnCallNode {
                 caller: Box::new(lhs),
                 args,
-            }))
+            })))
         }
         token if is_binary_op(token) => {
             state.consume_token(li.token)?;
             let rhs = parse_pratt(state, min_bp)?;
-            Ok(ClauseNode::Binary(BinaryOpNode {
+            Ok(ClauseNode::new(ClauseCase::Binary(BinaryOpNode {
                 lhs: Box::new(lhs),
                 op: li.token,
                 rhs: Box::new(rhs),
-            }))
+            })))
         }
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
 }
 
-fn parse_pratt_prefix(state: &mut Context) -> Result<ClauseNode, ParseError> {
+fn parse_pratt_prefix(state: &mut Context) -> Result<UntypedClause, ParseError> {
     parse_unary(state)
 }
 
@@ -383,7 +385,7 @@ fn is_binary_op(token: Token) -> bool {
     )
 }
 
-fn parse_unary(state: &mut Context) -> Result<ClauseNode, ParseError> {
+fn parse_unary(state: &mut Context) -> Result<UntypedClause, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Not => parse_recursive_unary(state, Token::Not),
@@ -395,32 +397,35 @@ fn parse_unary(state: &mut Context) -> Result<ClauseNode, ParseError> {
 fn parse_recursive_unary(
     state: &mut Context,
     match_token: Token,
-) -> Result<ClauseNode, ParseError> {
+) -> Result<UntypedClause, ParseError> {
     let li = state.get_curr()?;
     if li.token == match_token {
         state.advance();
         let expr = parse_recursive_unary(state, match_token)?;
-        Ok(ClauseNode::Unary(Box::new(expr), match_token))
+        Ok(ClauseNode::new(ClauseCase::Unary(
+            Box::new(expr),
+            match_token,
+        )))
     } else {
         parse_primary(state)
     }
 }
 
-fn parse_primary(state: &mut Context) -> Result<ClauseNode, ParseError> {
+fn parse_primary(state: &mut Context) -> Result<UntypedClause, ParseError> {
     let base = if state.peek(&[Token::Identifier]) {
         let node = parse_identifier_node(state)?;
-        ClauseNode::Identifier(node)
+        ClauseCase::Identifier(node)
     } else if state.peek(&[Token::LRoundParen]) {
         let node = parse_group(state)?;
-        ClauseNode::Group(Box::new(node))
+        ClauseCase::Group(Box::new(node))
     } else {
         let node = parse_raw_value_node(state)?;
-        ClauseNode::RawValue(node)
+        ClauseCase::RawValue(node)
     };
-    Ok(base)
+    Ok(ClauseNode::new(base))
 }
 
-fn parse_raw_value_node(state: &mut Context) -> Result<RawValueNode, ParseError> {
+fn parse_raw_value_node(state: &mut Context) -> Result<RawValueNode<()>, ParseError> {
     let li = *state.get_curr()?;
     match li.token {
         Token::Nil
@@ -466,14 +471,14 @@ fn parse_identifier_node(state: &mut Context) -> Result<IdentifierNode, ParseErr
     ))
 }
 
-fn parse_group(state: &mut Context) -> Result<ClauseNode, ParseError> {
+fn parse_group(state: &mut Context) -> Result<UntypedClause, ParseError> {
     state.consume_token(Token::LRoundParen)?;
     let node = parse_clause_node(state)?;
     state.consume_token(Token::RRoundParen)?;
     Ok(node)
 }
 
-fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, ParseError> {
+fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>, ParseError> {
     // [:1 : 2 ]
     if state.peek_2_token(&[Token::Colon]) {
         state.consume_token(Token::LSquareParen)?;
@@ -527,7 +532,7 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode, Par
     }
 }
 
-fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode, ParseError> {
+fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode<()>, ParseError> {
     let nodes = parse_comma_list(
         state,
         Token::PercentLPointParent,
@@ -539,14 +544,14 @@ fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode, ParseEr
 
 fn parse_map_literal_element_node(
     state: &mut Context,
-) -> Result<MapLiteralElementNode, ParseError> {
+) -> Result<MapLiteralElementNode<()>, ParseError> {
     let key = parse_scalar_node(state)?;
     state.consume_token(Token::RFArrtow)?;
     let value = parse_clause_node(state)?;
     Ok(MapLiteralElementNode { key, value })
 }
 
-fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode, ParseError> {
+fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError> {
     state.consume_token(Token::Fn)?;
     let params = parse_comma_list(
         state,
@@ -684,8 +689,8 @@ fn get_identifier(state: &mut Context) -> Result<LexItem, ParseError> {
 }
 
 fn convert_chaining(
-    Expression { type_: _, case }: Expression,
-) -> Result<ChainingReassignTargetNode, ParseError> {
+    Expression { type_: _, case }: UntypedExpr,
+) -> Result<ChainingReassignTargetNode<()>, ParseError> {
     let ExprCase::Clause(clause) = case else {
         return Err(ParseError::ReassignRootIsNotAnIdentifier);
     };
@@ -694,13 +699,13 @@ fn convert_chaining(
     let mut clause = clause;
 
     loop {
-        match clause {
-            ClauseNode::Subscription(SubscriptionNode { indexer, indexee }) => {
+        match clause.case {
+            ClauseCase::Subscription(SubscriptionNode { indexer, indexee }) => {
                 index_chain.push(*indexee);
                 clause = *indexer;
             }
             v => {
-                index_chain.push(v);
+                index_chain.push(ClauseNode { case: v, type_: () });
                 break;
             }
         }
@@ -712,8 +717,8 @@ fn convert_chaining(
 
     index_chain.reverse();
 
-    let base = match first {
-        ClauseNode::Identifier(node) => node.clone(),
+    let base = match first.case {
+        ClauseCase::Identifier(node) => node.clone(),
         _ => return Err(ParseError::ReassignRootIsNotAnIdentifier),
     };
 

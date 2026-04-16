@@ -12,6 +12,17 @@
 - Add tree-sitter
 - Add LSP
 
+## Bugs / Correctness Issues:
+- `heap.rs` `update_ref_count`: `ref_count.sub_assign(1)` can underflow (panic in debug, wrap in release) — use saturating subtraction or a checked decrement
+- `heap.rs` `deep_copy_reassign_object()`: old value replaced during deep copy is returned and dropped without decrementing its ref count
+- `environment.rs` `deinit_module()`: heap not handled — GC objects owned by module-scope variables are not accounted for when a module is finalized
+- `environment.rs` `get_variable_all_scope()`: accessing an un-imported module silently returns nil instead of a runtime error
+- `environment.rs` `ScopeStack::push()`: scope overflow calls `panic!` instead of returning a recoverable `Error::StackOverflow`
+
+## Design Issues:
+- GC trigger removed (was naive: fired on every assignment once live objects exceeded 100); implement adaptive trigger (e.g. double threshold after each collection)
+- Module resolution only handles 2-part chains (`module.var`); deeper chains silently misbehave — needs spec and enforcement
+
 - [X] Maybe implement node-id
 - [X] Make last expression in a block return the value of the block (like rust)
 - [X] Add prelude

@@ -336,5 +336,5 @@ _dbg_gc_mark();
 
 _dbg_gc_sweep();
 
-# _dbg_state();
-# _dbg_heap_stats();
+_dbg_state();
+_dbg_heap_stats();

@@ -21,4 +21,10 @@ pub enum Type {
     Never, // internal bottom type: expressions that never produce a value (bare return)
     Nil,
     Infered,
+
+    NotComputed,
+}
+
+pub trait ComputeType {
+    fn compute_type(&self) -> Type;
 }

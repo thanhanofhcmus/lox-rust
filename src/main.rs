@@ -10,7 +10,7 @@ mod types;
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::ast::AST;
+use crate::ast::UntypedAST;
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
@@ -103,7 +103,7 @@ fn read_from_file(file_path: &str) -> DynResult {
     run_stmt(&contents, &mut typecheck_env, &mut itp, false)
 }
 
-fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::error::Error>> {
+fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<UntypedAST, Box<dyn std::error::Error>> {
     trace!("Lexing start");
 
     let tokens = match parse::lex(input) {

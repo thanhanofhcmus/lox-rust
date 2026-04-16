@@ -8,6 +8,7 @@ use crate::{
     },
     parse::ParseError,
     token::Token,
+    typecheck,
 };
 
 // TODO: create a special error reporting function that print to the actual string/array/map value
@@ -70,6 +71,9 @@ pub enum Error {
 
     #[error("Parsing module `{0}` in path `{1}` failed with error: {2}")]
     ParseModuleFailed(String, String, ParseError),
+
+    #[error("Type-checking module `{0}` in path `{1}` failed with error: {2}")]
+    TypeCheckModuleFailed(String, String, typecheck::Error),
 
     #[error("Interpreting module `{0}` in path `{1}` failed with error: {2}")]
     InterpretModuleFailed(String, String, Box<Error>),
