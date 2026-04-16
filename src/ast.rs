@@ -17,7 +17,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct DeclareStatementNode {
     pub iden: IdentifierNode,
-    pub type_: Option<Type>,
+    pub type_: Type,
     pub expr: Expression,
 }
 
@@ -42,7 +42,22 @@ pub struct ImportNode {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub struct Expression {
+    pub type_: Type,
+    pub case: ExprCase,
+}
+
+impl Expression {
+    pub fn new(case: ExprCase) -> Self {
+        Self {
+            type_: Type::Infered,
+            case,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprCase {
     When(Vec<WhenArmNode>),
     Clause(ClauseNode),
     Block(BlockNode),

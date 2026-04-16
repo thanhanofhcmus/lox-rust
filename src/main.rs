@@ -39,17 +39,21 @@ fn promt(args: Vec<String>) -> DynResult {
 
     let line = args.get(2).expect("must provide prompt");
 
-    let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp_env = interpret::Environment::new(rc);
+    let mut typecheck_env = typecheck::Environment::new();
 
-    run_stmt(line, &mut itp_env, false)
+    let rc = Rc::new(RefCell::new(std::io::stdout()));
+    let mut interpreter_env = interpret::Environment::new(rc);
+
+    run_stmt(line, &mut typecheck_env, &mut interpreter_env, false)
 }
 
 fn repl(args: Vec<String>) -> DynResult {
     info!("Running in REPL mode");
 
+    let mut typecheck_env = typecheck::Environment::new();
+
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp_env = interpret::Environment::new(rc);
+    let mut interpreter_env = interpret::Environment::new(rc);
 
     let mut rl = DefaultEditor::new()?;
     rl.add_history_entry("_dbg_heap_stats();")?;
@@ -57,7 +61,12 @@ fn repl(args: Vec<String>) -> DynResult {
 
     if let Some(line) = args.get(2) {
         rl.add_history_entry(line)?;
-        _ = run_stmt(line.trim_end(), &mut itp_env, true);
+        _ = run_stmt(
+            line.trim_end(),
+            &mut typecheck_env,
+            &mut interpreter_env,
+            true,
+        );
     }
 
     let mut line: String;
@@ -67,7 +76,12 @@ fn repl(args: Vec<String>) -> DynResult {
             Ok(repl_line) => {
                 line = repl_line;
                 rl.add_history_entry(&line)?;
-                _ = run_stmt(line.trim_end(), &mut itp_env, true);
+                _ = run_stmt(
+                    line.trim_end(),
+                    &mut typecheck_env,
+                    &mut interpreter_env,
+                    true,
+                );
             }
             Err(ReadlineError::Eof) => break,
             Err(ReadlineError::Interrupted) => break,
@@ -83,9 +97,10 @@ fn repl(args: Vec<String>) -> DynResult {
 fn read_from_file(file_path: &str) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
+    let mut typecheck_env = typecheck::Environment::new();
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut itp = interpret::Environment::new(rc);
-    run_stmt(&contents, &mut itp, false)
+    run_stmt(&contents, &mut typecheck_env, &mut itp, false)
 }
 
 fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::error::Error>> {
@@ -129,14 +144,27 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST, Box<dyn std::erro
 
 fn run_stmt(
     input: &str,
+    typecheck_env: &mut typecheck::Environment,
     interpret_env: &mut interpret::Environment,
     is_in_repl: bool,
 ) -> DynResult {
-    let stmt = lex_and_parse(input, is_in_repl)?;
+    let ast = lex_and_parse(input, is_in_repl)?;
+
+    debug!("type checking start");
+
+    let ast = match typecheck::TypeChecker::new(typecheck_env, input).convert(ast) {
+        Ok(v) => v,
+        Err(err) => {
+            error!("Interpreter error: {}", err);
+            return Err(Box::new(err));
+        }
+    };
+
+    debug!("type checking done");
 
     debug!("interpreting start");
 
-    match interpret::Interpreter::new(interpret_env, input).interpret(&stmt) {
+    match interpret::Interpreter::new(interpret_env, input).interpret(&ast) {
         Ok(_) => {}
         Err(err) => {
             error!("Interpreter error: {}", err);

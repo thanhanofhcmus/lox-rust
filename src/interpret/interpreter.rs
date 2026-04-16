@@ -206,14 +206,14 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_expr(&mut self, expr: &Expression) -> Result<ValueReturn, Error> {
-        match expr {
-            Expression::Return(expr) => self.interpret_return_expr(expr),
-            Expression::When(nodes) => self.interpret_when_expr(nodes),
-            Expression::Clause(node) => self.interpret_clause_expr(node).map(ValueReturn::new),
-            Expression::Block(node) => self.interpret_block_node(node),
-            Expression::While(node) => self.interpret_while_expr(node),
-            Expression::For(node) => self.interpret_for_expr(node),
-            Expression::IfChain(node) => self.interpret_if_chain_expr(node),
+        match &expr.case {
+            ExprCase::Return(expr) => self.interpret_return_expr(expr),
+            ExprCase::When(nodes) => self.interpret_when_expr(nodes),
+            ExprCase::Clause(node) => self.interpret_clause_expr(node).map(ValueReturn::new),
+            ExprCase::Block(node) => self.interpret_block_node(node),
+            ExprCase::While(node) => self.interpret_while_expr(node),
+            ExprCase::For(node) => self.interpret_for_expr(node),
+            ExprCase::IfChain(node) => self.interpret_if_chain_expr(node),
         }
     }
 

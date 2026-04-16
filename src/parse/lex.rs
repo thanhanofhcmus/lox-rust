@@ -24,6 +24,11 @@ static KEYWORDS: phf::Map<&'static [u8], Token> = phf::phf_map!(
     b"fn" => Token::Fn,
     b"return" => Token::Return,
 
+    b"any" => Token::TypeAny,
+    b"bool" => Token::TypeBool,
+    b"number" => Token::TypeNumber,
+    b"str" => Token::TypeStr,
+
     b"import" => Token::Import,
     b"as" => Token::As,
 );

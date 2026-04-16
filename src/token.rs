@@ -50,6 +50,12 @@ pub enum Token {
     As,     // as
     In,     // in
 
+    // Types
+    TypeAny,
+    TypeBool,
+    TypeNumber,
+    TypeStr,
+
     Identifier,
     Number,
     String,

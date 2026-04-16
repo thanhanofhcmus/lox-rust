@@ -319,11 +319,7 @@ impl Environment {
 
         writeln!(s, "Scope Stack [depth={}]:", self.scope_stack.len()).unwrap();
         for (i, scope) in self.scope_stack.iter_all().enumerate() {
-            let kind = if scope.is_readonly {
-                "readonly"
-            } else {
-                "writable"
-            };
+            let kind = if scope.is_readonly { "readonly" } else { "writable" };
             writeln!(s, "  [{i}] ({kind}):").unwrap();
             if scope.variables.is_empty() {
                 writeln!(s, "    (empty)").unwrap();

@@ -1,3 +1,4 @@
+use crate::types::Type;
 use crate::{ast::*, string_utils};
 
 use super::context::Context;
@@ -28,11 +29,13 @@ pub fn parse(input: &str, items: &[LexItem], should_eval_string: bool) -> Result
 
         state.prepare_next();
         let stmt = parse_stmt(&mut state)?;
-        match &stmt {
-            Statement::Expr(Expression::Return(_)) | Statement::Expr(Expression::Clause(_)) => {
-                state.consume_token(Token::Semicolon)?;
+        if let Statement::Expr(expr) = &stmt {
+            match expr.case {
+                ExprCase::Return(_) | ExprCase::Clause(_) => {
+                    state.consume_token(Token::Semicolon)?;
+                }
+                _ => {}
             }
-            _ => {}
         }
         global_stmts.push(stmt);
     }
@@ -87,11 +90,13 @@ fn parse_block_node(state: &mut Context) -> Result<BlockNode, ParseError> {
             }
         } else {
             // not the last statement, make sure to consume semicolon from non-block expression
-            match &result {
-                Statement::Expr(Expression::Return(_)) | Statement::Expr(Expression::Clause(_)) => {
-                    state.consume_token(Token::Semicolon)?;
+            if let Statement::Expr(expr) = &result {
+                match expr.case {
+                    ExprCase::Return(_) | ExprCase::Clause(_) => {
+                        state.consume_token(Token::Semicolon)?;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
             stmts.push(result);
         }
@@ -109,12 +114,34 @@ fn parse_expr_stmt(state: &mut Context) -> Result<Statement, ParseError> {
 fn parse_declaration(state: &mut Context) -> Result<Statement, ParseError> {
     state.consume_token(Token::Var)?;
     let id_item = state.consume_token(Token::Identifier)?;
+    let type_ = if state.peek(&[Token::Colon]) {
+        state.consume_token(Token::Colon)?;
+        let type_item = *state.get_curr()?;
+        state.advance();
+        // for a simple case we we can work out the type right a way
+        match type_item.token {
+            Token::TypeAny => Type::Any,
+            Token::TypeBool => Type::Bool,
+            Token::TypeNumber => Type::Number,
+            Token::TypeStr => Type::Str,
+            // Token::Identifier => Typed::Name(...)
+            _ => {
+                return Err(ParseError::UnexpectedToken(
+                    type_item.token,
+                    type_item.span,
+                    None,
+                ));
+            }
+        }
+    } else {
+        Type::Infered
+    };
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
     state.consume_token(Token::Semicolon)?;
     Ok(Statement::Declare(DeclareStatementNode {
         iden: IdentifierNode::new_from_name(id_item.span, state.get_input()),
-        type_: None,
+        type_,
         expr,
     }))
 }
@@ -142,8 +169,8 @@ fn parse_expr(state: &mut Context) -> Result<Expression, ParseError> {
         Token::While => parse_while(state),
         Token::If => parse_if(state),
         Token::For => parse_for(state),
-        Token::LPointParen => parse_block_node(state).map(Expression::Block),
-        _ => parse_clause_node(state).map(Expression::Clause),
+        Token::LPointParen => parse_block_node(state).map(|v| Expression::new(ExprCase::Block(v))),
+        _ => parse_clause_node(state).map(|v| Expression::new(ExprCase::Clause(v))),
     }
 }
 
@@ -159,14 +186,14 @@ fn parse_return(state: &mut Context) -> Result<Expression, ParseError> {
         None
     };
     state.consume_token(Token::Semicolon)?;
-    Ok(Expression::Return(return_expr))
+    Ok(Expression::new(ExprCase::Return(return_expr)))
 }
 
 fn parse_while(state: &mut Context) -> Result<Expression, ParseError> {
     state.consume_token(Token::While)?;
     let cond = parse_clause_node(state)?;
     let body = parse_block_node(state)?;
-    Ok(Expression::While(WhileNode { cond, body }))
+    Ok(Expression::new(ExprCase::While(WhileNode { cond, body })))
 }
 
 fn parse_for(state: &mut Context) -> Result<Expression, ParseError> {
@@ -175,11 +202,11 @@ fn parse_for(state: &mut Context) -> Result<Expression, ParseError> {
     state.consume_token(Token::In)?;
     let collection = parse_clause_node(state)?;
     let body = parse_block_node(state)?;
-    Ok(Expression::For(ForNode {
+    Ok(Expression::new(ExprCase::For(ForNode {
         iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
         collection,
         body,
-    }))
+    })))
 }
 
 fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {
@@ -207,14 +234,14 @@ fn parse_if(state: &mut Context) -> Result<Expression, ParseError> {
         };
     }
 
-    Ok(Expression::IfChain(IfChainNode {
+    Ok(Expression::new(ExprCase::IfChain(IfChainNode {
         if_node: ElseIfNode {
             cond,
             stmts: if_stmts,
         },
         else_if_nodes,
         else_stmts,
-    }))
+    })))
 }
 
 fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {
@@ -225,7 +252,7 @@ fn parse_when(state: &mut Context) -> Result<Expression, ParseError> {
         Token::RPointParen,
         parse_when_arm,
     )?;
-    Ok(Expression::When(case_nodes))
+    Ok(Expression::new(ExprCase::When(case_nodes)))
 }
 
 fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode, ParseError> {
@@ -656,8 +683,10 @@ fn get_identifier(state: &mut Context) -> Result<LexItem, ParseError> {
     Ok(li)
 }
 
-fn convert_chaining(node: Expression) -> Result<ChainingReassignTargetNode, ParseError> {
-    let Expression::Clause(clause) = node else {
+fn convert_chaining(
+    Expression { type_: _, case }: Expression,
+) -> Result<ChainingReassignTargetNode, ParseError> {
+    let ExprCase::Clause(clause) = case else {
         return Err(ParseError::ReassignRootIsNotAnIdentifier);
     };
 

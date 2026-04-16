@@ -1,6 +1,11 @@
+// We might want a 2 phase type system
+// A heavy Type: Carry Type info enough to resolve the type
+//
+// A small Type (TypeId): Only have the Id to the type. Cheap to copy around
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Any, // gradual typing
+    Any, // gradual typing, top type
     Bool,
     Number,
     Str,
@@ -15,4 +20,5 @@ pub enum Type {
     },
     Never, // internal bottom type: expressions that never produce a value (bare return)
     Nil,
+    Infered,
 }
