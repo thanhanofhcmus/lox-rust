@@ -200,7 +200,8 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             }
             ClauseCase::Unary(operand, op) => {
                 let operand = self.convert_clause(*operand)?;
-                (Type::Any, ClauseCase::Unary(Box::new(operand), op))
+                let type_ = self.type_unary_op(op, &operand.type_)?;
+                (type_, ClauseCase::Unary(Box::new(operand), op))
             }
             ClauseCase::Binary(bin) => {
                 let lhs = Box::new(self.convert_clause(*bin.lhs)?);
@@ -351,6 +352,32 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
         }
     }
 
+    /// Compute the result type of a unary operator applied to an operand type.
+    ///
+    /// Opinionated choices:
+    /// - `-` (Minus) negates numbers.
+    /// - `not` (Not) inverts Bools.
+    /// - `Any` is permissive: accept and return the op's natural result type.
+    fn type_unary_op(&self, op: Token, operand: &Type) -> Result<Type, Error> {
+        use Token::*;
+        let any = matches!(operand, Type::Any);
+        let mismatch = || Error::UnaryOpTypeMismatch(op, operand.clone());
+
+        match op {
+            Minus => match operand {
+                Type::Number => Ok(Type::Number),
+                _ if any => Ok(Type::Number),
+                _ => Err(mismatch()),
+            },
+            Not => match operand {
+                Type::Bool => Ok(Type::Bool),
+                _ if any => Ok(Type::Bool),
+                _ => Err(mismatch()),
+            },
+            _ => unreachable!("non-unary-op token in Unary: {:?}", op),
+        }
+    }
+
     /// Typecheck an array literal and return the array's *element type* alongside
     /// the converted node. The caller wraps it in `Type::Array(...)`.
     fn convert_array_literal(
@@ -440,6 +467,9 @@ pub enum Error {
 
     #[error("Binary operator {0:?} cannot apply to types {1:?} and {2:?}")]
     BinaryOpTypeMismatch(Token, Type, Type),
+
+    #[error("Unary operator {0:?} cannot apply to type {1:?}")]
+    UnaryOpTypeMismatch(Token, Type),
 
     #[error("Expected type {0:?}, got {1:?}")]
     ExpectedType(Type, Type),

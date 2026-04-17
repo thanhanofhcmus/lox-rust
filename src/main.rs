@@ -155,7 +155,7 @@ fn run_stmt(
     let ast = match typecheck::TypeChecker::new(typecheck_env, input).convert(ast) {
         Ok(v) => v,
         Err(err) => {
-            error!("Interpreter error: {}", err);
+            error!("Typecheck error: {}", err);
             return Err(Box::new(err));
         }
     };
