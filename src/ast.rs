@@ -1,9 +1,4 @@
-use crate::{
-    id::Id,
-    span::Span,
-    token::Token,
-    types::{ComputeType, Type},
-};
+use crate::{id::Id, span::Span, token::Token, types::Type};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
@@ -22,8 +17,8 @@ pub enum Statement<T> {
 #[derive(Debug, Clone)]
 pub struct DeclareStatementNode<T> {
     pub iden: IdentifierNode,
-    /// User-declared type annotation (e.g. `: Int`, `: Any`, or inferred). Not a computed type.
-    pub type_: Type,
+    /// User-declared type annotation. `None` means no annotation was written.
+    pub type_: Option<Type>,
     pub expr: Expression<T>,
 }
 
@@ -37,8 +32,19 @@ pub struct ChainingReassignTargetNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct BlockNode<T> {
+    pub type_: T,
     pub stmts: StatementList<T>,
     pub last_expr: Option<Box<Expression<T>>>,
+}
+
+impl BlockNode<()> {
+    pub fn new(stmts: StatementList<()>, last_expr: Option<Box<Expression<()>>>) -> Self {
+        Self {
+            type_: (),
+            stmts,
+            last_expr,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -139,17 +145,6 @@ pub enum RawValueNode<T> {
     FnDecl(FnDeclNode<T>),
 }
 
-impl<T> ComputeType for RawValueNode<T> {
-    fn compute_type(&self) -> Type {
-        match self {
-            Self::Scalar(v) => v.compute_type(),
-            Self::ArrayLiteral(v) => v.compute_type(),
-            Self::MapLiteral(_map_literal_node) => Type::Any,
-            Self::FnDecl(_fn_decl_node) => Type::Any,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum ScalarNode {
     Nil,
@@ -164,17 +159,6 @@ pub enum ScalarNode {
     StrLiteral(String),
 }
 
-impl ComputeType for ScalarNode {
-    fn compute_type(&self) -> Type {
-        match self {
-            Self::Nil => Type::Nil,
-            Self::Bool(_) => Type::Bool,
-            Self::Integer(_) | Self::Floating(_) => Type::Number,
-            Self::LazyStr { is_raw: _, span: _ } | Self::StrLiteral(_) => Type::Str,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum ArrayLiteralNode<T> {
     List(Vec<ClauseNode<T>>),
@@ -182,26 +166,9 @@ pub enum ArrayLiteralNode<T> {
     ForComprehension(Box<ArrayForComprehentionNode<T>>),
 }
 
-impl<T> ComputeType for ArrayLiteralNode<T> {
-    fn compute_type(&self) -> Type {
-        // TODO
-        Type::Array(Box::new(Type::Any))
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct MapLiteralNode<T> {
     pub nodes: Vec<MapLiteralElementNode<T>>,
-}
-
-impl<T> ComputeType for MapLiteralNode<T> {
-    // TODO
-    fn compute_type(&self) -> Type {
-        Type::Map {
-            key: Box::new(Type::Any),
-            value: Box::new(Type::Any),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -235,16 +202,6 @@ pub struct FnDeclNode<T> {
     pub params: Vec<FnParamNode>,
     pub body: BlockNode<T>,
     pub return_type: Option<Type>,
-}
-
-impl<T> ComputeType for FnDeclNode<T> {
-    fn compute_type(&self) -> Type {
-        // TODO
-        Type::Function {
-            params: vec![],
-            return_: Box::new(Type::Any),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

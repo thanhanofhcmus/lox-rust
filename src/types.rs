@@ -11,20 +11,13 @@ pub enum Type {
     Str,
     Array(Box<Type>),
     Map {
-        key: Box<Type>,
+        // Key is always string
         value: Box<Type>,
     },
     Function {
         params: Vec<Type>,
         return_: Box<Type>,
     },
-    Never, // internal bottom type: expressions that never produce a value (bare return)
+    Unit, // the `()` value — bare `return`, statement-only blocks, void-ish calls
     Nil,
-    Infered,
-
-    NotComputed,
-}
-
-pub trait ComputeType {
-    fn compute_type(&self) -> Type;
 }

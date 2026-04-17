@@ -103,7 +103,7 @@ fn parse_block_node(state: &mut Context) -> Result<UntypedBlockNode, ParseError>
     }
 
     state.consume_token(Token::RPointParen)?;
-    Ok(BlockNode { stmts, last_expr })
+    Ok(BlockNode::new(stmts, last_expr))
 }
 
 fn parse_expr_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
@@ -119,7 +119,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
         let type_item = *state.get_curr()?;
         state.advance();
         // for a simple case we we can work out the type right a way
-        match type_item.token {
+        Some(match type_item.token {
             Token::TypeAny => Type::Any,
             Token::TypeBool => Type::Bool,
             Token::TypeNumber => Type::Number,
@@ -132,9 +132,9 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
                     None,
                 ));
             }
-        }
+        })
     } else {
-        Type::Infered
+        None
     };
     state.consume_token(Token::Equal)?;
     let expr = parse_expr(state)?;
@@ -568,10 +568,7 @@ fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError
         state.is_in_fn = false;
     } else {
         let expr = parse_expr(state)?;
-        body = BlockNode {
-            stmts: vec![],
-            last_expr: Some(Box::new(expr)),
-        };
+        body = BlockNode::new(vec![], Some(Box::new(expr)));
     }
 
     Ok(FnDeclNode {
