@@ -1,14 +1,79 @@
+use std::collections::HashMap;
+
 use thiserror::Error;
 
 use crate::{ast::*, id::Id, span::Span, token::Token, types::Type};
 
-pub struct Environment {}
+/// Scoped symbol table mapping `Id` → `Type` for typechecking.
+/// The outermost scope is seeded with interpreter builtins (see `BUILTIN_NAMES`).
+pub struct Environment {
+    scopes: Vec<HashMap<Id, Type>>,
+}
 
 impl Environment {
     pub fn new() -> Self {
-        Self {}
+        let mut builtins = HashMap::new();
+        for &name in BUILTIN_NAMES {
+            builtins.insert(Id::new(name), Type::Any);
+        }
+        // Scope 0 holds builtins; scope 1 is the user-global scope. Keeping them
+        // separate lets user code shadow builtins without a redeclaration error.
+        Self {
+            scopes: vec![builtins, HashMap::new()],
+        }
+    }
+
+    pub fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.scopes.pop().expect("scope underflow");
+    }
+
+    /// Declare `id` in the current (innermost) scope. Returns `Err` with the
+    /// existing type if `id` is already bound *in the same scope*. Shadowing
+    /// a binding from an outer scope is allowed and is not an error.
+    pub fn declare(&mut self, id: Id, ty: Type) -> Result<(), Type> {
+        let scope = self.scopes.last_mut().expect("at least one scope");
+        use std::collections::hash_map::Entry;
+        match scope.entry(id) {
+            Entry::Occupied(o) => Err(o.get().clone()),
+            Entry::Vacant(v) => {
+                v.insert(ty);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn lookup(&self, id: Id) -> Option<&Type> {
+        self.scopes.iter().rev().find_map(|s| s.get(&id))
     }
 }
+
+/// Keep in sync with `src/interpret/predule.rs::create()`. Registered as
+/// `Type::Any` — we don't model their signatures yet.
+const BUILTIN_NAMES: &[&str] = &[
+    "print",
+    "assert",
+    "from_json",
+    "to_json",
+    "array_len",
+    "array_push",
+    "array_pop",
+    "array_insert",
+    "map_length",
+    "map_keys",
+    "map_values",
+    "map_insert",
+    "map_remove",
+    "_dbg_print",
+    "_dbg_state",
+    "_dbg_gc_mark",
+    "_dbg_gc_sweep",
+    "_dbg_gc_mark_sweep",
+    "_dbg_heap_stats",
+];
 
 pub struct TypeChecker<'cl, 'sl> {
     pub(super) environment: &'cl mut Environment,
@@ -18,6 +83,15 @@ pub struct TypeChecker<'cl, 'sl> {
 impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
     pub fn new(environment: &'cl mut Environment, input: &'sl str) -> Self {
         Self { environment, input }
+    }
+
+    /// Run `f` with a fresh scope pushed on the environment. The scope is
+    /// popped whether `f` succeeds or errors.
+    fn with_scope<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.environment.push_scope();
+        let result = f(self);
+        self.environment.pop_scope();
+        result
     }
 
     /// Consume an untyped AST and return a typed AST with all declarations type-checked.
@@ -54,6 +128,11 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                         ));
                     }
                 }
+                // Annotation wins when written (including `Any`); otherwise infer from expr.
+                let var_type = type_.clone().unwrap_or_else(|| expr.type_.clone());
+                self.environment
+                    .declare(iden.name_id, var_type)
+                    .map_err(|_| Error::DuplicateDeclaration(iden.name, iden.name_id))?;
                 Ok(Statement::Declare(DeclareStatementNode {
                     expr,
                     iden,
@@ -76,6 +155,12 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
         &mut self,
         target: ChainingReassignTargetNode<()>,
     ) -> Result<ChainingReassignTargetNode<Type>, Error> {
+        if target.base.is_simple() && self.environment.lookup(target.base.name_id).is_none() {
+            return Err(Error::UndefinedIdentifier(
+                target.base.name,
+                target.base.name_id,
+            ));
+        }
         let follows = target
             .follows
             .into_iter()
@@ -132,23 +217,25 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
     }
 
     fn convert_block(&mut self, block: BlockNode<()>) -> Result<BlockNode<Type>, Error> {
-        let stmts = block
-            .stmts
-            .into_iter()
-            .map(|s| self.convert_stmt(s))
-            .collect::<Result<Vec<_>, _>>()?;
-        let last_expr = block
-            .last_expr
-            .map(|e| self.convert_expr(*e).map(Box::new))
-            .transpose()?;
-        let type_ = last_expr
-            .as_ref()
-            .map(|e| e.type_.clone())
-            .unwrap_or(Type::Unit);
-        Ok(BlockNode {
-            type_,
-            stmts,
-            last_expr,
+        self.with_scope(|this| {
+            let stmts = block
+                .stmts
+                .into_iter()
+                .map(|s| this.convert_stmt(s))
+                .collect::<Result<Vec<_>, _>>()?;
+            let last_expr = block
+                .last_expr
+                .map(|e| this.convert_expr(*e).map(Box::new))
+                .transpose()?;
+            let type_ = last_expr
+                .as_ref()
+                .map(|e| e.type_.clone())
+                .unwrap_or(Type::Unit);
+            Ok(BlockNode {
+                type_,
+                stmts,
+                last_expr,
+            })
         })
     }
 
@@ -179,10 +266,21 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
     }
 
     fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<Type>, Error> {
-        Ok(ForNode {
-            iden: node.iden,
-            collection: self.convert_clause(node.collection)?,
-            body: self.convert_block(node.body)?,
+        let collection = self.convert_clause(node.collection)?;
+        // TODO: derive iden type from the collection's element type once array/map
+        // element types are used during lookup. Permissive `Any` for now.
+        let iden_name = node.iden.name;
+        let iden_id = node.iden.name_id;
+        self.with_scope(|this| {
+            this.environment
+                .declare(iden_id, Type::Any)
+                .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
+            let body = this.convert_block(node.body)?;
+            Ok(ForNode {
+                iden: node.iden,
+                collection,
+                body,
+            })
         })
     }
 
@@ -192,7 +290,19 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 let (type_, raw) = self.convert_raw_value(raw)?;
                 (type_, ClauseCase::RawValue(raw))
             }
-            ClauseCase::Identifier(iden) => (Type::Any, ClauseCase::Identifier(iden)),
+            ClauseCase::Identifier(iden) => {
+                // Prefixed identifiers (e.g. `foo.bar`) are module/member access — not
+                // yet modeled by the typechecker. Accept them permissively as `Any`.
+                let type_ = if iden.is_simple() {
+                    self.environment
+                        .lookup(iden.name_id)
+                        .cloned()
+                        .ok_or(Error::UndefinedIdentifier(iden.name, iden.name_id))?
+                } else {
+                    Type::Any
+                };
+                (type_, ClauseCase::Identifier(iden))
+            }
             ClauseCase::Group(inner) => {
                 let inner = self.convert_clause(*inner)?;
                 let type_ = inner.type_.clone();
@@ -278,19 +388,32 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 ))
             }
             RawValueNode::FnDecl(fn_decl) => {
-                let body = self.convert_block(fn_decl.body)?;
-                // TODO: derive signature from params/return_type
-                Ok((
-                    Type::Function {
-                        params: vec![],
-                        return_: Box::new(Type::Any),
-                    },
-                    RawValueNode::FnDecl(FnDeclNode {
-                        params: fn_decl.params,
-                        body,
-                        return_type: fn_decl.return_type,
-                    }),
-                ))
+                // Params are declared in a fresh scope surrounding the body. The
+                // body itself opens its own scope via `convert_block`, so param
+                // shadowing by locals is handled naturally.
+                self.with_scope(|this| {
+                    for param in &fn_decl.params {
+                        let ty = param.type_.clone().unwrap_or(Type::Any);
+                        this.environment
+                            .declare(param.id.name_id, ty)
+                            .map_err(|_| {
+                                Error::DuplicateDeclaration(param.id.name, param.id.name_id)
+                            })?;
+                    }
+                    let body = this.convert_block(fn_decl.body)?;
+                    // TODO: derive signature from params/return_type
+                    Ok((
+                        Type::Function {
+                            params: vec![],
+                            return_: Box::new(Type::Any),
+                        },
+                        RawValueNode::FnDecl(FnDeclNode {
+                            params: fn_decl.params,
+                            body,
+                            return_type: fn_decl.return_type,
+                        }),
+                    ))
+                })
             }
         }
     }
@@ -404,22 +527,36 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 ))
             }
             ArrayLiteralNode::ForComprehension(comp) => {
-                let collection = self.convert_clause(comp.collection)?;
-                let transformer = self.convert_clause(comp.transformer)?;
-                let filter = comp.filter.map(|f| self.convert_clause(f)).transpose()?;
-                if let Some(f) = &filter {
-                    require_type(&Type::Bool, &f.type_)?;
-                }
-                let elem_ty = transformer.type_.clone();
-                Ok((
-                    elem_ty,
-                    ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehentionNode {
-                        iden: comp.iden,
-                        collection,
-                        transformer,
-                        filter,
-                    })),
-                ))
+                let ArrayForComprehentionNode {
+                    iden,
+                    collection,
+                    transformer,
+                    filter,
+                } = *comp;
+                let collection = self.convert_clause(collection)?;
+                // TODO: derive iden type from collection's element type.
+                let iden_name = iden.name;
+                let iden_id = iden.name_id;
+                self.with_scope(|this| {
+                    this.environment
+                        .declare(iden_id, Type::Any)
+                        .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
+                    let transformer = this.convert_clause(transformer)?;
+                    let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
+                    if let Some(f) = &filter {
+                        require_type(&Type::Bool, &f.type_)?;
+                    }
+                    let elem_ty = transformer.type_.clone();
+                    Ok((
+                        elem_ty,
+                        ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehentionNode {
+                            iden,
+                            collection,
+                            transformer,
+                            filter,
+                        })),
+                    ))
+                })
             }
         }
     }
@@ -476,4 +613,10 @@ pub enum Error {
 
     #[error("Map keys must be strings; got {0:?}")]
     MapKeyMustBeString(ScalarNode),
+
+    #[error("Identifier {1:?} at {0:?} is not defined in scope")]
+    UndefinedIdentifier(Span, Id),
+
+    #[error("Identifier {1:?} at {0:?} is already declared in this scope")]
+    DuplicateDeclaration(Span, Id),
 }
