@@ -149,3 +149,174 @@ impl DisplayWriter for Number {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    use Number::*;
+
+    // ---------- to_f64 / is_zero ----------
+
+    #[test]
+    fn to_f64_integer() {
+        assert_eq!(Integer(5).to_f64(), 5.0);
+    }
+
+    #[test]
+    fn to_f64_floating() {
+        assert_eq!(Floating(5.5).to_f64(), 5.5);
+    }
+
+    #[test]
+    fn is_zero_integer() {
+        assert!(Integer(0).is_zero());
+        assert!(!Integer(1).is_zero());
+    }
+
+    #[test]
+    fn is_zero_floating() {
+        assert!(Floating(0.0).is_zero());
+        assert!(!Floating(0.1).is_zero());
+    }
+
+    // ---------- arithmetic ----------
+
+    #[test]
+    fn add_int_int_stays_int() {
+        assert_eq!(Integer(2) + Integer(3), Integer(5));
+    }
+
+    #[test]
+    fn add_mixed_promotes_to_floating() {
+        assert_eq!(Integer(2) + Floating(0.5), Floating(2.5));
+        assert_eq!(Floating(0.5) + Integer(2), Floating(2.5));
+    }
+
+    #[test]
+    fn sub_int_int_stays_int() {
+        assert_eq!(Integer(10) - Integer(3), Integer(7));
+    }
+
+    #[test]
+    fn mul_mixed_floats() {
+        assert_eq!(Integer(3) * Floating(2.0), Floating(6.0));
+    }
+
+    #[test]
+    fn rem_int_int_stays_int() {
+        assert_eq!(Integer(10) % Integer(3), Integer(1));
+    }
+
+    #[test]
+    fn div_int_int_exact_stays_int() {
+        assert_eq!(Integer(6) / Integer(2), Integer(3));
+        assert_eq!(Integer(-8) / Integer(4), Integer(-2));
+    }
+
+    #[test]
+    fn div_int_int_inexact_promotes_to_floating() {
+        assert_eq!(Integer(5) / Integer(2), Floating(2.5));
+    }
+
+    #[test]
+    fn div_mixed_is_floating() {
+        assert_eq!(Integer(5) / Floating(2.0), Floating(2.5));
+        assert_eq!(Floating(5.0) / Integer(2), Floating(2.5));
+    }
+
+    #[test]
+    fn neg_integer() {
+        assert_eq!(-Integer(5), Integer(-5));
+        assert_eq!(-Integer(0), Integer(0));
+    }
+
+    #[test]
+    fn neg_floating() {
+        assert_eq!(-Floating(1.5), Floating(-1.5));
+    }
+
+    // ---------- equality with delta tolerance ----------
+
+    #[test]
+    fn eq_same_type_exact() {
+        assert_eq!(Integer(5), Integer(5));
+        assert_eq!(Floating(1.5), Floating(1.5));
+    }
+
+    #[test]
+    fn eq_floating_within_delta_is_equal() {
+        // 1e-10 delta tolerance
+        assert_eq!(Floating(1.0), Floating(1.0 + 1e-11));
+    }
+
+    #[test]
+    fn eq_floating_outside_delta_is_not_equal() {
+        assert_ne!(Floating(1.0), Floating(1.0 + 1e-9));
+    }
+
+    #[test]
+    fn eq_cross_type_same_value() {
+        assert_eq!(Integer(5), Floating(5.0));
+        assert_eq!(Floating(5.0), Integer(5));
+    }
+
+    // ---------- ordering across types ----------
+
+    #[test]
+    fn cmp_integers() {
+        assert!(Integer(3) < Integer(5));
+        assert!(Integer(10) > Integer(5));
+    }
+
+    #[test]
+    fn cmp_cross_type() {
+        assert!(Integer(5) < Floating(5.5));
+        assert!(Floating(5.5) > Integer(5));
+    }
+
+    // ---------- TryInto<usize> ----------
+
+    #[test]
+    fn try_into_usize_integer_non_negative() {
+        let r: Result<usize, _> = Integer(42).try_into();
+        assert_eq!(r.unwrap(), 42);
+    }
+
+    #[test]
+    fn try_into_usize_integer_zero() {
+        let r: Result<usize, _> = Integer(0).try_into();
+        assert_eq!(r.unwrap(), 0);
+    }
+
+    #[test]
+    fn try_into_usize_integer_negative_errors() {
+        let r: Result<usize, _> = Integer(-1).try_into();
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn try_into_usize_floating_integer_valued_ok() {
+        let r: Result<usize, _> = Floating(7.0).try_into();
+        assert_eq!(r.unwrap(), 7);
+    }
+
+    #[test]
+    fn try_into_usize_floating_non_integer_errors() {
+        let r: Result<usize, _> = Floating(2.5).try_into();
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn try_into_usize_floating_negative_errors() {
+        let r: Result<usize, _> = Floating(-1.0).try_into();
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn try_into_usize_floating_nan_errors() {
+        let r: Result<usize, _> = Floating(f64::NAN).try_into();
+        assert!(r.is_err());
+    }
+}

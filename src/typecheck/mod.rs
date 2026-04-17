@@ -620,3 +620,404 @@ pub enum Error {
     #[error("Identifier {1:?} at {0:?} is already declared in this scope")]
     DuplicateDeclaration(Span, Id),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::lex;
+    use pretty_assertions::assert_eq;
+
+    fn typecheck_str(input: &str) -> Result<TypedAST, Error> {
+        let items = lex(input).expect("lex failed");
+        let ast = crate::parse::parse(input, &items, false).expect("parse failed");
+        let mut env = Environment::new();
+        TypeChecker::new(&mut env, input).convert(ast)
+    }
+
+    /// Type of the expression inside the first top-level Expr statement's Clause.
+    fn first_clause_type(ast: &TypedAST) -> &Type {
+        match &ast.global_stmts[0] {
+            Statement::Expr(Expression {
+                case: ExprCase::Clause(c),
+                ..
+            }) => &c.type_,
+            other => panic!("expected first stmt to be an Expr clause, got {other:?}"),
+        }
+    }
+
+    // ---------- unify_types (pure helper) ----------
+
+    #[test]
+    fn unify_empty_is_any() {
+        assert_eq!(unify_types(std::iter::empty::<&Type>()), Type::Any);
+    }
+
+    #[test]
+    fn unify_single_concrete() {
+        assert_eq!(unify_types([&Type::Number]), Type::Number);
+    }
+
+    #[test]
+    fn unify_all_same_concrete() {
+        assert_eq!(
+            unify_types([&Type::Number, &Type::Number, &Type::Number]),
+            Type::Number
+        );
+    }
+
+    #[test]
+    fn unify_any_mixed_with_concrete_keeps_concrete() {
+        assert_eq!(unify_types([&Type::Any, &Type::Number]), Type::Number);
+        assert_eq!(unify_types([&Type::Number, &Type::Any]), Type::Number);
+    }
+
+    #[test]
+    fn unify_disagreeing_concretes_widens_to_any() {
+        assert_eq!(unify_types([&Type::Number, &Type::Str]), Type::Any);
+    }
+
+    #[test]
+    fn unify_all_any_is_any() {
+        assert_eq!(unify_types([&Type::Any, &Type::Any]), Type::Any);
+    }
+
+    // ---------- require_type ----------
+
+    #[test]
+    fn require_type_exact_match_is_ok() {
+        assert!(require_type(&Type::Number, &Type::Number).is_ok());
+    }
+
+    #[test]
+    fn require_type_any_on_actual_is_permissive() {
+        assert!(require_type(&Type::Number, &Type::Any).is_ok());
+    }
+
+    #[test]
+    fn require_type_mismatch_errors() {
+        let err = require_type(&Type::Number, &Type::Bool).unwrap_err();
+        assert!(matches!(err, Error::ExpectedType(_, _)));
+    }
+
+    // ---------- scalar_is_string ----------
+
+    #[test]
+    fn scalar_is_string_recognizes_string_variants() {
+        assert!(scalar_is_string(&ScalarNode::StrLiteral(String::new())));
+        assert!(scalar_is_string(&ScalarNode::LazyStr {
+            span: Span::one(0),
+            is_raw: false,
+        }));
+    }
+
+    #[test]
+    fn scalar_is_string_rejects_non_string_variants() {
+        assert!(!scalar_is_string(&ScalarNode::Nil));
+        assert!(!scalar_is_string(&ScalarNode::Bool(true)));
+        assert!(!scalar_is_string(&ScalarNode::Integer(0)));
+        assert!(!scalar_is_string(&ScalarNode::Floating(0.0)));
+    }
+
+    // ---------- Environment ----------
+
+    #[test]
+    fn env_declare_and_lookup() {
+        let mut env = Environment::new();
+        let id = Id::new("x");
+        env.declare(id, Type::Number).unwrap();
+        assert_eq!(env.lookup(id), Some(&Type::Number));
+    }
+
+    #[test]
+    fn env_lookup_missing_is_none() {
+        let env = Environment::new();
+        assert_eq!(env.lookup(Id::new("nope")), None);
+    }
+
+    #[test]
+    fn env_redeclare_in_same_scope_errors() {
+        let mut env = Environment::new();
+        let id = Id::new("x");
+        env.declare(id, Type::Number).unwrap();
+        assert!(env.declare(id, Type::Str).is_err());
+    }
+
+    #[test]
+    fn env_shadow_across_scopes_ok() {
+        let mut env = Environment::new();
+        let id = Id::new("x");
+        env.declare(id, Type::Number).unwrap();
+        env.push_scope();
+        assert!(env.declare(id, Type::Str).is_ok());
+        assert_eq!(env.lookup(id), Some(&Type::Str));
+        env.pop_scope();
+        assert_eq!(env.lookup(id), Some(&Type::Number));
+    }
+
+    #[test]
+    fn env_builtins_are_in_scope() {
+        let env = Environment::new();
+        assert_eq!(env.lookup(Id::new("print")), Some(&Type::Any));
+        assert_eq!(env.lookup(Id::new("assert")), Some(&Type::Any));
+    }
+
+    #[test]
+    fn env_user_global_can_shadow_builtin() {
+        // User-global scope is scope 1, above builtins at scope 0.
+        let mut env = Environment::new();
+        assert!(env.declare(Id::new("print"), Type::Number).is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "scope underflow")]
+    fn env_pop_underflow_panics() {
+        let mut env = Environment::new();
+        env.pop_scope();
+        env.pop_scope();
+        env.pop_scope(); // eventually underflows
+    }
+
+    // ---------- binary op typing (via type_binary_op directly) ----------
+    // type_binary_op is a method on TypeChecker. Use end-to-end via typecheck_str.
+
+    #[test]
+    fn binary_number_plus_number_is_number() {
+        let ast = typecheck_str("1 + 2;").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Number);
+    }
+
+    #[test]
+    fn binary_str_plus_str_is_str() {
+        let ast = typecheck_str("\"a\" + \"b\";").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Str);
+    }
+
+    #[test]
+    fn binary_number_plus_bool_errors() {
+        let err = typecheck_str("1 + true;").unwrap_err();
+        assert!(
+            matches!(err, Error::BinaryOpTypeMismatch(Token::Plus, _, _)),
+            "expected BinaryOpTypeMismatch(Plus, ...), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn binary_comparison_returns_bool() {
+        let ast = typecheck_str("1 < 2;").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Bool);
+    }
+
+    #[test]
+    fn binary_equality_requires_same_type() {
+        let err = typecheck_str("1 == true;").unwrap_err();
+        assert!(matches!(err, Error::BinaryOpTypeMismatch(_, _, _)));
+    }
+
+    #[test]
+    fn binary_equality_same_type_is_bool() {
+        let ast = typecheck_str("1 == 2;").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Bool);
+    }
+
+    #[test]
+    fn binary_and_on_bools_is_bool() {
+        let ast = typecheck_str("true and false;").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Bool);
+    }
+
+    #[test]
+    fn binary_and_on_non_bool_errors() {
+        let err = typecheck_str("1 and 2;").unwrap_err();
+        assert!(matches!(err, Error::BinaryOpTypeMismatch(Token::And, _, _)));
+    }
+
+    // ---------- unary op typing ----------
+
+    #[test]
+    fn unary_minus_on_number_is_number() {
+        let ast = typecheck_str("-5;").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Number);
+    }
+
+    #[test]
+    fn unary_not_on_bool_is_bool() {
+        let ast = typecheck_str("not true;").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Bool);
+    }
+
+    #[test]
+    fn unary_minus_on_bool_errors() {
+        let err = typecheck_str("-true;").unwrap_err();
+        assert!(matches!(err, Error::UnaryOpTypeMismatch(Token::Minus, _)));
+    }
+
+    #[test]
+    fn unary_not_on_number_errors() {
+        let err = typecheck_str("not 1;").unwrap_err();
+        assert!(matches!(err, Error::UnaryOpTypeMismatch(Token::Not, _)));
+    }
+
+    // ---------- array literals ----------
+
+    #[test]
+    fn array_homogeneous_numbers() {
+        let ast = typecheck_str("[1, 2, 3];").unwrap();
+        assert_eq!(
+            first_clause_type(&ast),
+            &Type::Array(Box::new(Type::Number))
+        );
+    }
+
+    #[test]
+    fn array_heterogeneous_widens_to_any() {
+        let ast = typecheck_str("[1, \"a\"];").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Array(Box::new(Type::Any)));
+    }
+
+    #[test]
+    fn array_empty_is_any_element() {
+        let ast = typecheck_str("[];").unwrap();
+        assert_eq!(first_clause_type(&ast), &Type::Array(Box::new(Type::Any)));
+    }
+
+    // ---------- map literals ----------
+
+    #[test]
+    fn map_string_keys_ok() {
+        let ast = typecheck_str("%{\"a\" => 1, \"b\" => 2};").unwrap();
+        assert_eq!(
+            first_clause_type(&ast),
+            &Type::Map {
+                value: Box::new(Type::Number)
+            }
+        );
+    }
+
+    #[test]
+    fn map_non_string_key_errors() {
+        let err = typecheck_str("%{1 => \"a\"};").unwrap_err();
+        assert!(
+            matches!(err, Error::MapKeyMustBeString(_)),
+            "expected MapKeyMustBeString, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn map_heterogeneous_values_widen_to_any() {
+        let ast = typecheck_str("%{\"a\" => 1, \"b\" => \"x\"};").unwrap();
+        assert_eq!(
+            first_clause_type(&ast),
+            &Type::Map {
+                value: Box::new(Type::Any)
+            }
+        );
+    }
+
+    // ---------- identifier lookup ----------
+
+    #[test]
+    fn identifier_undefined_errors() {
+        let err = typecheck_str("x;").unwrap_err();
+        assert!(matches!(err, Error::UndefinedIdentifier(_, _)));
+    }
+
+    #[test]
+    fn identifier_after_declare_has_declared_type() {
+        let ast = typecheck_str("var x: number = 5; x;").unwrap();
+        // The second stmt is `x;` — its clause's type should be Number.
+        match &ast.global_stmts[1] {
+            Statement::Expr(Expression {
+                case: ExprCase::Clause(c),
+                ..
+            }) => assert_eq!(c.type_, Type::Number),
+            other => panic!("expected Expr clause, got {other:?}"),
+        }
+    }
+
+    // ---------- declaration annotations ----------
+
+    #[test]
+    fn declare_with_matching_annotation_ok() {
+        typecheck_str("var x: number = 5;").unwrap();
+    }
+
+    #[test]
+    fn declare_with_mismatched_annotation_errors() {
+        let err = typecheck_str("var x: number = \"hello\";").unwrap_err();
+        assert!(matches!(
+            err,
+            Error::ExplitcitTypeDeclartionMismatchActualType(_, _)
+        ));
+    }
+
+    #[test]
+    fn declare_with_any_annotation_accepts_anything() {
+        typecheck_str("var x: any = \"hello\";").unwrap();
+        typecheck_str("var x: any = 5;").unwrap();
+    }
+
+    #[test]
+    fn declare_without_annotation_infers() {
+        let ast = typecheck_str("var x = 5; x;").unwrap();
+        match &ast.global_stmts[1] {
+            Statement::Expr(Expression {
+                case: ExprCase::Clause(c),
+                ..
+            }) => assert_eq!(c.type_, Type::Number),
+            other => panic!("expected Expr clause, got {other:?}"),
+        }
+    }
+
+    // ---------- reassign ----------
+
+    #[test]
+    fn reassign_undefined_errors() {
+        let err = typecheck_str("x = 5;").unwrap_err();
+        assert!(matches!(err, Error::UndefinedIdentifier(_, _)));
+    }
+
+    #[test]
+    fn reassign_defined_ok() {
+        typecheck_str("var x: number = 5; x = 10;").unwrap();
+    }
+
+    // ---------- duplicate declaration ----------
+
+    #[test]
+    fn duplicate_var_in_same_scope_errors() {
+        let err = typecheck_str("var x = 1; var x = 2;").unwrap_err();
+        assert!(matches!(err, Error::DuplicateDeclaration(_, _)));
+    }
+
+    #[test]
+    fn fn_duplicate_param_errors() {
+        let err = typecheck_str("var f = fn(x, x) x;").unwrap_err();
+        assert!(matches!(err, Error::DuplicateDeclaration(_, _)));
+    }
+
+    // ---------- block types ----------
+
+    #[test]
+    fn block_with_trailing_expr_has_that_type() {
+        let ast = typecheck_str("{ 5 }").unwrap();
+        match &ast.global_stmts[0] {
+            Statement::Expr(Expression {
+                case: ExprCase::Block(block),
+                ..
+            }) => assert_eq!(block.type_, Type::Number),
+            other => panic!("expected Expr(Block), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn block_without_trailing_expr_is_unit() {
+        let ast = typecheck_str("{ var x = 1; }").unwrap();
+        match &ast.global_stmts[0] {
+            Statement::Expr(Expression {
+                case: ExprCase::Block(block),
+                ..
+            }) => assert_eq!(block.type_, Type::Unit),
+            other => panic!("expected Expr(Block), got {other:?}"),
+        }
+    }
+}

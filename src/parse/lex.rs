@@ -297,3 +297,311 @@ fn lex_comment(input: &[u8], offset: &mut usize) -> LexItem {
 
     LexItem::new(Token::Comment, Span::new(start_offset, *offset))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn tokens(input: &str) -> Vec<Token> {
+        lex(input).unwrap().into_iter().map(|li| li.token).collect()
+    }
+
+    fn with_text(input: &str) -> Vec<(Token, String)> {
+        lex(input)
+            .unwrap()
+            .into_iter()
+            .map(|li| (li.token, li.span.string_from_source(input)))
+            .collect()
+    }
+
+    // ---------- single-char tokens ----------
+
+    #[test]
+    fn parens_and_punctuation() {
+        assert_eq!(
+            tokens("()[]{}.,:;"),
+            vec![
+                Token::LRoundParen,
+                Token::RRoundParen,
+                Token::LSquareParen,
+                Token::RSquareParen,
+                Token::LPointParen,
+                Token::RPointParen,
+                Token::Dot,
+                Token::Comma,
+                Token::Colon,
+                Token::Semicolon,
+            ]
+        );
+    }
+
+    #[test]
+    fn arithmetic_operators() {
+        assert_eq!(
+            tokens("+-*/"),
+            vec![Token::Plus, Token::Minus, Token::Star, Token::Slash]
+        );
+    }
+
+    // ---------- compound vs single-char disambiguation ----------
+
+    #[test]
+    fn equal_vs_equal_equal_vs_fat_arrow() {
+        assert_eq!(tokens("="), vec![Token::Equal]);
+        assert_eq!(tokens("=="), vec![Token::EqualEqual]);
+        assert_eq!(tokens("=>"), vec![Token::RFArrtow]);
+    }
+
+    #[test]
+    fn less_and_less_equal() {
+        assert_eq!(tokens("<"), vec![Token::Less]);
+        assert_eq!(tokens("<="), vec![Token::LessEqual]);
+    }
+
+    #[test]
+    fn greater_and_greater_equal() {
+        assert_eq!(tokens(">"), vec![Token::Greater]);
+        assert_eq!(tokens(">="), vec![Token::GreaterEqual]);
+    }
+
+    #[test]
+    fn bang_equal_only() {
+        assert_eq!(tokens("!="), vec![Token::BangEqual]);
+    }
+
+    #[test]
+    fn lone_bang_is_unexpected_character() {
+        let err = lex("!").unwrap_err();
+        assert!(
+            matches!(err, ParseError::UnexpectedCharacter(_)),
+            "expected UnexpectedCharacter, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn minus_vs_arrow() {
+        assert_eq!(tokens("-"), vec![Token::Minus]);
+        assert_eq!(tokens("->"), vec![Token::RTArrow]);
+    }
+
+    #[test]
+    fn percent_vs_percent_brace() {
+        assert_eq!(tokens("%"), vec![Token::Percentage]);
+        assert_eq!(tokens("%{"), vec![Token::PercentLPointParent]);
+    }
+
+    // ---------- keywords ----------
+
+    #[test]
+    fn keyword_true_false_nil() {
+        assert_eq!(tokens("true"), vec![Token::True]);
+        assert_eq!(tokens("false"), vec![Token::False]);
+        assert_eq!(tokens("nil"), vec![Token::Nil]);
+    }
+
+    #[test]
+    fn keyword_control_flow() {
+        assert_eq!(
+            tokens("if else while for when in"),
+            vec![
+                Token::If,
+                Token::Else,
+                Token::While,
+                Token::For,
+                Token::When,
+                Token::In,
+            ]
+        );
+    }
+
+    #[test]
+    fn keyword_fn_return_var() {
+        assert_eq!(
+            tokens("fn return var"),
+            vec![Token::Fn, Token::Return, Token::Var]
+        );
+    }
+
+    #[test]
+    fn keyword_logical() {
+        assert_eq!(
+            tokens("and or not"),
+            vec![Token::And, Token::Or, Token::Not]
+        );
+    }
+
+    #[test]
+    fn keyword_types() {
+        assert_eq!(
+            tokens("any bool number str"),
+            vec![
+                Token::TypeAny,
+                Token::TypeBool,
+                Token::TypeNumber,
+                Token::TypeStr,
+            ]
+        );
+    }
+
+    #[test]
+    fn keyword_import_as() {
+        assert_eq!(tokens("import as"), vec![Token::Import, Token::As]);
+    }
+
+    // ---------- identifiers vs keyword prefixes ----------
+
+    #[test]
+    fn identifier_with_keyword_prefix_is_identifier() {
+        assert_eq!(tokens("truex"), vec![Token::Identifier]);
+        assert_eq!(tokens("variable"), vec![Token::Identifier]);
+        assert_eq!(tokens("nilx"), vec![Token::Identifier]);
+    }
+
+    #[test]
+    fn identifier_with_underscore_and_digits() {
+        assert_eq!(tokens("_foo"), vec![Token::Identifier]);
+        assert_eq!(tokens("foo_bar123"), vec![Token::Identifier]);
+    }
+
+    // ---------- numbers ----------
+
+    #[test]
+    fn integer_literal() {
+        assert_eq!(with_text("42"), vec![(Token::Number, "42".to_string())]);
+    }
+
+    #[test]
+    fn floating_literal() {
+        assert_eq!(
+            with_text("3.14"),
+            vec![(Token::Number, "3.14".to_string())]
+        );
+    }
+
+    #[test]
+    fn number_with_multiple_dots_errors() {
+        let err = lex("1.2.3").unwrap_err();
+        assert!(matches!(err, ParseError::UnexpectedCharacter(_)));
+    }
+
+    #[test]
+    fn number_trailing_dot_errors() {
+        let err = lex("5.").unwrap_err();
+        assert!(matches!(err, ParseError::UnexpectedCharacter(_)));
+    }
+
+    // ---------- strings ----------
+
+    #[test]
+    fn plain_string_literal() {
+        assert_eq!(
+            with_text("\"hello\""),
+            vec![(Token::String, "\"hello\"".to_string())]
+        );
+    }
+
+    #[test]
+    fn empty_string_literal() {
+        assert_eq!(with_text("\"\""), vec![(Token::String, "\"\"".to_string())]);
+    }
+
+    #[test]
+    fn string_with_escaped_quote_keeps_going() {
+        // Span covers the full \"\\\"\" including escaped inner quote
+        let toks = lex("\"a\\\"b\"").unwrap();
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].token, Token::String);
+    }
+
+    #[test]
+    fn unclosed_string_errors() {
+        let err = lex("\"unterminated").unwrap_err();
+        assert!(
+            matches!(err, ParseError::UnclosedString(_)),
+            "expected UnclosedString, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn raw_string_literal() {
+        let toks = lex(r#"r"hello""#).unwrap();
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].token, Token::RawString);
+    }
+
+    #[test]
+    fn raw_string_with_escaped_quote() {
+        let toks = lex(r#"r"a\"b""#).unwrap();
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].token, Token::RawString);
+    }
+
+    // ---------- comments ----------
+
+    #[test]
+    fn comment_until_newline() {
+        let toks = lex("# a comment\nvar").unwrap();
+        assert_eq!(
+            toks.iter().map(|li| li.token).collect::<Vec<_>>(),
+            vec![Token::Comment, Token::Var]
+        );
+    }
+
+    #[test]
+    fn comment_at_eof() {
+        let toks = lex("# end").unwrap();
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].token, Token::Comment);
+    }
+
+    // ---------- whitespace ----------
+
+    #[test]
+    fn whitespace_is_skipped() {
+        assert_eq!(
+            tokens(" \t\nvar\n\t x "),
+            vec![Token::Var, Token::Identifier]
+        );
+    }
+
+    #[test]
+    fn tokens_back_to_back_without_whitespace() {
+        assert_eq!(
+            tokens("var x=1;"),
+            vec![
+                Token::Var,
+                Token::Identifier,
+                Token::Equal,
+                Token::Number,
+                Token::Semicolon,
+            ]
+        );
+    }
+
+    // ---------- errors ----------
+
+    #[test]
+    fn unknown_character_errors() {
+        let err = lex("@").unwrap_err();
+        assert!(
+            matches!(err, ParseError::UnexpectedCharacter(_)),
+            "expected UnexpectedCharacter, got {err:?}"
+        );
+    }
+
+    // ---------- span correctness ----------
+
+    #[test]
+    fn compound_operator_span_covers_both_chars() {
+        let toks = lex("==").unwrap();
+        assert_eq!(toks[0].span.start, 0);
+        assert_eq!(toks[0].span.end, 1);
+    }
+
+    #[test]
+    fn identifier_span_covers_full_name() {
+        let toks = lex("foo").unwrap();
+        assert_eq!(toks[0].span.str_from_source("foo"), "foo");
+    }
+}

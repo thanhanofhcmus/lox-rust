@@ -46,3 +46,59 @@ impl Id {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn equal_names_produce_equal_ids() {
+        assert_eq!(Id::new("foo"), Id::new("foo"));
+    }
+
+    #[test]
+    fn different_names_produce_different_ids() {
+        assert_ne!(Id::new("foo"), Id::new("bar"));
+    }
+
+    #[test]
+    fn empty_name_is_stable() {
+        assert_eq!(Id::new(""), Id::new(""));
+    }
+
+    #[test]
+    fn ids_are_copy() {
+        // compile-time check: Id: Copy means we can use an id twice without clone
+        let a = Id::new("x");
+        let b = a;
+        let c = a;
+        assert_eq!(b, c);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_includes_short_name() {
+        let formatted = format!("{:?}", Id::new("foo"));
+        assert!(
+            formatted.contains("foo"),
+            "expected debug output to contain the name snippet, got: {formatted}"
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_truncates_long_name_to_16_bytes() {
+        // DEBUG_NAME_SIZE = 16
+        let long = "abcdefghijklmnopqrstuvwxyz";
+        let formatted = format!("{:?}", Id::new(long));
+        assert!(
+            formatted.contains("abcdefghijklmnop"),
+            "expected first 16 bytes in debug output, got: {formatted}"
+        );
+        assert!(
+            !formatted.contains("abcdefghijklmnopq"),
+            "expected debug output truncated at 16 bytes, got: {formatted}"
+        );
+    }
+}

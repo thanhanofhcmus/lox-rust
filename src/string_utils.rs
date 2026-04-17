@@ -27,3 +27,69 @@ pub fn unescape(input: &str) -> String {
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn empty_input_stays_empty() {
+        assert_eq!(unescape(""), "");
+    }
+
+    #[test]
+    fn no_escape_passes_through() {
+        assert_eq!(unescape("hello world"), "hello world");
+    }
+
+    #[test]
+    fn newline_escape() {
+        assert_eq!(unescape("a\\nb"), "a\nb");
+    }
+
+    #[test]
+    fn carriage_return_escape() {
+        assert_eq!(unescape("a\\rb"), "a\rb");
+    }
+
+    #[test]
+    fn tab_escape() {
+        assert_eq!(unescape("a\\tb"), "a\tb");
+    }
+
+    #[test]
+    fn quote_escape() {
+        assert_eq!(unescape("say \\\"hi\\\""), "say \"hi\"");
+    }
+
+    #[test]
+    fn backslash_escape() {
+        assert_eq!(unescape("path\\\\to"), "path\\to");
+    }
+
+    #[test]
+    fn unknown_escape_drops_the_backslash() {
+        // Current behavior: \z becomes z (backslash removed, escaped char passes through)
+        assert_eq!(unescape("\\z"), "z");
+        assert_eq!(unescape("\\q\\w\\e"), "qwe");
+    }
+
+    #[test]
+    fn consecutive_escapes() {
+        assert_eq!(unescape("\\n\\t\\r"), "\n\t\r");
+    }
+
+    #[test]
+    fn escape_at_start_and_end() {
+        assert_eq!(unescape("\\nhello\\n"), "\nhello\n");
+    }
+
+    #[test]
+    #[should_panic(expected = "Unclosesed escape")]
+    fn trailing_backslash_panics() {
+        // Documented behavior: a dangling '\\' with no following char panics.
+        // The lexer is responsible for rejecting this earlier.
+        unescape("abc\\");
+    }
+}

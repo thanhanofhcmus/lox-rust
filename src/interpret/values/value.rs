@@ -275,3 +275,167 @@ impl DisplayWriter for MapKey {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interpret::string_interner::StrId;
+    use crate::interpret::values::{number::Number, scalar::Scalar};
+    use pretty_assertions::assert_eq;
+
+    // ---------- constructors ----------
+
+    #[test]
+    fn make_nil_builds_scalar_nil() {
+        assert!(matches!(Value::make_nil(), Value::Scalar(Scalar::Nil)));
+    }
+
+    #[test]
+    fn make_bool_builds_scalar_bool() {
+        assert!(matches!(
+            Value::make_bool(true),
+            Value::Scalar(Scalar::Bool(true))
+        ));
+        assert!(matches!(
+            Value::make_bool(false),
+            Value::Scalar(Scalar::Bool(false))
+        ));
+    }
+
+    #[test]
+    fn make_number_builds_scalar_number() {
+        let v = Value::make_number(Number::Integer(42));
+        assert!(matches!(
+            v,
+            Value::Scalar(Scalar::Number(Number::Integer(42)))
+        ));
+    }
+
+    // ---------- get_bool ----------
+
+    #[test]
+    fn get_bool_on_bool_value_returns_some() {
+        assert_eq!(Value::make_bool(true).get_bool(), Some(true));
+        assert_eq!(Value::make_bool(false).get_bool(), Some(false));
+    }
+
+    #[test]
+    fn get_bool_on_non_bool_returns_none() {
+        assert_eq!(Value::make_nil().get_bool(), None);
+        assert_eq!(
+            Value::make_number(Number::Integer(0)).get_bool(),
+            None
+        );
+    }
+
+    // ---------- get_number ----------
+
+    #[test]
+    fn get_number_on_number_value_returns_some() {
+        let n = Number::Integer(7);
+        assert_eq!(Value::make_number(n).get_number(), Some(n));
+    }
+
+    #[test]
+    fn get_number_on_non_number_returns_none() {
+        assert_eq!(Value::make_bool(true).get_number(), None);
+        assert_eq!(Value::make_nil().get_number(), None);
+    }
+
+    // ---------- get_str_id ----------
+
+    #[test]
+    fn get_str_id_on_non_str_returns_none() {
+        assert_eq!(Value::make_nil().get_str_id(), None);
+        assert_eq!(Value::make_bool(true).get_str_id(), None);
+    }
+
+    // ---------- get_handle ----------
+
+    #[test]
+    fn get_handle_on_non_handle_returns_none() {
+        assert!(Value::make_nil().get_handle().is_none());
+        assert!(Value::make_bool(true).get_handle().is_none());
+        assert!(Value::make_number(Number::Integer(0))
+            .get_handle()
+            .is_none());
+        // Unit and BuiltinFunction are also non-handle
+        assert!(Value::Unit.get_handle().is_none());
+    }
+
+    // ---------- to_index ----------
+
+    #[test]
+    fn to_index_non_negative_integer_ok() {
+        assert_eq!(
+            Value::make_number(Number::Integer(5)).to_index().unwrap(),
+            5
+        );
+    }
+
+    #[test]
+    fn to_index_negative_integer_errors() {
+        assert!(Value::make_number(Number::Integer(-1)).to_index().is_err());
+    }
+
+    #[test]
+    fn to_index_non_integer_float_errors() {
+        assert!(Value::make_number(Number::Floating(2.5))
+            .to_index()
+            .is_err());
+    }
+
+    #[test]
+    fn to_index_integer_valued_float_ok() {
+        assert_eq!(
+            Value::make_number(Number::Floating(7.0)).to_index().unwrap(),
+            7
+        );
+    }
+
+    #[test]
+    fn to_index_non_number_value_errors() {
+        assert!(Value::make_bool(true).to_index().is_err());
+        assert!(Value::make_nil().to_index().is_err());
+    }
+
+    // ---------- MapKey::convert_from_value ----------
+
+    #[test]
+    fn mapkey_from_scalar_ok() {
+        let k = MapKey::convert_from_value(Value::make_bool(true)).unwrap();
+        assert!(matches!(k, MapKey::Scalar(Scalar::Bool(true))));
+    }
+
+    #[test]
+    fn mapkey_from_nil_ok() {
+        let k = MapKey::convert_from_value(Value::make_nil()).unwrap();
+        assert!(matches!(k, MapKey::Scalar(Scalar::Nil)));
+    }
+
+    #[test]
+    fn mapkey_from_str_ok() {
+        // We can't construct a StrId without going through an interner; use the
+        // default value that `mem::zeroed`-style construction would give via
+        // serde/Copy semantics is not safe. Instead, construct through our own
+        // interner — intentionally inlined to avoid a heap dependency.
+        use crate::interpret::string_interner::StringInterner;
+        let mut interner = StringInterner::new();
+        let id: StrId = interner.intern("hello");
+        let k = MapKey::convert_from_value(Value::Str(id)).unwrap();
+        assert_eq!(k.get_str_id(), Some(id));
+    }
+
+    #[test]
+    fn mapkey_from_builtin_function_errors() {
+        fn dummy_builtin(
+            _: &mut crate::interpret::Interpreter,
+            _: Vec<Value>,
+        ) -> Result<Value, Error> {
+            Ok(Value::Unit)
+        }
+        let v = Value::BuiltinFunction(dummy_builtin);
+        let err = MapKey::convert_from_value(v).unwrap_err();
+        assert!(matches!(err, Error::ValueCannotBeUsedAsKey(_)));
+    }
+}

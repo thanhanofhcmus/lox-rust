@@ -724,3 +724,460 @@ fn convert_chaining(
         follows: index_chain,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::{ParseError, lex};
+    use pretty_assertions::assert_eq;
+
+    fn parse_str(input: &str) -> UntypedAST {
+        let items = lex(input).expect("lex failed");
+        parse(input, &items, false).expect("parse failed")
+    }
+
+    fn parse_err(input: &str) -> ParseError {
+        let items = lex(input).expect("lex failed");
+        parse(input, &items, false).expect_err("expected parse error")
+    }
+
+    /// Extract the first top-level expression statement's inner clause.
+    /// Most tests use this to look at the shape of a single expression.
+    fn first_clause(ast: &UntypedAST) -> &ClauseCase<()> {
+        match &ast.global_stmts[0] {
+            Statement::Expr(Expression {
+                case: ExprCase::Clause(c),
+                ..
+            }) => &c.case,
+            other => panic!("expected first stmt to be an expression clause, got {other:?}"),
+        }
+    }
+
+    fn first_stmt(ast: &UntypedAST) -> &Statement<()> {
+        &ast.global_stmts[0]
+    }
+
+    // ---------- literals ----------
+
+    #[test]
+    fn parse_nil_literal() {
+        let ast = parse_str("nil;");
+        assert!(matches!(
+            first_clause(&ast),
+            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::Nil))
+        ));
+    }
+
+    #[test]
+    fn parse_bool_literals() {
+        let t = parse_str("true;");
+        assert!(matches!(
+            first_clause(&t),
+            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::Bool(true)))
+        ));
+        let f = parse_str("false;");
+        assert!(matches!(
+            first_clause(&f),
+            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::Bool(false)))
+        ));
+    }
+
+    #[test]
+    fn parse_integer_literal() {
+        let ast = parse_str("42;");
+        assert!(matches!(
+            first_clause(&ast),
+            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::Integer(42)))
+        ));
+    }
+
+    #[test]
+    fn parse_float_literal() {
+        let ast = parse_str("3.14;");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::Floating(v))) => {
+                assert!((v - 3.14).abs() < 1e-10);
+            }
+            other => panic!("expected Floating, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_string_literal() {
+        let ast = parse_str("\"hello\";");
+        assert!(matches!(
+            first_clause(&ast),
+            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::LazyStr { .. }))
+        ));
+    }
+
+    #[test]
+    fn parse_empty_array_literal() {
+        let ast = parse_str("[];");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::ArrayLiteral(ArrayLiteralNode::List(items))) => {
+                assert_eq!(items.len(), 0);
+            }
+            other => panic!("expected empty array List, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_array_literal_with_items() {
+        let ast = parse_str("[1, 2, 3];");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::ArrayLiteral(ArrayLiteralNode::List(items))) => {
+                assert_eq!(items.len(), 3);
+            }
+            other => panic!("expected array List, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_empty_map_literal() {
+        let ast = parse_str("%{};");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::MapLiteral(m)) => {
+                assert_eq!(m.nodes.len(), 0);
+            }
+            other => panic!("expected MapLiteral, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_map_literal_with_entries() {
+        let ast = parse_str("%{\"a\" => 1, \"b\" => 2};");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::MapLiteral(m)) => {
+                assert_eq!(m.nodes.len(), 2);
+            }
+            other => panic!("expected MapLiteral, got {other:?}"),
+        }
+    }
+
+    // ---------- identifiers ----------
+
+    #[test]
+    fn parse_simple_identifier() {
+        let ast = parse_str("foo;");
+        match first_clause(&ast) {
+            ClauseCase::Identifier(iden) => {
+                assert!(iden.is_simple());
+            }
+            other => panic!("expected Identifier, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_prefixed_identifier() {
+        let ast = parse_str("foo.bar.baz;");
+        match first_clause(&ast) {
+            ClauseCase::Identifier(iden) => {
+                assert!(!iden.is_simple());
+                assert_eq!(iden.prefixes.len(), 2);
+            }
+            other => panic!("expected Identifier, got {other:?}"),
+        }
+    }
+
+    // ---------- binary operators & precedence ----------
+
+    #[test]
+    fn parse_binary_plus() {
+        let ast = parse_str("1 + 2;");
+        assert!(matches!(first_clause(&ast), ClauseCase::Binary(_)));
+    }
+
+    #[test]
+    fn parse_multiplication_binds_tighter_than_addition() {
+        // 1 + 2 * 3 should parse as 1 + (2 * 3)
+        let ast = parse_str("1 + 2 * 3;");
+        match first_clause(&ast) {
+            ClauseCase::Binary(bin) => {
+                assert_eq!(bin.op, Token::Plus);
+                // rhs should itself be Binary(Star)
+                match &bin.rhs.case {
+                    ClauseCase::Binary(inner) => assert_eq!(inner.op, Token::Star),
+                    other => panic!("expected Binary(Star) rhs, got {other:?}"),
+                }
+            }
+            other => panic!("expected Binary at top, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_comparison_operator() {
+        let ast = parse_str("a < b;");
+        match first_clause(&ast) {
+            ClauseCase::Binary(bin) => assert_eq!(bin.op, Token::Less),
+            other => panic!("expected Binary, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_logical_and() {
+        let ast = parse_str("a and b;");
+        match first_clause(&ast) {
+            ClauseCase::Binary(bin) => assert_eq!(bin.op, Token::And),
+            other => panic!("expected Binary, got {other:?}"),
+        }
+    }
+
+    // ---------- unary operators ----------
+
+    #[test]
+    fn parse_unary_minus() {
+        let ast = parse_str("-x;");
+        assert!(matches!(
+            first_clause(&ast),
+            ClauseCase::Unary(_, Token::Minus)
+        ));
+    }
+
+    #[test]
+    fn parse_unary_not() {
+        let ast = parse_str("not true;");
+        assert!(matches!(
+            first_clause(&ast),
+            ClauseCase::Unary(_, Token::Not)
+        ));
+    }
+
+    #[test]
+    fn parse_nested_unary() {
+        let ast = parse_str("- -5;");
+        match first_clause(&ast) {
+            ClauseCase::Unary(inner, Token::Minus) => {
+                assert!(matches!(inner.case, ClauseCase::Unary(_, Token::Minus)));
+            }
+            other => panic!("expected nested Unary, got {other:?}"),
+        }
+    }
+
+    // ---------- declarations ----------
+
+    #[test]
+    fn parse_declaration_no_annotation() {
+        let ast = parse_str("var x = 5;");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode { type_, .. }) => {
+                assert_eq!(*type_, None);
+            }
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_declaration_with_number_annotation() {
+        let ast = parse_str("var x: number = 5;");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode { type_, .. }) => {
+                assert_eq!(*type_, Some(Type::Number));
+            }
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_declaration_with_any_annotation() {
+        let ast = parse_str("var x: any = 5;");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode { type_, .. }) => {
+                assert_eq!(*type_, Some(Type::Any));
+            }
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_declaration_with_bool_annotation() {
+        let ast = parse_str("var x: bool = true;");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode { type_, .. }) => {
+                assert_eq!(*type_, Some(Type::Bool));
+            }
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    // ---------- blocks ----------
+
+    #[test]
+    fn parse_block_with_last_expr() {
+        // Block-as-expression is a statement-level expression that takes no trailing `;`.
+        let ast = parse_str("{ 5 }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::Block(block),
+                ..
+            }) => {
+                assert_eq!(block.stmts.len(), 0);
+                assert!(block.last_expr.is_some());
+            }
+            other => panic!("expected Expr(Block), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_block_stmts_vs_last_expr() {
+        let ast = parse_str("{ var x = 1; x }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::Block(block),
+                ..
+            }) => {
+                assert_eq!(block.stmts.len(), 1);
+                assert!(block.last_expr.is_some());
+            }
+            other => panic!("expected Expr(Block), got {other:?}"),
+        }
+    }
+
+    // ---------- control flow ----------
+    // Note: block-based stmts (if/while/for/when) don't take a trailing `;` at the
+    // top level. Only Clause and Return expression statements do.
+
+    #[test]
+    fn parse_if_only() {
+        let ast = parse_str("if a { 1 }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::IfChain(chain),
+                ..
+            }) => {
+                assert_eq!(chain.else_if_nodes.len(), 0);
+                assert!(chain.else_stmts.is_none());
+            }
+            other => panic!("expected IfChain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_if_else_if_else() {
+        let ast = parse_str("if a { 1 } else if b { 2 } else { 3 }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::IfChain(chain),
+                ..
+            }) => {
+                assert_eq!(chain.else_if_nodes.len(), 1);
+                assert!(chain.else_stmts.is_some());
+            }
+            other => panic!("expected IfChain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_while() {
+        let ast = parse_str("while a { b }");
+        assert!(matches!(
+            first_stmt(&ast),
+            Statement::Expr(Expression {
+                case: ExprCase::While(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn parse_for_in() {
+        let ast = parse_str("for x in arr { x }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::For(node),
+                ..
+            }) => {
+                assert!(node.iden.is_simple());
+            }
+            other => panic!("expected For, got {other:?}"),
+        }
+    }
+
+    // ---------- reassignment ----------
+
+    #[test]
+    fn parse_reassign_simple() {
+        let ast = parse_str("x = 5;");
+        match first_stmt(&ast) {
+            Statement::ReassignIden(target, _) => {
+                assert!(target.base.is_simple());
+                assert_eq!(target.follows.len(), 0);
+            }
+            other => panic!("expected ReassignIden, got {other:?}"),
+        }
+    }
+
+    // ---------- function declarations ----------
+
+    #[test]
+    fn parse_fn_decl_with_block_body() {
+        let ast = parse_str("fn(x, y) { x };");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::FnDecl(fn_decl)) => {
+                assert_eq!(fn_decl.params.len(), 2);
+            }
+            other => panic!("expected FnDecl, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_fn_decl_with_expression_body() {
+        // Expression-body syntax: `fn(params) expr` — no `=` sign.
+        let ast = parse_str("fn(x) x + 1;");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::FnDecl(fn_decl)) => {
+                assert_eq!(fn_decl.params.len(), 1);
+                assert_eq!(fn_decl.body.stmts.len(), 0);
+                assert!(fn_decl.body.last_expr.is_some());
+            }
+            other => panic!("expected FnDecl, got {other:?}"),
+        }
+    }
+
+    // ---------- function call & subscription ----------
+
+    #[test]
+    fn parse_function_call() {
+        let ast = parse_str("f(1, 2);");
+        match first_clause(&ast) {
+            ClauseCase::FnCall(call) => {
+                assert_eq!(call.args.len(), 2);
+            }
+            other => panic!("expected FnCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_subscription() {
+        let ast = parse_str("arr[0];");
+        assert!(matches!(first_clause(&ast), ClauseCase::Subscription(_)));
+    }
+
+    // ---------- errors ----------
+
+    #[test]
+    fn error_on_unfinished_input() {
+        let err = parse_err("var x = ");
+        // Could be Eof or UnexpectedToken depending on where the parser gets stuck;
+        // we just assert that parsing fails.
+        let _ = err;
+    }
+
+    #[test]
+    fn error_on_import_not_at_top() {
+        let err = parse_err("var x = 5; import \"foo\" as foo;");
+        assert!(
+            matches!(err, ParseError::ImportNotAtTheTop(_)),
+            "expected ImportNotAtTheTop, got {err:?}"
+        );
+    }
+
+    // ---------- imports (happy path) ----------
+
+    #[test]
+    fn parse_import_at_top() {
+        let ast = parse_str("import \"foo\" as foo;");
+        assert_eq!(ast.imports.len(), 1);
+        assert_eq!(ast.global_stmts.len(), 0);
+    }
+}
