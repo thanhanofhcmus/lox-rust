@@ -468,14 +468,9 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
 }
 
 fn parse_identifier_node(state: &mut Context) -> Result<IdentifierNode, ParseError> {
-    let lex_items = parse_repeated_with_separator(
-        state,
-        Token::Dot,
-        |s| s.consume_token(Token::Identifier),
-        |t| t != Token::Identifier,
-    )?;
-    Ok(IdentifierNode::new_from_vec(
-        lex_items.into_iter().map(|li| li.span).collect(),
+    let li_item = state.consume_token(Token::Identifier)?;
+    Ok(IdentifierNode::new_from_name(
+        li_item.span,
         state.get_input(),
     ))
 }
@@ -737,7 +732,7 @@ fn convert_chaining(
     index_chain.reverse();
 
     let base = match first.case {
-        ClauseCase::Identifier(node) => node.clone(),
+        ClauseCase::Identifier(node) => node,
         _ => return Err(ParseError::ReassignRootIsNotAnIdentifier),
     };
 
@@ -877,31 +872,6 @@ mod tests {
                 assert_eq!(m.nodes.len(), 2);
             }
             other => panic!("expected MapLiteral, got {other:?}"),
-        }
-    }
-
-    // ---------- identifiers ----------
-
-    #[test]
-    fn parse_simple_identifier() {
-        let ast = parse_str("foo;");
-        match first_clause(&ast) {
-            ClauseCase::Identifier(iden) => {
-                assert!(iden.is_simple());
-            }
-            other => panic!("expected Identifier, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parse_prefixed_identifier() {
-        let ast = parse_str("foo.bar.baz;");
-        match first_clause(&ast) {
-            ClauseCase::Identifier(iden) => {
-                assert!(!iden.is_simple());
-                assert_eq!(iden.prefixes.len(), 2);
-            }
-            other => panic!("expected Identifier, got {other:?}"),
         }
     }
 
@@ -1116,20 +1086,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn parse_for_in() {
-        let ast = parse_str("for x in arr { x }");
-        match first_stmt(&ast) {
-            Statement::Expr(Expression {
-                case: ExprCase::For(node),
-                ..
-            }) => {
-                assert!(node.iden.is_simple());
-            }
-            other => panic!("expected For, got {other:?}"),
-        }
-    }
-
     // ---------- reassignment ----------
 
     #[test]
@@ -1137,7 +1093,6 @@ mod tests {
         let ast = parse_str("x = 5;");
         match first_stmt(&ast) {
             Statement::ReassignIden(target, _) => {
-                assert!(target.base.is_simple());
                 assert_eq!(target.follows.len(), 0);
             }
             other => panic!("expected ReassignIden, got {other:?}"),

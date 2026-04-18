@@ -248,21 +248,7 @@ impl Environment {
             return Some((*value, true));
         }
 
-        // No prefixes mean this code is trying to reference values from the transparent scope only
-        if node.prefix_ids.is_empty() {
-            return None;
-        }
-
-        // For now, we expect a variable from another module is in the form
-        // module_name.variable_name (1 dot, 2 parts)
-        // TODO: Fix this when modules are better spec-ed
-        let module_id = node.prefix_ids[0];
-        let module = self.modules.get(&module_id)?;
-
-        // This code is allowing code to un-imported module
-        // for example print(a.b) -> nil even though we have not import the module `a` yet
-        // TODO: Make this an error when modules are better spec-ed
-        module.variables.get(&id).map(|v| (*v, true))
+        None
     }
 
     pub fn insert_variable_current_scope(

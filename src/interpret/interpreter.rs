@@ -9,7 +9,6 @@ use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
 use crate::types::TypeId;
-use std::panic;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -86,18 +85,13 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     }
 
     fn interpret_import_stmt(&mut self, node: &ImportNode) -> Result<(), Error> {
-        if !node.iden.is_simple() {
-            // TODO: move this to the parser part
-            panic!("import Identifier must be simple");
-        }
-
         // check if we import this yet
         let module_id = node.iden.get_id();
         if self.environment.contains_module(module_id) {
             return Ok(());
         }
 
-        let name = node.iden.name.string_from_source(self.input);
+        let name = node.iden.span.string_from_source(self.input);
         let path = node.path.string_from_source(self.input);
 
         // read the file

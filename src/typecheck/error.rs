@@ -1,8 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    id::Id,
-    span::Span,
+    ast::IdentifierNode,
     token::Token,
     types::{TypeId, TypeInterner},
 };
@@ -10,9 +9,9 @@ use crate::{
 #[derive(Debug, Error)]
 pub enum Error {
     #[error(
-        "Type mismatch in declaration of '{0:?}': assigned value does not match specified type."
-    )]
-    ExplicitTypeMismatch(Id, Span, TypeId, TypeId),
+        "Type mismatch in declaration of '{:?}': assigned value does not match specified type."
+        , _0.id)]
+    ExplicitTypeMismatch(IdentifierNode, TypeId, TypeId),
 
     #[error("Function return type mismatch.")]
     ExplicitFnReturnTypeMismatch(TypeId, TypeId),
@@ -38,11 +37,11 @@ pub enum Error {
     #[error("Expected type `{0:?}`, but found `{1:?}`.")]
     ExpectedType(TypeId, TypeId),
 
-    #[error("Undefined name: '{1:?}' is not defined in this scope.")]
-    UndefinedIdentifier(Span, Id),
+    #[error("Undefined name: '{:?}' is not defined in this scope.", _0.id)]
+    UndefinedIdentifier(IdentifierNode),
 
-    #[error("Name collision: '{1:?}' is already declared in this scope.")]
-    DuplicateDeclaration(Span, Id),
+    #[error("Name collision: '{:?}' is already declared in this scope.", _0.id)]
+    DuplicateDeclaration(IdentifierNode),
 
     #[error("Internal: Type with id {0:?} should have been declared but not found")]
     TypeIsNotDeclared(TypeId),
@@ -78,10 +77,10 @@ impl Error {
     /// Internal helper to turn TypeIds into names like "Array<Number>"
     fn resolve_description(&self, interner: &TypeInterner) -> String {
         match self {
-            Self::ExplicitTypeMismatch(id, _, declared, actual) => {
+            Self::ExplicitTypeMismatch(node, declared, actual) => {
                 format!(
                     "The value assigned to '{:?}' is declared as type `{}` but got assigned value of type `{}`.",
-                    id,
+                    node.id,
                     interner.generate_readable_name(*declared),
                     interner.generate_readable_name(*actual)
                 )
@@ -153,12 +152,15 @@ impl Error {
                 interner.generate_readable_name(*actual)
             ),
 
-            Self::UndefinedIdentifier(_, id) => {
-                format!("The identifier '{id:?}' is not defined in the current scope.")
+            Self::UndefinedIdentifier(node) => {
+                format!(
+                    "The identifier '{:?}' is not defined in the current scope.",
+                    node.id
+                )
             }
 
-            Self::DuplicateDeclaration(_, id) => {
-                format!("The identifier '{id:?}' has already been declared.")
+            Self::DuplicateDeclaration(node) => {
+                format!("The identifier '{:?}' has already been declared.", node.id)
             }
 
             Self::TypeIsNotDeclared(_) => self.to_string(),
@@ -167,9 +169,9 @@ impl Error {
 
     fn get_source_start(&self, input: &str) -> (usize, usize) {
         match self {
-            Self::ExplicitTypeMismatch(_, s, _, _) => s.to_start_row_col(input),
-            Self::UndefinedIdentifier(s, _) => s.to_start_row_col(input),
-            Self::DuplicateDeclaration(s, _) => s.to_start_row_col(input),
+            Self::ExplicitTypeMismatch(node, _, _) => node.span.to_start_row_col(input),
+            Self::UndefinedIdentifier(node) => node.span.to_start_row_col(input),
+            Self::DuplicateDeclaration(node) => node.span.to_start_row_col(input),
             // Default to start of file if the variant doesn't carry a specific span
             _ => (1, 1),
         }

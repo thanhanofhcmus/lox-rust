@@ -27,6 +27,8 @@ fn main() -> DynResult {
     let input = args.get(1).expect("must have one argument");
     debug!("{:?}", input);
 
+    // TODO: add flags to ignore typecheck
+
     match input.as_str() {
         "-i" => repl(args),
         "-p" => promt(args),
