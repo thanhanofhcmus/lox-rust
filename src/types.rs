@@ -85,4 +85,31 @@ impl TypeInterner {
     pub fn get(&self, type_id: TypeId) -> Option<&Type> {
         self.id_to_type.get(&type_id)
     }
+
+    pub fn generate_readable_name(&self, id: TypeId) -> String {
+        match self.get(id) {
+            Some(Type::Any) => "any".into(),
+            Some(Type::Bool) => "bool".into(),
+            Some(Type::Number) => "number".into(),
+            Some(Type::Str) => "string".into(),
+            Some(Type::Unit) => "unit".into(),
+            Some(Type::Nil) => "nil".into(),
+            Some(Type::Array { elem }) => format!("[{}]", self.generate_readable_name(*elem)),
+            Some(Type::Map { value }) => {
+                format!("%{{string, {}}}", self.generate_readable_name(*value))
+            }
+            Some(Type::Function { params, return_ }) => {
+                let p: Vec<String> = params
+                    .iter()
+                    .map(|&i| self.generate_readable_name(i))
+                    .collect();
+                format!(
+                    "fn({}) -> {}",
+                    p.join(", "),
+                    self.generate_readable_name(*return_)
+                )
+            }
+            None => format!("Unknown(#{})", id.0),
+        }
+    }
 }

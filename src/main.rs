@@ -45,7 +45,7 @@ fn promt(args: Vec<String>) -> DynResult {
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut interpreter_env = interpret::Environment::new(rc);
 
-    run_stmt(line, &mut typecheck_env, &mut interpreter_env, false)
+    run_stmt(line, None, &mut typecheck_env, &mut interpreter_env, false)
 }
 
 fn repl(args: Vec<String>) -> DynResult {
@@ -64,6 +64,7 @@ fn repl(args: Vec<String>) -> DynResult {
         rl.add_history_entry(line)?;
         _ = run_stmt(
             line.trim_end(),
+            None,
             &mut typecheck_env,
             &mut interpreter_env,
             true,
@@ -79,6 +80,7 @@ fn repl(args: Vec<String>) -> DynResult {
                 rl.add_history_entry(&line)?;
                 _ = run_stmt(
                     line.trim_end(),
+                    None,
                     &mut typecheck_env,
                     &mut interpreter_env,
                     true,
@@ -101,16 +103,29 @@ fn read_from_file(file_path: &str) -> DynResult {
     let mut typecheck_env = typecheck::Environment::new();
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut itp = interpret::Environment::new(rc);
-    run_stmt(&contents, &mut typecheck_env, &mut itp, false)
+    run_stmt(
+        &contents,
+        Some(file_path),
+        &mut typecheck_env,
+        &mut itp,
+        false,
+    )
 }
 
-fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST<()>, Box<dyn std::error::Error>> {
+fn lex_and_parse(
+    input: &str,
+    source_name: Option<&str>,
+    is_in_repl: bool,
+) -> Result<AST<()>, Box<dyn std::error::Error>> {
     trace!("Lexing start");
 
     let tokens = match parse::lex(input) {
         Ok(list) => list,
         Err(err) => {
-            error!("Lex error: {}", err);
+            error!(
+                "Lex error:\n{}",
+                err.generate_user_facing_error(source_name, input)
+            );
             return Err(Box::new(err));
         }
     };
@@ -131,7 +146,10 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST<()>, Box<dyn std::
     let ast = match parse::parse(input, &tokens, is_in_repl) {
         Ok(list) => list,
         Err(err) => {
-            error!("Parse error {:?}: {}", err.get_source_start(input), err);
+            error!(
+                "Parse error:\n{}",
+                err.generate_user_facing_error(source_name, input)
+            );
             return Err(Box::new(err));
         }
     };
@@ -145,18 +163,24 @@ fn lex_and_parse(input: &str, is_in_repl: bool) -> Result<AST<()>, Box<dyn std::
 
 fn run_stmt(
     input: &str,
+    source_name: Option<&str>,
     typecheck_env: &mut typecheck::Environment,
     interpret_env: &mut interpret::Environment,
     is_in_repl: bool,
 ) -> DynResult {
-    let ast = lex_and_parse(input, is_in_repl)?;
+    let ast = lex_and_parse(input, source_name, is_in_repl)?;
 
     debug!("type checking start");
 
-    let ast = match typecheck::TypeChecker::new(typecheck_env).convert(ast) {
+    let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
+
+    let ast = match typechecker.convert(ast) {
         Ok(v) => v,
         Err(err) => {
-            error!("Typecheck error: {}", err);
+            error!(
+                "Typecheck error:\n{}",
+                err.generate_user_facing_error(source_name, input, &typechecker.type_interner)
+            );
             return Err(Box::new(err));
         }
     };

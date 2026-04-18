@@ -9,7 +9,7 @@ use crate::{
 
 pub struct TypeChecker<'cl> {
     pub(super) environment: &'cl mut Environment,
-    type_interner: TypeInterner,
+    pub type_interner: TypeInterner,
 }
 
 impl<'cl> TypeChecker<'cl> {
@@ -60,10 +60,12 @@ impl<'cl> TypeChecker<'cl> {
                 match &type_ {
                     None | Some(TypeId::ANY) => {}
                     Some(type_annot) if *type_annot == expr.extra => {}
-                    Some(_) => {
-                        return Err(Error::ExplitcitTypeDeclartionMismatchActualType(
+                    Some(type_annot) => {
+                        return Err(Error::ExplicitTypeMismatch(
                             iden.name_id,
                             iden.name,
+                            *type_annot,
+                            expr.extra,
                         ));
                     }
                 }
@@ -126,6 +128,11 @@ impl<'cl> TypeChecker<'cl> {
                 // TODO
                 (TypeId::ANY, ExprCase::IfChain(if_chain))
             }
+            ExprCase::When(ut_when_node) => {
+                let when_node = self.convert_when(ut_when_node)?;
+                let type_id = unify_types(when_node.arms.iter().map(|c| &c.expr.extra));
+                (type_id, ExprCase::When(when_node))
+            }
             ExprCase::Return(ut_expr) => {
                 let expr = ut_expr
                     .map(|e| self.convert_expr(*e).map(Box::new))
@@ -140,10 +147,6 @@ impl<'cl> TypeChecker<'cl> {
             ExprCase::For(ut_for_node) => {
                 (TypeId::UNIT, ExprCase::For(self.convert_for(ut_for_node)?))
             }
-            ExprCase::When(ut_when_node) => (
-                TypeId::UNIT,
-                ExprCase::When(self.convert_when(ut_when_node)?),
-            ),
         };
 
         Ok(Expression {
@@ -439,9 +442,7 @@ impl<'cl> TypeChecker<'cl> {
                 // same type
                 Some(type_annot) if *type_annot == body.extra => *type_annot,
                 Some(type_id) => {
-                    return Err(Error::ExplicitFnReturnTypeDeclMismatch(
-                        body.extra, *type_id,
-                    ));
+                    return Err(Error::ExplicitFnReturnTypeMismatch(body.extra, *type_id));
                 }
             };
 
@@ -858,10 +859,7 @@ mod tests {
     #[test]
     fn declare_with_mismatched_annotation_errors() {
         let err = typecheck_str("var x: number = \"hello\";").unwrap_err();
-        assert!(matches!(
-            err,
-            Error::ExplitcitTypeDeclartionMismatchActualType(_, _)
-        ));
+        assert!(matches!(err, Error::ExplicitTypeMismatch(..)));
     }
 
     #[test]

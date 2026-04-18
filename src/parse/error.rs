@@ -4,31 +4,33 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("Unexpected character in position {0}")]
+    #[error("Invalid character encountered: '{0}'")]
     UnexpectedCharacter(Span),
 
-    #[error("Import keyword found not at the top of the unit")]
+    #[error("Invalid placement: 'import' statements must appear at the top of the file.")]
     ImportNotAtTheTop(Span),
 
-    #[error("Unexpected token `{0}` at position {1} {}", diagnostic_expect_token(.2))]
-    UnexpectedToken(Token, Span, Option<Token>),
+    #[error("Unexpected token `{0}` found. {}", format_expected(.2))]
+    UnexpectedToken(Token, Span, Option<Token>), // Changed Option to String for better custom messaging
 
-    #[error("String starts at {0} is not closed")]
+    #[error("Syntax error: String literal started at position {0} remains unclosed.")]
     UnclosedString(usize),
 
-    #[error("Unable to parse to number at position {0}")]
+    #[error("Numeric conversion failed: The sequence at {0} is not a valid number.")]
     ParseToNumber(Span),
 
-    #[error("Unexpected `return` keyword outside of function")]
+    #[error("Scope error: 'return' is only permitted within the body of a function.")]
     UnexpectedReturn(Span),
 
-    #[error("Unable to parse the next value because of EOF{}", diagnostic_expect_token(.0))]
+    #[error("Unexpected End of File (EOF): {}", format_expected(.0))]
     Eof(Option<Token>),
 
-    #[error("Parse have leftover tokens start with {0} at {1}")]
+    #[error(
+        "Process halted: The parser reached the end of the logic but found trailing tokens starting with `{0}`."
+    )]
     Unfinished(Token, Span),
 
-    #[error("Reassign root is not an identifier")]
+    #[error("Assignment error: The left-hand side of a reassignment must be a valid identifier.")]
     ReassignRootIsNotAnIdentifier,
 }
 
@@ -47,11 +49,44 @@ impl ParseError {
             ReassignRootIsNotAnIdentifier => (0, 0),
         }
     }
+
+    pub fn generate_user_facing_error(&self, source_name: Option<&str>, input: &str) -> String {
+        let (line, col) = self.get_source_start(input);
+
+        // Locate the line in source
+        let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
+
+        // Format the visual components
+        let source_name = source_name.map(|v| v.to_string()).unwrap_or(String::new());
+        let line_label = line.to_string();
+        let gutter_padding = " ".repeat(line_label.len());
+        let pointer_indent = " ".repeat(col.saturating_sub(1));
+
+        // Construct the full diagnostic
+        let mut output = String::new();
+
+        // Header line
+        output.push_str(&format!("Error: {}\n", self));
+
+        // File location line (clickable in most IDEs)
+        output.push_str(&format!("  --> {}:{}:{}\n", source_name, line, col));
+
+        // Code snippet visualization
+        output.push_str(&format!("{} |\n", gutter_padding));
+        output.push_str(&format!("{} | {}\n", line_label, source_line));
+        output.push_str(&format!(
+            "{} | {}{}\n",
+            gutter_padding, pointer_indent, "^--- here"
+        ));
+
+        output
+    }
 }
 
-fn diagnostic_expect_token(o: &Option<Token>) -> String {
-    match o {
-        None => String::new(),
-        Some(t) => format!(", expected token `{:?}`", t),
+/// Helper for constructing expectation messages without first-person pronouns
+fn format_expected(expected: &Option<Token>) -> String {
+    match expected {
+        Some(t) => format!("The parser expected the token `{:?}` in this position.", t),
+        None => "Verify the syntax conforms to the language grammar.".to_string(),
     }
 }
