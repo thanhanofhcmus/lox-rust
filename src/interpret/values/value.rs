@@ -4,7 +4,7 @@ use crate::{
     ast::{BlockNode, FnParamNode},
     interpret::{
         Environment, Interpreter,
-        error::Error,
+        error::InterpretError,
         heap::GcHandle,
         string_interner::StrId,
         values::{display_writer::DisplayWriter, number::Number, scalar::Scalar},
@@ -12,7 +12,7 @@ use crate::{
     types::TypeId,
 };
 
-pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
+pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, InterpretError>;
 
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -99,7 +99,7 @@ impl Value {
         }
     }
 
-    pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, Error> {
+    pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, InterpretError> {
         use Value::*;
         match (self, other) {
             // TODO: Unit should not be comparable, make this a "friendly" error
@@ -152,28 +152,36 @@ impl Value {
         }
     }
 
-    pub fn get_by_subscription(&self, indexee: Value, env: &Environment) -> Result<Value, Error> {
+    pub fn get_by_subscription(
+        &self,
+        indexee: Value,
+        env: &Environment,
+    ) -> Result<Value, InterpretError> {
         // all the 2 types array and map that have the index method also have to get the value through a handle
         let Some(handle) = self.get_handle() else {
-            return Err(Error::ValueUnIndexable(*self));
+            return Err(InterpretError::ValueUnIndexable(*self));
         };
         env.heap
             .get_object(handle)
-            .ok_or(Error::GcObjectNotFound(handle))?
+            .ok_or(InterpretError::GcObjectNotFound(handle))?
             .get_by_subscription(indexee)
     }
 
-    pub fn to_index(self) -> Result<usize, Error> {
+    pub fn to_index(self) -> Result<usize, InterpretError> {
         match self.get_number() {
             Some(v) => v.try_into(),
-            None => Err(Error::ValueMustBeUsize(self)),
+            None => Err(InterpretError::ValueMustBeUsize(self)),
         }
     }
 }
 
 impl DisplayWriter for Value {
-    fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
-        let convert = |e| Error::WriteValueFailed(self, e);
+    fn write_display(
+        self,
+        env: &Environment,
+        w: &mut dyn std::io::Write,
+    ) -> Result<(), InterpretError> {
+        let convert = |e| InterpretError::WriteValueFailed(self, e);
 
         match self {
             Value::Scalar(v) => v.write_display(env, w),
@@ -248,11 +256,11 @@ pub enum MapKey {
 }
 
 impl MapKey {
-    pub fn convert_from_value(value: Value) -> Result<Self, Error> {
+    pub fn convert_from_value(value: Value) -> Result<Self, InterpretError> {
         match value {
             Value::Scalar(v) => Ok(Self::Scalar(v)),
             Value::Str(id) => Ok(MapKey::Str(id)),
-            _ => Err(Error::ValueCannotBeUsedAsKey(value)),
+            _ => Err(InterpretError::ValueCannotBeUsedAsKey(value)),
         }
     }
 
@@ -265,13 +273,17 @@ impl MapKey {
 }
 
 impl DisplayWriter for MapKey {
-    fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error> {
+    fn write_display(
+        self,
+        env: &Environment,
+        w: &mut dyn std::io::Write,
+    ) -> Result<(), InterpretError> {
         match self {
             MapKey::Scalar(v) => v.write_display(env, w),
             MapKey::Str(str_id) => {
                 let s = env.get_string(str_id)?;
                 w.write_all(s.as_bytes())
-                    .map_err(|e| Error::WriteValueFailed(Value::Str(str_id), e))
+                    .map_err(|e| InterpretError::WriteValueFailed(Value::Str(str_id), e))
             }
         }
     }
@@ -435,11 +447,11 @@ mod tests {
         fn dummy_builtin(
             _: &mut crate::interpret::Interpreter,
             _: Vec<Value>,
-        ) -> Result<Value, Error> {
+        ) -> Result<Value, InterpretError> {
             Ok(Value::Unit)
         }
         let v = Value::BuiltinFunction(dummy_builtin);
         let err = MapKey::convert_from_value(v).unwrap_err();
-        assert!(matches!(err, Error::ValueCannotBeUsedAsKey(_)));
+        assert!(matches!(err, InterpretError::ValueCannotBeUsedAsKey(_)));
     }
 }

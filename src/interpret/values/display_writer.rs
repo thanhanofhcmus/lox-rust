@@ -1,5 +1,9 @@
-use crate::interpret::{error::Error, Environment};
+use crate::interpret::{Environment, error::InterpretError};
 
 pub trait DisplayWriter {
-    fn write_display(self, env: &Environment, w: &mut dyn std::io::Write) -> Result<(), Error>;
+    fn write_display(
+        self,
+        env: &Environment,
+        w: &mut dyn std::io::Write,
+    ) -> Result<(), InterpretError>;
 }

@@ -14,7 +14,7 @@ use crate::{
 // TODO: create a special error reporting function that print to the actual string/array/map value
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum InterpretError {
     #[error("Variable of name `{0}` has been declared before")]
     ReDeclareVariable(String),
 
@@ -73,10 +73,10 @@ pub enum Error {
     ParseModuleFailed(String, String, ParseError),
 
     #[error("Type-checking module `{0}` in path `{1}` failed with error: {2}")]
-    TypeCheckModuleFailed(String, String, typecheck::Error),
+    TypeCheckModuleFailed(String, String, typecheck::TypecheckError),
 
     #[error("Interpreting module `{0}` in path `{1}` failed with error: {2}")]
-    InterpretModuleFailed(String, String, Box<Error>),
+    InterpretModuleFailed(String, String, Box<InterpretError>),
 
     #[error("Value of type `{0:?}` is not serializable")]
     TypeIsNotSerializable(Value),

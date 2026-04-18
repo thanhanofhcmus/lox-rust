@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::interpret::{
-    error::Error,
+    error::InterpretError,
     values::{DisplayWriter, Value, number::Number},
 };
 
@@ -24,8 +24,8 @@ impl DisplayWriter for Scalar {
         self,
         env: &crate::interpret::Environment,
         w: &mut dyn std::io::Write,
-    ) -> Result<(), Error> {
-        let convert = |e| Error::WriteValueFailed(Value::Scalar(self), e);
+    ) -> Result<(), InterpretError> {
+        let convert = |e| InterpretError::WriteValueFailed(Value::Scalar(self), e);
         match self {
             Self::Nil => write!(w, "nil").map_err(convert),
             Self::Number(v) => v.write_display(env, w),

@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::interpret::{
     Environment,
-    error::Error,
+    error::InterpretError,
     values::{
         scalar::Scalar,
         value::{MapKey, Value},
@@ -19,7 +19,7 @@ pub enum SerialMapKey {
 }
 
 impl SerialMapKey {
-    pub fn convert_from_map_key(value: &MapKey, env: &Environment) -> Result<Self, Error> {
+    pub fn convert_from_map_key(value: &MapKey, env: &Environment) -> Result<Self, InterpretError> {
         let v = match value {
             MapKey::Scalar(v) => Self::Scalar(*v),
             MapKey::Str(str_id) => {
@@ -30,7 +30,7 @@ impl SerialMapKey {
         Ok(v)
     }
 
-    pub fn hydrate_map_key(self, env: &mut Environment) -> Result<MapKey, Error> {
+    pub fn hydrate_map_key(self, env: &mut Environment) -> Result<MapKey, InterpretError> {
         let v = match self {
             Self::Scalar(v) => MapKey::Scalar(v),
             Self::Str(v) => MapKey::Str(env.insert_string_id(v)),
@@ -53,7 +53,7 @@ pub enum SerialValue {
 }
 
 impl SerialValue {
-    pub fn convert_from_value(value: Value, env: &Environment) -> Result<Self, Error> {
+    pub fn convert_from_value(value: Value, env: &Environment) -> Result<Self, InterpretError> {
         let v = match value {
             Value::Scalar(v) => Self::Scalar(v),
 
@@ -83,13 +83,13 @@ impl SerialValue {
             }
 
             Value::Unit | Value::Function(_) | Value::BuiltinFunction(_) => {
-                return Err(Error::TypeIsNotSerializable(value));
+                return Err(InterpretError::TypeIsNotSerializable(value));
             }
         };
         Ok(v)
     }
 
-    pub fn hydrate(self, env: &mut Environment) -> Result<Value, Error> {
+    pub fn hydrate(self, env: &mut Environment) -> Result<Value, InterpretError> {
         let v = match self {
             Self::Scalar(v) => Value::Scalar(v),
 

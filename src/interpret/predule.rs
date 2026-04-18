@@ -5,7 +5,7 @@ use crate::{
     id::Id,
     interpret::{
         debug_string::DebugString,
-        error::Error,
+        error::InterpretError,
         heap::{GcHandle, GcObject},
         interpreter,
         values::{BuiltinFn, MapKey, Number, SerialValue, Value},
@@ -56,12 +56,18 @@ pub fn create() -> HashMap<Id, Value> {
     preludes
 }
 
-fn dbg_state_fn(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+fn dbg_state_fn(
+    itp: &mut interpreter::Interpreter,
+    _: Vec<Value>,
+) -> Result<Value, InterpretError> {
     eprintln!("{}", itp.environment.debug_state_string());
     Ok(Value::make_nil())
 }
 
-fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn dbg_print_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     let mut print_writer = itp.environment.get_print_writer();
 
     // TODO: handle write! error
@@ -84,24 +90,33 @@ fn dbg_print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
     Ok(Value::make_nil())
 }
 
-fn dbg_heap_stats(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+fn dbg_heap_stats(
+    itp: &mut interpreter::Interpreter,
+    _: Vec<Value>,
+) -> Result<Value, InterpretError> {
     eprintln!("{}", itp.environment.heap.get_stats().debug_string());
     Ok(Value::make_nil())
 }
 
-fn dbg_gc_mark(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+fn dbg_gc_mark(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, InterpretError> {
     itp.environment
         .heap
         .mark(itp.environment.collect_all_variables());
     Ok(Value::make_nil())
 }
 
-fn dbg_gc_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+fn dbg_gc_sweep(
+    itp: &mut interpreter::Interpreter,
+    _: Vec<Value>,
+) -> Result<Value, InterpretError> {
     itp.environment.heap.sweep();
     Ok(Value::make_nil())
 }
 
-fn dbg_gc_mark_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Result<Value, Error> {
+fn dbg_gc_mark_sweep(
+    itp: &mut interpreter::Interpreter,
+    _: Vec<Value>,
+) -> Result<Value, InterpretError> {
     itp.environment
         .heap
         .mark(itp.environment.collect_all_variables());
@@ -109,7 +124,7 @@ fn dbg_gc_mark_sweep(itp: &mut interpreter::Interpreter, _: Vec<Value>) -> Resul
     Ok(Value::make_nil())
 }
 
-fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, InterpretError> {
     let mut print_writer = itp.environment.get_print_writer();
 
     // TODO: handle write! error
@@ -126,7 +141,10 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
     Ok(Value::make_nil())
 }
 
-fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn assert_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(assert_fn, &args, 2)?;
 
     let condition = args[0];
@@ -150,20 +168,26 @@ fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Val
     }
 }
 
-fn from_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn from_json_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(from_json_fn, &args, 1)?;
     let value = args[0];
     let str_id = get_str_arg(from_json_fn, value)?;
     let s = itp.environment.get_string(str_id)?;
     let serial_value = serde_json::from_str::<SerialValue>(s)
-        .map_err(|e| Error::DeserializeFailed(value, e.to_string()))?;
+        .map_err(|e| InterpretError::DeserializeFailed(value, e.to_string()))?;
 
     let value = serial_value.hydrate(itp.environment)?;
 
     Ok(value)
 }
 
-fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn to_json_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_min_args(to_json_fn, &args, 1)?;
     let value = args[0];
 
@@ -183,20 +207,26 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
     };
     match result {
         Ok(v) => Ok(itp.environment.insert_string_variable(v)),
-        Err(err) => Err(Error::SerializeFailed(value, err.to_string())),
+        Err(err) => Err(InterpretError::SerializeFailed(value, err.to_string())),
     }
 }
 
 // Array functions
 
-fn array_length_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn array_length_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(array_length_fn, &args, 1)?;
     let handle = get_array_arg(array_length_fn, args[0])?;
     let len = itp.environment.get_array(handle)?.len();
     Ok(Value::make_number(Number::Integer(len as i64)))
 }
 
-fn array_push_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn array_push_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_min_args(array_push_fn, &args, 1)?;
     let handle = get_array_arg(array_push_fn, args[0])?;
     // increment ref counts before taking the mutable heap reference
@@ -204,7 +234,7 @@ fn array_push_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result
         itp.environment.heap.shallow_copy_value(*v);
     }
     let Some(GcObject::Array(arr)) = itp.environment.heap.get_object_mut(handle) else {
-        return Err(Error::GcObjectNotFound(handle));
+        return Err(InterpretError::GcObjectNotFound(handle));
     };
     for v in args.into_iter().skip(1) {
         arr.push(v);
@@ -212,31 +242,37 @@ fn array_push_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result
     Ok(Value::Unit)
 }
 
-fn array_pop_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn array_pop_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(array_pop_fn, &args, 1)?;
     let handle = get_array_arg(array_pop_fn, args[0])?;
     let Some(GcObject::Array(arr)) = itp.environment.heap.get_object_mut(handle) else {
-        return Err(Error::GcObjectNotFound(handle));
+        return Err(InterpretError::GcObjectNotFound(handle));
     };
     // ownership of the popped value transfers to the caller; ref count stays at 1
     Ok(arr.pop().unwrap_or(Value::make_nil()))
 }
 
-fn array_insert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn array_insert_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_min_args(array_insert_fn, &args, 3)?;
     let handle = get_array_arg(array_insert_fn, args[0])?;
     let idx = args[1].to_index()?;
     // check bounds before the mutable borrow
     let len = itp.environment.get_array(handle)?.len();
     if idx > len {
-        return Err(Error::ArrayOutOfBound(len, idx));
+        return Err(InterpretError::ArrayOutOfBound(len, idx));
     }
     // increment ref counts before taking the mutable heap reference
     for v in args.iter().skip(2) {
         itp.environment.heap.shallow_copy_value(*v);
     }
     let Some(GcObject::Array(arr)) = itp.environment.heap.get_object_mut(handle) else {
-        return Err(Error::GcObjectNotFound(handle));
+        return Err(InterpretError::GcObjectNotFound(handle));
     };
     for (i, v) in args.into_iter().skip(2).enumerate() {
         arr.insert(idx + i, v);
@@ -246,14 +282,20 @@ fn array_insert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Resu
 
 // Map functions
 
-fn map_length_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn map_length_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(map_length_fn, &args, 1)?;
     let handle = get_map_arg(map_length_fn, args[0])?;
     let len = itp.environment.get_map(handle)?.len();
     Ok(Value::make_number(Number::Integer(len as i64)))
 }
 
-fn map_keys_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn map_keys_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(map_keys_fn, &args, 1)?;
     let handle = get_map_arg(map_keys_fn, args[0])?;
     // collect into an owned Vec to release the immutable borrow before calling insert
@@ -273,7 +315,10 @@ fn map_keys_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<V
     Ok(itp.environment.insert_array_variable(keys))
 }
 
-fn map_values_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn map_values_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(map_values_fn, &args, 1)?;
     let handle = get_map_arg(map_values_fn, args[0])?;
     let values: Vec<Value> = {
@@ -286,7 +331,10 @@ fn map_values_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result
     Ok(itp.environment.insert_array_variable(values))
 }
 
-fn map_insert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn map_insert_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(map_insert_fn, &args, 3)?;
     let handle = get_map_arg(map_insert_fn, args[0])?;
     let key = MapKey::convert_from_value(args[1])?;
@@ -294,18 +342,21 @@ fn map_insert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result
     // increment ref count before taking the mutable heap reference
     itp.environment.heap.shallow_copy_value(new_value);
     let Some(GcObject::Map(map)) = itp.environment.heap.get_object_mut(handle) else {
-        return Err(Error::GcObjectNotFound(handle));
+        return Err(InterpretError::GcObjectNotFound(handle));
     };
     // ownership of the old value transfers to the caller; ref count stays at 1
     Ok(map.insert(key, new_value).unwrap_or(Value::make_nil()))
 }
 
-fn map_remove_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+fn map_remove_fn(
+    itp: &mut interpreter::Interpreter,
+    args: Vec<Value>,
+) -> Result<Value, InterpretError> {
     check_exact_args(map_remove_fn, &args, 2)?;
     let handle = get_map_arg(map_remove_fn, args[0])?;
     let key = MapKey::convert_from_value(args[1])?;
     let Some(GcObject::Map(map)) = itp.environment.heap.get_object_mut(handle) else {
-        return Err(Error::GcObjectNotFound(handle));
+        return Err(InterpretError::GcObjectNotFound(handle));
     };
     // ownership of the removed value transfers to the caller; ref count stays at 1
     Ok(map.remove(&key).unwrap_or(Value::Unit))
@@ -313,9 +364,13 @@ fn map_remove_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result
 
 // Argument validation helpers
 
-fn check_exact_args(func: BuiltinFn, args: &[Value], expected: usize) -> Result<(), Error> {
+fn check_exact_args(
+    func: BuiltinFn,
+    args: &[Value],
+    expected: usize,
+) -> Result<(), InterpretError> {
     if args.len() != expected {
-        return Err(Error::WrongNumberOfArgument(
+        return Err(InterpretError::WrongNumberOfArgument(
             Value::BuiltinFunction(func),
             expected,
             args.len(),
@@ -324,9 +379,9 @@ fn check_exact_args(func: BuiltinFn, args: &[Value], expected: usize) -> Result<
     Ok(())
 }
 
-fn check_min_args(func: BuiltinFn, args: &[Value], min: usize) -> Result<(), Error> {
+fn check_min_args(func: BuiltinFn, args: &[Value], min: usize) -> Result<(), InterpretError> {
     if args.len() < min {
-        return Err(Error::WrongNumberOfArgumentAtLeast(
+        return Err(InterpretError::WrongNumberOfArgumentAtLeast(
             Value::BuiltinFunction(func),
             min,
             args.len(),
@@ -335,10 +390,10 @@ fn check_min_args(func: BuiltinFn, args: &[Value], min: usize) -> Result<(), Err
     Ok(())
 }
 
-fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<StrId, Error> {
+fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<StrId, InterpretError> {
     match arg {
         Value::Str(str_id) => Ok(str_id),
-        _ => Err(Error::WrongArgumentType(
+        _ => Err(InterpretError::WrongArgumentType(
             Value::BuiltinFunction(func),
             arg,
             "str",
@@ -346,10 +401,10 @@ fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<StrId, Error> {
     }
 }
 
-fn get_array_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, Error> {
+fn get_array_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, InterpretError> {
     match arg {
         Value::Array(handle) => Ok(handle),
-        _ => Err(Error::WrongArgumentType(
+        _ => Err(InterpretError::WrongArgumentType(
             Value::BuiltinFunction(func),
             arg,
             "Array",
@@ -357,10 +412,10 @@ fn get_array_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, Error> {
     }
 }
 
-fn get_map_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, Error> {
+fn get_map_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, InterpretError> {
     match arg {
         Value::Map(handle) => Ok(handle),
-        _ => Err(Error::WrongArgumentType(
+        _ => Err(InterpretError::WrongArgumentType(
             Value::BuiltinFunction(func),
             arg,
             "Map",

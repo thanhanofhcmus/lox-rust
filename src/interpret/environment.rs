@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     interpret::{
         debug_string::DebugString,
-        error::Error,
+        error::InterpretError,
         heap::{GcHandle, GcKind, GcObject, Heap},
         predule,
         string_interner::StrId,
@@ -124,12 +124,12 @@ macro_rules! decl_gc_type_methods {
     ($name:ident, $variant:ident, $type:ty, $kind:expr, $val_variant:ident) => {
         paste::item! {
             // Generates get_array, get_function, etc.
-            pub fn [<get_ $name>](&self, handle: GcHandle) -> Result<&$type, Error> {
+            pub fn [<get_ $name>](&self, handle: GcHandle) -> Result<&$type, InterpretError> {
                 let Some(obj) = self.heap.get_object(handle) else {
-                    return Err(Error::GcObjectNotFound(handle));
+                    return Err(InterpretError::GcObjectNotFound(handle));
                 };
                 let GcObject::$variant(inner) = obj else {
-                    return Err(Error::GcObjectWrongType(
+                    return Err(InterpretError::GcObjectWrongType(
                         handle,
                         obj.get_kind(),
                         $kind,
@@ -283,7 +283,7 @@ impl Environment {
         false
     }
 
-    pub fn get_string(&self, id: StrId) -> Result<&str, Error> {
+    pub fn get_string(&self, id: StrId) -> Result<&str, InterpretError> {
         self.heap.get_string_or_error(id)
     }
 

@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum TypecheckError {
     #[error(
         "Type mismatch in declaration of '{:?}': assigned value does not match specified type."
         , _0.id)]
@@ -47,7 +47,7 @@ pub enum Error {
     TypeIsNotDeclared(TypeId),
 }
 
-impl Error {
+impl TypecheckError {
     pub fn generate_user_facing_error(
         &self,
         source_name: Option<&str>,

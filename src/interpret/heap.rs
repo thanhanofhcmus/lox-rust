@@ -5,7 +5,7 @@ use std::{
 
 use crate::interpret::{
     debug_string::DebugString,
-    error::Error,
+    error::InterpretError,
     string_interner::{StrId, StringInterner},
     values::{Array, Function, Map, MapKey, Value},
 };
@@ -47,36 +47,40 @@ impl GcObject {
         }
     }
 
-    pub fn get_by_subscription(&self, indexee: Value) -> Result<Value, Error> {
+    pub fn get_by_subscription(&self, indexee: Value) -> Result<Value, InterpretError> {
         match self {
             GcObject::Array(arr) => {
                 let idx = indexee.to_index()?;
                 arr.get(idx)
                     .copied()
-                    .ok_or(Error::ArrayOutOfBound(arr.len(), idx))
+                    .ok_or(InterpretError::ArrayOutOfBound(arr.len(), idx))
             }
             GcObject::Map(map) => {
                 let map_key = MapKey::convert_from_value(indexee)?;
                 Ok(map.get(&map_key).copied().unwrap_or(Value::make_nil()))
             }
-            _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
+            _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
         }
     }
 
-    pub fn replace_at_index(&mut self, indexee: Value, new_value: Value) -> Result<Value, Error> {
+    pub fn replace_at_index(
+        &mut self,
+        indexee: Value,
+        new_value: Value,
+    ) -> Result<Value, InterpretError> {
         match self {
             GcObject::Array(arr) => {
                 let idx = indexee.to_index()?;
                 match arr.get_mut(idx) {
                     Some(v) => Ok(std::mem::replace(v, new_value)),
-                    None => Err(Error::ArrayOutOfBound(arr.len(), idx)),
+                    None => Err(InterpretError::ArrayOutOfBound(arr.len(), idx)),
                 }
             }
             GcObject::Map(map) => {
                 let map_key = MapKey::convert_from_value(indexee)?;
                 Ok(map.insert(map_key, new_value).unwrap_or(Value::make_nil()))
             }
-            _ => Err(Error::GcObjectUnIndexable(self.get_kind())),
+            _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
         }
     }
 }
@@ -262,7 +266,7 @@ impl Heap {
         };
     }
 
-    fn copy_by_value(&mut self, value: Value) -> Result<(GcHandle, Value), Error> {
+    fn copy_by_value(&mut self, value: Value) -> Result<(GcHandle, Value), InterpretError> {
         let old_handle = value.get_handle().expect("Must be a handled value");
         let old_object = self.get_object_or_error(old_handle)?;
         let new_handle = self.insert_object(old_object.clone());
@@ -277,7 +281,7 @@ impl Heap {
         last_value: Value,
         chain: &[Value],
         reassigning_value: Value,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value, InterpretError> {
         let (root_handle, root_value) = self.copy_by_value(current_root_value)?;
 
         let mut current_handle = root_handle;
@@ -308,10 +312,10 @@ impl Heap {
         self.string_interner.intern(&s)
     }
 
-    pub fn get_string_or_error(&self, id: StrId) -> Result<&str, Error> {
+    pub fn get_string_or_error(&self, id: StrId) -> Result<&str, InterpretError> {
         self.string_interner
             .get(id)
-            .ok_or(Error::StringNotFoundOnHeap(id))
+            .ok_or(InterpretError::StringNotFoundOnHeap(id))
     }
 
     /// Move the GcObject to the heap
@@ -340,14 +344,17 @@ impl Heap {
         }
     }
 
-    pub fn get_object_or_error(&self, handle: GcHandle) -> Result<&GcObject, Error> {
+    pub fn get_object_or_error(&self, handle: GcHandle) -> Result<&GcObject, InterpretError> {
         self.get_object(handle)
-            .ok_or(Error::GcObjectNotFound(handle))
+            .ok_or(InterpretError::GcObjectNotFound(handle))
     }
 
-    pub fn get_object_mut_or_error(&mut self, handle: GcHandle) -> Result<&mut GcObject, Error> {
+    pub fn get_object_mut_or_error(
+        &mut self,
+        handle: GcHandle,
+    ) -> Result<&mut GcObject, InterpretError> {
         self.get_object_mut(handle)
-            .ok_or(Error::GcObjectNotFound(handle))
+            .ok_or(InterpretError::GcObjectNotFound(handle))
     }
 
     fn update_ref_count(&mut self, value: Value, is_increase: bool) -> Option<&mut HeapEntry> {

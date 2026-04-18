@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::interpret::{
-    error::Error,
+    error::InterpretError,
     values::{Value, display_writer::DisplayWriter},
 };
 
@@ -75,10 +75,10 @@ impl Div for Number {
 }
 
 impl TryInto<usize> for Number {
-    type Error = Error;
+    type Error = InterpretError;
 
     fn try_into(self) -> Result<usize, Self::Error> {
-        let err = Error::ValueMustBeUsize(Value::make_number(self));
+        let err = InterpretError::ValueMustBeUsize(Value::make_number(self));
         match self {
             Self::Integer(i) if i >= 0 => usize::try_from(i).map_err(|_| err),
             Self::Floating(v) if v >= 0.0 && v.fract() == 0.0 && v <= usize::MAX as f64 => {
@@ -140,12 +140,12 @@ impl DisplayWriter for Number {
         self,
         _: &crate::interpret::Environment,
         w: &mut dyn std::io::Write,
-    ) -> Result<(), Error> {
+    ) -> Result<(), InterpretError> {
         let result = match self {
             Self::Integer(v) => write!(w, "{}", v),
             Self::Floating(v) => write!(w, "{}", v),
         };
-        result.map_err(|e| Error::WriteValueFailed(Value::make_number(self), e))?;
+        result.map_err(|e| InterpretError::WriteValueFailed(Value::make_number(self), e))?;
         Ok(())
     }
 }

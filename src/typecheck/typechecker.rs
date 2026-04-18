@@ -1,4 +1,4 @@
-use super::{Environment, Error};
+use super::{Environment, TypecheckError};
 
 use crate::ast::*;
 use crate::types::Type;
@@ -30,7 +30,7 @@ impl<'cl> TypeChecker<'cl> {
     }
 
     /// Consume an untyped AST and return a typed AST with all declarations type-checked.
-    pub fn convert(&mut self, ast: AST<()>) -> Result<AST<TypeId>, Error> {
+    pub fn convert(&mut self, ast: AST<()>) -> Result<AST<TypeId>, TypecheckError> {
         let AST {
             imports,
             global_stmts: untyped_global_stmts,
@@ -49,7 +49,10 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_stmt(&mut self, ut_stmt: Statement<()>) -> Result<Statement<TypeId>, Error> {
+    fn convert_stmt(
+        &mut self,
+        ut_stmt: Statement<()>,
+    ) -> Result<Statement<TypeId>, TypecheckError> {
         match ut_stmt {
             Statement::Declare(node) => {
                 self.current_declaration_id.replace(node.iden);
@@ -76,20 +79,24 @@ impl<'cl> TypeChecker<'cl> {
             explicit_type: type_node,
             expr,
         }: DeclareStatementNode<()>,
-    ) -> Result<DeclareStatementNode<TypeId>, Error> {
+    ) -> Result<DeclareStatementNode<TypeId>, TypecheckError> {
         let expr = self.convert_expr(expr)?;
         match &type_node {
             None | Some(TypeNode::BuiltIn(TypeId::ANY)) => {}
             Some(TypeNode::BuiltIn(type_annot)) if *type_annot == expr.extra => {}
             Some(TypeNode::BuiltIn(type_annot)) => {
-                return Err(Error::ExplicitTypeMismatch(iden, *type_annot, expr.extra));
+                return Err(TypecheckError::ExplicitTypeMismatch(
+                    iden,
+                    *type_annot,
+                    expr.extra,
+                ));
             }
         }
         // Annotation wins when written (including `Any`); otherwise infer from expr.
         let var_type = type_node.map(extract_type_node_id).unwrap_or(expr.extra);
         self.environment
             .declare_id(iden.id, var_type)
-            .map_err(|_| Error::DuplicateDeclaration(iden))?;
+            .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
         Ok(DeclareStatementNode {
             expr,
             iden,
@@ -100,9 +107,9 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_reassign_target(
         &mut self,
         target: ChainingReassignTargetNode<()>,
-    ) -> Result<ChainingReassignTargetNode<TypeId>, Error> {
+    ) -> Result<ChainingReassignTargetNode<TypeId>, TypecheckError> {
         if self.environment.lookup_id(target.base.id).is_none() {
-            return Err(Error::UndefinedIdentifier(target.base));
+            return Err(TypecheckError::UndefinedIdentifier(target.base));
         }
         let follows = target
             .follows
@@ -115,7 +122,10 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_expr(&mut self, ut_expr: Expression<()>) -> Result<Expression<TypeId>, Error> {
+    fn convert_expr(
+        &mut self,
+        ut_expr: Expression<()>,
+    ) -> Result<Expression<TypeId>, TypecheckError> {
         let (type_id, case) = match ut_expr.case {
             ExprCase::Clause(ut_clause) => {
                 let clause = self.convert_clause(ut_clause)?;
@@ -162,7 +172,7 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_block(&mut self, block: BlockNode<()>) -> Result<BlockNode<TypeId>, Error> {
+    fn convert_block(&mut self, block: BlockNode<()>) -> Result<BlockNode<TypeId>, TypecheckError> {
         self.with_scope(|this| {
             let stmts = block
                 .stmts
@@ -182,7 +192,10 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_if_chain(&mut self, node: IfChainNode<()>) -> Result<IfChainNode<TypeId>, Error> {
+    fn convert_if_chain(
+        &mut self,
+        node: IfChainNode<()>,
+    ) -> Result<IfChainNode<TypeId>, TypecheckError> {
         Ok(IfChainNode {
             if_node: self.convert_else_if(node.if_node)?,
             else_if_nodes: node
@@ -194,28 +207,31 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_else_if(&mut self, node: ElseIfNode<()>) -> Result<ElseIfNode<TypeId>, Error> {
+    fn convert_else_if(
+        &mut self,
+        node: ElseIfNode<()>,
+    ) -> Result<ElseIfNode<TypeId>, TypecheckError> {
         let cond = self.convert_clause(node.cond)?;
         require_type(TypeId::BOOL, cond.extra)?;
         let stmts = self.convert_block(node.stmts)?;
         Ok(ElseIfNode { cond, stmts })
     }
 
-    fn convert_while(&mut self, node: WhileNode<()>) -> Result<WhileNode<TypeId>, Error> {
+    fn convert_while(&mut self, node: WhileNode<()>) -> Result<WhileNode<TypeId>, TypecheckError> {
         let cond = self.convert_clause(node.cond)?;
         require_type(TypeId::BOOL, cond.extra)?;
         let body = self.convert_block(node.body)?;
         Ok(WhileNode { cond, body })
     }
 
-    fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<TypeId>, Error> {
+    fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<TypeId>, TypecheckError> {
         let collection = self.convert_clause(node.collection)?;
         // TODO: derive iden type from the collection's element type once array/map
         // element types are used during lookup. Permissive `Any` for now.
         self.with_scope(|this| {
             this.environment
                 .declare_id(node.iden.id, TypeId::ANY)
-                .map_err(|_| Error::DuplicateDeclaration(node.iden))?;
+                .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
             let body = this.convert_block(node.body)?;
             Ok(ForNode {
                 iden: node.iden,
@@ -225,23 +241,29 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_when(&mut self, node: WhenNode<()>) -> Result<WhenNode<TypeId>, Error> {
+    fn convert_when(&mut self, node: WhenNode<()>) -> Result<WhenNode<TypeId>, TypecheckError> {
         let arms = node
             .arms
             .into_iter()
             .map(|arm| self.convert_when_arm(arm))
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>, TypecheckError>>()?;
         Ok(WhenNode { arms })
     }
 
-    fn convert_when_arm(&mut self, node: WhenArmNode<()>) -> Result<WhenArmNode<TypeId>, Error> {
+    fn convert_when_arm(
+        &mut self,
+        node: WhenArmNode<()>,
+    ) -> Result<WhenArmNode<TypeId>, TypecheckError> {
         let cond = self.convert_clause(node.cond)?;
         require_type(TypeId::BOOL, cond.extra)?;
         let expr = self.convert_clause(node.expr)?;
         Ok(WhenArmNode { cond, expr })
     }
 
-    fn convert_clause(&mut self, ut_clause: ClauseNode<()>) -> Result<ClauseNode<TypeId>, Error> {
+    fn convert_clause(
+        &mut self,
+        ut_clause: ClauseNode<()>,
+    ) -> Result<ClauseNode<TypeId>, TypecheckError> {
         let (type_id, case) = match ut_clause.case {
             ClauseCase::RawValue(raw) => {
                 let (type_id, raw) = self.convert_raw_value(raw)?;
@@ -251,7 +273,7 @@ impl<'cl> TypeChecker<'cl> {
                 let type_ = self
                     .environment
                     .lookup_id(iden.id)
-                    .ok_or(Error::UndefinedIdentifier(iden))?;
+                    .ok_or(TypecheckError::UndefinedIdentifier(iden))?;
                 (type_, ClauseCase::Identifier(iden))
             }
             ClauseCase::Group(inner) => {
@@ -294,7 +316,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_raw_value(
         &mut self,
         raw: RawValueNode<()>,
-    ) -> Result<(TypeId, RawValueNode<TypeId>), Error> {
+    ) -> Result<(TypeId, RawValueNode<TypeId>), TypecheckError> {
         match raw {
             RawValueNode::Scalar(s) => Ok((get_scalar_node_type_id(&s), RawValueNode::Scalar(s))),
             RawValueNode::ArrayLiteral(arr) => {
@@ -317,7 +339,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_array_literal(
         &mut self,
         arr: ArrayLiteralNode<()>,
-    ) -> Result<(TypeId, ArrayLiteralNode<TypeId>), Error> {
+    ) -> Result<(TypeId, ArrayLiteralNode<TypeId>), TypecheckError> {
         match arr {
             ArrayLiteralNode::List(items) => {
                 let items = items
@@ -353,7 +375,7 @@ impl<'cl> TypeChecker<'cl> {
                 self.with_scope(|this| {
                     this.environment
                         .declare_id(iden.id, collection.extra)
-                        .map_err(|_| Error::DuplicateDeclaration(iden))?;
+                        .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
                     let transformer = this.convert_clause(transformer)?;
                     let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
                     if let Some(f) = &filter {
@@ -379,7 +401,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_map_literal(
         &mut self,
         map: MapLiteralNode<()>,
-    ) -> Result<(TypeId, MapLiteralNode<TypeId>), Error> {
+    ) -> Result<(TypeId, MapLiteralNode<TypeId>), TypecheckError> {
         let mut nodes = Vec::with_capacity(map.nodes.len());
         for elem in map.nodes {
             let value = self.convert_clause(elem.value)?;
@@ -405,7 +427,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_fn_decl(
         &mut self,
         node: FnDeclNode<()>,
-    ) -> Result<(TypeId, FnDeclNode<TypeId>), Error> {
+    ) -> Result<(TypeId, FnDeclNode<TypeId>), TypecheckError> {
         // Params are declared in a fresh scope surrounding the body. The
         // body itself opens its own scope via `convert_block`, so param
         // shadowing by locals is handled naturally.
@@ -429,7 +451,7 @@ impl<'cl> TypeChecker<'cl> {
             for (param, type_id) in node.params.iter().zip(&params_type_ids) {
                 this.environment
                     .declare_id(param.id.id, *type_id)
-                    .map_err(|_| Error::DuplicateDeclaration(param.id))?;
+                    .map_err(|_| TypecheckError::DuplicateDeclaration(param.id))?;
             }
             let body = this.convert_block(node.body)?;
 
@@ -442,7 +464,7 @@ impl<'cl> TypeChecker<'cl> {
                 Some(TypeNode::BuiltIn(type_annot)) if *type_annot == body.extra => *type_annot,
                 // error case
                 Some(node) => {
-                    return Err(Error::ExplicitFnReturnTypeMismatch(
+                    return Err(TypecheckError::ExplicitFnReturnTypeMismatch(
                         body.extra,
                         extract_type_node_id(*node),
                     ));
@@ -470,7 +492,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_subscription(
         &mut self,
         node: SubscriptionNode<()>,
-    ) -> Result<(TypeId, SubscriptionNode<TypeId>), Error> {
+    ) -> Result<(TypeId, SubscriptionNode<TypeId>), TypecheckError> {
         let indexer = self.convert_clause(*node.indexer)?;
         let indexee = self.convert_clause(*node.indexee)?;
         let indexer_type_id = indexer.extra;
@@ -479,7 +501,7 @@ impl<'cl> TypeChecker<'cl> {
         let indexer_type = self
             .environment
             .lookup_type_id(indexer_type_id)
-            .ok_or(Error::TypeIsNotDeclared(indexer_type_id))?;
+            .ok_or(TypecheckError::TypeIsNotDeclared(indexer_type_id))?;
 
         // Any is a special case, will need to resovle the actual type at runtime
         let result_type_id = match indexer_type {
@@ -498,7 +520,12 @@ impl<'cl> TypeChecker<'cl> {
             }
             // defered to runtime
             Type::Any => TypeId::ANY,
-            _ => return Err(Error::IndexOpTypeMismatch(indexer_type_id, indexee_type_id)),
+            _ => {
+                return Err(TypecheckError::IndexOpTypeMismatch(
+                    indexer_type_id,
+                    indexee_type_id,
+                ));
+            }
         };
 
         Ok((
@@ -513,7 +540,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_fn_call(
         &mut self,
         node: FnCallNode<()>,
-    ) -> Result<(TypeId, FnCallNode<TypeId>), Error> {
+    ) -> Result<(TypeId, FnCallNode<TypeId>), TypecheckError> {
         let caller = self.convert_clause(*node.caller)?;
 
         let args = node
@@ -538,14 +565,14 @@ impl<'cl> TypeChecker<'cl> {
         let caller_type = self
             .environment
             .lookup_type_id(caller_type_id)
-            .ok_or(Error::TypeIsNotDeclared(caller_type_id))?;
+            .ok_or(TypecheckError::TypeIsNotDeclared(caller_type_id))?;
         let (param_type_ids, variadict_type_id, return_type_id) = match caller_type {
             Type::Function {
                 params,
                 return_,
                 varidict,
             } => (params, *varidict, *return_),
-            _ => return Err(Error::TypeIsNoCallable(caller_type_id)),
+            _ => return Err(TypecheckError::TypeIsNoCallable(caller_type_id)),
         };
 
         // TODO: check variadict
@@ -554,7 +581,7 @@ impl<'cl> TypeChecker<'cl> {
 
         if variadict_type_id.is_none() {
             if variadict_type_id.is_none() && param_type_ids.len() != args.len() {
-                return Err(Error::WrongNumberOfArgument(
+                return Err(TypecheckError::WrongNumberOfArgument(
                     caller_type_id,
                     param_type_ids.len(),
                     args.len(),
@@ -579,7 +606,10 @@ impl<'cl> TypeChecker<'cl> {
                 .map(|(i, (l, r))| (i, *l, r))
                 .collect::<Vec<(usize, TypeId, TypeId)>>();
             if !wrong_type_args.is_empty() {
-                return Err(Error::WrongArgumentTypes(caller_type_id, wrong_type_args));
+                return Err(TypecheckError::WrongArgumentTypes(
+                    caller_type_id,
+                    wrong_type_args,
+                ));
             }
         }
 
@@ -593,10 +623,15 @@ impl<'cl> TypeChecker<'cl> {
         ))
     }
 
-    fn type_binary_op(&self, op: Token, lhs: TypeId, rhs: TypeId) -> Result<TypeId, Error> {
+    fn type_binary_op(
+        &self,
+        op: Token,
+        lhs: TypeId,
+        rhs: TypeId,
+    ) -> Result<TypeId, TypecheckError> {
         use Token::*;
         let any = lhs == TypeId::ANY || rhs == TypeId::ANY;
-        let mismatch = || Error::BinaryOpTypeMismatch(op, lhs, rhs);
+        let mismatch = || TypecheckError::BinaryOpTypeMismatch(op, lhs, rhs);
 
         match op {
             Plus => match (lhs, rhs) {
@@ -643,10 +678,10 @@ impl<'cl> TypeChecker<'cl> {
     /// - `-` (Minus) negates numbers.
     /// - `not` (Not) inverts Bools.
     /// - `Any` is permissive: accept and return the op's natural result type.
-    fn type_unary_op(&self, op: Token, operand: TypeId) -> Result<TypeId, Error> {
+    fn type_unary_op(&self, op: Token, operand: TypeId) -> Result<TypeId, TypecheckError> {
         use Token::*;
         let any = operand == TypeId::ANY;
-        let mismatch = || Error::UnaryOpTypeMismatch(op, operand);
+        let mismatch = || TypecheckError::UnaryOpTypeMismatch(op, operand);
 
         match op {
             Minus => match operand {
@@ -694,11 +729,11 @@ fn unify_types<'a>(type_ids: impl IntoIterator<Item = &'a TypeId>) -> TypeId {
 
 /// Assert `actual` is compatible with `expected`. `Any` on the actual side is
 /// permissive (gradual typing).
-fn require_type(expected: TypeId, actual: TypeId) -> Result<(), Error> {
+fn require_type(expected: TypeId, actual: TypeId) -> Result<(), TypecheckError> {
     if actual == TypeId::ANY || actual == expected {
         Ok(())
     } else {
-        Err(Error::ExpectedType(expected, actual))
+        Err(TypecheckError::ExpectedType(expected, actual))
     }
 }
 
@@ -714,7 +749,7 @@ mod tests {
     use crate::{id::Id, parse::lex};
     use pretty_assertions::assert_eq;
 
-    fn typecheck_str(input: &str) -> Result<AST<TypeId>, Error> {
+    fn typecheck_str(input: &str) -> Result<AST<TypeId>, TypecheckError> {
         let items = lex(input).expect("lex failed");
         let ast = crate::parse::parse(input, &items, false).expect("parse failed");
         let mut env = Environment::new();
@@ -783,7 +818,7 @@ mod tests {
     #[test]
     fn require_type_mismatch_errors() {
         let err = require_type(TypeId::NUMBER, TypeId::BOOL).unwrap_err();
-        assert!(matches!(err, Error::ExpectedType(_, _)));
+        assert!(matches!(err, TypecheckError::ExpectedType(_, _)));
     }
 
     // ---------- Environment ----------
@@ -864,7 +899,7 @@ mod tests {
     fn binary_number_plus_bool_errors() {
         let err = typecheck_str("1 + true;").unwrap_err();
         assert!(
-            matches!(err, Error::BinaryOpTypeMismatch(Token::Plus, _, _)),
+            matches!(err, TypecheckError::BinaryOpTypeMismatch(Token::Plus, _, _)),
             "expected BinaryOpTypeMismatch(Plus, ...), got {err:?}"
         );
     }
@@ -890,7 +925,10 @@ mod tests {
     #[test]
     fn binary_and_on_non_bool_errors() {
         let err = typecheck_str("1 and 2;").unwrap_err();
-        assert!(matches!(err, Error::BinaryOpTypeMismatch(Token::And, _, _)));
+        assert!(matches!(
+            err,
+            TypecheckError::BinaryOpTypeMismatch(Token::And, _, _)
+        ));
     }
 
     // ---------- unary op typing ----------
@@ -910,13 +948,19 @@ mod tests {
     #[test]
     fn unary_minus_on_bool_errors() {
         let err = typecheck_str("-true;").unwrap_err();
-        assert!(matches!(err, Error::UnaryOpTypeMismatch(Token::Minus, _)));
+        assert!(matches!(
+            err,
+            TypecheckError::UnaryOpTypeMismatch(Token::Minus, _)
+        ));
     }
 
     #[test]
     fn unary_not_on_number_errors() {
         let err = typecheck_str("not 1;").unwrap_err();
-        assert!(matches!(err, Error::UnaryOpTypeMismatch(Token::Not, _)));
+        assert!(matches!(
+            err,
+            TypecheckError::UnaryOpTypeMismatch(Token::Not, _)
+        ));
     }
 
     // ---------- array literals ----------
@@ -928,7 +972,7 @@ mod tests {
     #[test]
     fn identifier_undefined_errors() {
         let err = typecheck_str("x;").unwrap_err();
-        assert!(matches!(err, Error::UndefinedIdentifier(_)));
+        assert!(matches!(err, TypecheckError::UndefinedIdentifier(_)));
     }
 
     #[test]
@@ -954,7 +998,7 @@ mod tests {
     #[test]
     fn declare_with_mismatched_annotation_errors() {
         let err = typecheck_str("var x: number = \"hello\";").unwrap_err();
-        assert!(matches!(err, Error::ExplicitTypeMismatch(..)));
+        assert!(matches!(err, TypecheckError::ExplicitTypeMismatch(..)));
     }
 
     #[test]
@@ -980,7 +1024,7 @@ mod tests {
     #[test]
     fn reassign_undefined_errors() {
         let err = typecheck_str("x = 5;").unwrap_err();
-        assert!(matches!(err, Error::UndefinedIdentifier(_)));
+        assert!(matches!(err, TypecheckError::UndefinedIdentifier(_)));
     }
 
     #[test]
@@ -993,13 +1037,13 @@ mod tests {
     #[test]
     fn duplicate_var_in_same_scope_errors() {
         let err = typecheck_str("var x = 1; var x = 2;").unwrap_err();
-        assert!(matches!(err, Error::DuplicateDeclaration(_)));
+        assert!(matches!(err, TypecheckError::DuplicateDeclaration(_)));
     }
 
     #[test]
     fn fn_duplicate_param_errors() {
         let err = typecheck_str("var f = fn(x, x) x;").unwrap_err();
-        assert!(matches!(err, Error::DuplicateDeclaration(_)));
+        assert!(matches!(err, TypecheckError::DuplicateDeclaration(_)));
     }
 
     // ---------- block types ----------
