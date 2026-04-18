@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{id::Id, types::TypeId};
+use crate::{
+    id::Id,
+    types::{Type, TypeId, TypeInterner},
+};
 
 /// Keep in sync with `src/interpret/predule.rs::create()`. Registered as
 /// `Type::Any` — we don't model their signatures yet.
@@ -30,6 +33,7 @@ const BUILTIN_NAMES: &[&str] = &[
 /// The outermost scope is seeded with interpreter builtins (see `BUILTIN_NAMES`).
 pub struct Environment {
     scopes: Vec<HashMap<Id, TypeId>>,
+    type_interner: TypeInterner,
 }
 
 impl Environment {
@@ -42,7 +46,12 @@ impl Environment {
         // separate lets user code shadow builtins without a re-declaration error.
         Self {
             scopes: vec![builtins, HashMap::new()],
+            type_interner: TypeInterner::new(),
         }
+    }
+
+    pub fn get_type_interner(&self) -> &TypeInterner {
+        &self.type_interner
     }
 
     pub fn push_scope(&mut self) {
@@ -56,7 +65,7 @@ impl Environment {
     /// Declare `id` in the current (innermost) scope. Returns `Err` with the
     /// existing type if `id` is already bound *in the same scope*. Shadowing
     /// a binding from an outer scope is allowed and is not an error.
-    pub fn declare(&mut self, id: Id, type_id: TypeId) -> Result<(), TypeId> {
+    pub fn declare_id(&mut self, id: Id, type_id: TypeId) -> Result<(), TypeId> {
         let scope = self.scopes.last_mut().expect("at least one scope");
         use std::collections::hash_map::Entry;
         match scope.entry(id) {
@@ -68,7 +77,15 @@ impl Environment {
         }
     }
 
-    pub fn lookup(&self, id: Id) -> Option<TypeId> {
+    pub fn lookup_id(&self, id: Id) -> Option<TypeId> {
         self.scopes.iter().rev().find_map(|s| s.get(&id)).copied()
+    }
+
+    pub fn declare_type(&mut self, type_: &Type) -> TypeId {
+        self.type_interner.intern(type_)
+    }
+
+    pub fn lookup_type_id(&self, type_id: TypeId) -> Option<&Type> {
+        self.type_interner.get(type_id)
     }
 }

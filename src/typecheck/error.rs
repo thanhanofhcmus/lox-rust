@@ -24,6 +24,9 @@ pub enum Error {
     #[error("Unary operator `{0:?}` cannot be applied to type `{1:?}`.")]
     UnaryOpTypeMismatch(Token, TypeId),
 
+    #[error("The type `{0:?}` cannot be indexed by the type`{1:?}`.")]
+    IndexOpTypeMismatch(TypeId, TypeId),
+
     #[error("Expected type `{0:?}`, but found `{1:?}`.")]
     ExpectedType(TypeId, TypeId),
 
@@ -87,6 +90,12 @@ impl Error {
                 op,
                 interner.generate_readable_name(*left),
                 interner.generate_readable_name(*right)
+            ),
+
+            Self::IndexOpTypeMismatch(indexer_type_id, indexee_type_id) => format!(
+                "The type `{}` cannot be indexed by the type `{}`.",
+                interner.generate_readable_name(*indexer_type_id),
+                interner.generate_readable_name(*indexee_type_id)
             ),
 
             Self::UnaryOpTypeMismatch(op, type_id) => format!(

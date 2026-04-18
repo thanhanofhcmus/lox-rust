@@ -2,22 +2,15 @@ use super::{Environment, Error};
 
 use crate::ast::*;
 use crate::types::Type;
-use crate::{
-    token::Token,
-    types::{TypeId, TypeInterner},
-};
+use crate::{token::Token, types::TypeId};
 
 pub struct TypeChecker<'cl> {
     pub(super) environment: &'cl mut Environment,
-    pub type_interner: TypeInterner,
 }
 
 impl<'cl> TypeChecker<'cl> {
     pub fn new(environment: &'cl mut Environment) -> Self {
-        Self {
-            environment,
-            type_interner: TypeInterner::new(),
-        }
+        Self { environment }
     }
 
     /// Run `f` with a fresh scope pushed on the environment. The scope is
@@ -72,7 +65,7 @@ impl<'cl> TypeChecker<'cl> {
                 // Annotation wins when written (including `Any`); otherwise infer from expr.
                 let var_type = type_id.unwrap_or(expr.extra);
                 self.environment
-                    .declare(iden.name_id, var_type)
+                    .declare_id(iden.name_id, var_type)
                     .map_err(|_| Error::DuplicateDeclaration(iden.name, iden.name_id))?;
                 Ok(Statement::Declare(DeclareStatementNode {
                     expr,
@@ -96,7 +89,7 @@ impl<'cl> TypeChecker<'cl> {
         &mut self,
         target: ChainingReassignTargetNode<()>,
     ) -> Result<ChainingReassignTargetNode<TypeId>, Error> {
-        if target.base.is_simple() && self.environment.lookup(target.base.name_id).is_none() {
+        if target.base.is_simple() && self.environment.lookup_id(target.base.name_id).is_none() {
             return Err(Error::UndefinedIdentifier(
                 target.base.name,
                 target.base.name_id,
@@ -214,7 +207,7 @@ impl<'cl> TypeChecker<'cl> {
         let iden_id = node.iden.name_id;
         self.with_scope(|this| {
             this.environment
-                .declare(iden_id, TypeId::ANY)
+                .declare_id(iden_id, TypeId::ANY)
                 .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
             let body = this.convert_block(node.body)?;
             Ok(ForNode {
@@ -252,7 +245,7 @@ impl<'cl> TypeChecker<'cl> {
                 // yet modeled by the typechecker. Accept them permissively as `Any`.
                 let type_ = if iden.is_simple() {
                     self.environment
-                        .lookup(iden.name_id)
+                        .lookup_id(iden.name_id)
                         .ok_or(Error::UndefinedIdentifier(iden.name, iden.name_id))?
                 } else {
                     TypeId::ANY
@@ -282,12 +275,8 @@ impl<'cl> TypeChecker<'cl> {
                 )
             }
             ClauseCase::Subscription(sub) => {
-                let sub = SubscriptionNode {
-                    indexer: Box::new(self.convert_clause(*sub.indexer)?),
-                    indexee: Box::new(self.convert_clause(*sub.indexee)?),
-                };
-                // TODO: implement
-                (TypeId::ANY, ClauseCase::Subscription(sub))
+                let (type_id, case) = self.convert_subscription(sub)?;
+                (type_id, ClauseCase::Subscription(case))
             }
             ClauseCase::FnCall(call) => {
                 let caller = Box::new(self.convert_clause(*call.caller)?);
@@ -349,8 +338,8 @@ impl<'cl> TypeChecker<'cl> {
                     .collect::<Result<Vec<_>, _>>()?;
                 let elem_type_id = unify_types(items.iter().map(|c| &c.extra));
                 let type_id = self
-                    .type_interner
-                    .intern(&Type::Array { elem: elem_type_id });
+                    .environment
+                    .declare_type(&Type::Array { elem: elem_type_id });
                 Ok((type_id, ArrayLiteralNode::List(items)))
             }
             ArrayLiteralNode::Repeat(rep) => {
@@ -358,8 +347,8 @@ impl<'cl> TypeChecker<'cl> {
                 let repeat = self.convert_clause(rep.repeat)?;
                 require_type(TypeId::NUMBER, repeat.extra)?;
                 let type_id = self
-                    .type_interner
-                    .intern(&Type::Array { elem: value.extra });
+                    .environment
+                    .declare_type(&Type::Array { elem: value.extra });
                 Ok((
                     type_id,
                     ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode { value, repeat })),
@@ -378,14 +367,14 @@ impl<'cl> TypeChecker<'cl> {
                 let iden_id = iden.name_id;
                 self.with_scope(|this| {
                     this.environment
-                        .declare(iden_id, TypeId::ANY)
+                        .declare_id(iden_id, TypeId::ANY)
                         .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
                     let transformer = this.convert_clause(transformer)?;
                     let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
                     if let Some(f) = &filter {
                         require_type(TypeId::BOOL, f.extra)?;
                     }
-                    let type_id = this.type_interner.intern(&Type::Array {
+                    let type_id = this.environment.declare_type(&Type::Array {
                         elem: transformer.extra,
                     });
                     Ok((
@@ -418,7 +407,7 @@ impl<'cl> TypeChecker<'cl> {
             });
         }
 
-        let type_id = self.type_interner.intern(&Type::Map {
+        let type_id = self.environment.declare_type(&Type::Map {
             value: unify_types(nodes.iter().map(|n| &n.value.extra)),
         });
 
@@ -436,7 +425,7 @@ impl<'cl> TypeChecker<'cl> {
             for param in &node.params {
                 let ty = param.type_.unwrap_or(TypeId::ANY);
                 this.environment
-                    .declare(param.id.name_id, ty)
+                    .declare_id(param.id.name_id, ty)
                     .map_err(|_| Error::DuplicateDeclaration(param.id.name, param.id.name_id))?;
             }
             let body = this.convert_block(node.body)?;
@@ -451,7 +440,7 @@ impl<'cl> TypeChecker<'cl> {
                 }
             };
 
-            let type_id = this.type_interner.intern(&Type::Function {
+            let type_id = this.environment.declare_type(&Type::Function {
                 params: vec![],
                 return_: return_type,
             });
@@ -465,6 +454,30 @@ impl<'cl> TypeChecker<'cl> {
                 },
             ))
         })
+    }
+
+    fn convert_subscription(
+        &mut self,
+        node: SubscriptionNode<()>,
+    ) -> Result<(TypeId, SubscriptionNode<TypeId>), Error> {
+        let indexer = self.convert_clause(*node.indexer)?;
+        let indexee = self.convert_clause(*node.indexee)?;
+
+        let indexer_type = self.environment.lookup_type_id(indexer.extra).unwrap();
+
+        let result_type_id = match (indexer_type, indexee.extra) {
+            (Type::Array { elem }, TypeId::NUMBER) => *elem,
+            (Type::Map { value }, TypeId::STR) => *value,
+            _ => return Err(Error::IndexOpTypeMismatch(indexer.extra, indexee.extra)),
+        };
+
+        Ok((
+            result_type_id,
+            SubscriptionNode {
+                indexer: Box::new(indexer),
+                indexee: Box::new(indexee),
+            },
+        ))
     }
 
     /// Compute the result type of a binary operator applied to operand types.
@@ -687,48 +700,48 @@ mod tests {
     fn env_declare_and_lookup() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare(id, TypeId::NUMBER).unwrap();
-        assert_eq!(env.lookup(id), Some(TypeId::NUMBER));
+        env.declare_id(id, TypeId::NUMBER).unwrap();
+        assert_eq!(env.lookup_id(id), Some(TypeId::NUMBER));
     }
 
     #[test]
     fn env_lookup_missing_is_none() {
         let env = Environment::new();
-        assert_eq!(env.lookup(Id::new("nope")), None);
+        assert_eq!(env.lookup_id(Id::new("nope")), None);
     }
 
     #[test]
     fn env_redeclare_in_same_scope_errors() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare(id, TypeId::NUMBER).unwrap();
-        assert!(env.declare(id, TypeId::STR).is_err());
+        env.declare_id(id, TypeId::NUMBER).unwrap();
+        assert!(env.declare_id(id, TypeId::STR).is_err());
     }
 
     #[test]
     fn env_shadow_across_scopes_ok() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare(id, TypeId::NUMBER).unwrap();
+        env.declare_id(id, TypeId::NUMBER).unwrap();
         env.push_scope();
-        assert!(env.declare(id, TypeId::STR).is_ok());
-        assert_eq!(env.lookup(id), Some(TypeId::STR));
+        assert!(env.declare_id(id, TypeId::STR).is_ok());
+        assert_eq!(env.lookup_id(id), Some(TypeId::STR));
         env.pop_scope();
-        assert_eq!(env.lookup(id), Some(TypeId::NUMBER));
+        assert_eq!(env.lookup_id(id), Some(TypeId::NUMBER));
     }
 
     #[test]
     fn env_builtins_are_in_scope() {
         let env = Environment::new();
-        assert_eq!(env.lookup(Id::new("print")), Some(TypeId::ANY));
-        assert_eq!(env.lookup(Id::new("assert")), Some(TypeId::ANY));
+        assert_eq!(env.lookup_id(Id::new("print")), Some(TypeId::ANY));
+        assert_eq!(env.lookup_id(Id::new("assert")), Some(TypeId::ANY));
     }
 
     #[test]
     fn env_user_global_can_shadow_builtin() {
         // User-global scope is scope 1, above builtins at scope 0.
         let mut env = Environment::new();
-        assert!(env.declare(Id::new("print"), TypeId::NUMBER).is_ok());
+        assert!(env.declare_id(Id::new("print"), TypeId::NUMBER).is_ok());
     }
 
     #[test]

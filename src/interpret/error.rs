@@ -99,7 +99,7 @@ pub enum Error {
     #[error("GcObject `{0:?}` has type `{}` but expected type `{}`", .1.type_name(), .2.type_name())]
     GcObjectWrongType(GcHandle, GcKind, GcKind),
 
-    #[error("GcObject with type `{}` did not exist in the heap", .0.type_name())]
+    #[error("GcObject with type `{}` is not indexable", .0.type_name())]
     GcObjectUnIndexable(GcKind),
 
     #[error("String with Id `{}` is does not exists in the heap interner", .0)]

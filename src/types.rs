@@ -81,7 +81,6 @@ impl TypeInterner {
         type_id
     }
 
-    #[allow(unused)]
     pub fn get(&self, type_id: TypeId) -> Option<&Type> {
         self.id_to_type.get(&type_id)
     }

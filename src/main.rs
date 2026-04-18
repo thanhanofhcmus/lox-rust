@@ -179,7 +179,11 @@ fn run_stmt(
         Err(err) => {
             error!(
                 "Typecheck error:\n{}",
-                err.generate_user_facing_error(source_name, input, &typechecker.type_interner)
+                err.generate_user_facing_error(
+                    source_name,
+                    input,
+                    typecheck_env.get_type_interner()
+                )
             );
             return Err(Box::new(err));
         }
