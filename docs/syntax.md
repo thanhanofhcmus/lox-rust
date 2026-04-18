@@ -14,7 +14,7 @@ block             = "{" stmt* "}"
 function_block    = "{" (return | stmt)* "}"
 return            = "return" expr? ";"
 import            = "import" UNIX_PATH_STRING "as" IDENTIFIER ";"
-declaration       = "var" IDENTIFIER "=" expr ";"
+declaration       = "var" IDENTIFIER (":" type) "=" expr ";"
 reassignment      = IDENTIFIER "=" expr ";"
 expr              = while | when | clause
 when              = "when" "{" ( clause "->" expr "," ... )* "}"
@@ -32,8 +32,10 @@ subscription      = clause "[" clause "]"
 primary           = IDENTIFIER | group | raw_value
 raw_value         = scalar | array_literal | map_literal | fn_decl
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
-fn_decl           = "fn" "(" ( IDENTIFIER "," ... )* ")" (function_block | expr)
+fn_decl           = "fn" "(" (fn_param "," ...)* ")" ("->" type)? (function_block | expr)
+fn_param          = IDENTIFIER (":" type)?
 array_literal     = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]" | "[" "for" IDENTIFIER "in" clause ("if" clause)? ":" clause "]"
-map_literal       = "%{" (primary "=>" clause , ...)* "}" 
+map_literal       = "%{" (primary "=>" clause , ...)* "}"
 group             = "(" clause ")"
+type              = "any" | "bool" | "number" | "str" | TYPE_IDENTIFIER
 ```

@@ -1,12 +1,12 @@
-use crate::interpret::values::DisplayWriter;
+use crate::interpret::{string_interner::StrId, values::DisplayWriter};
 use std::collections::HashMap;
 
 use crate::{
     id::Id,
     interpret::{
+        debug_string::DebugString,
         error::Error,
         heap::{GcHandle, GcObject},
-        debug_string::DebugString,
         interpreter,
         values::{BuiltinFn, MapKey, Number, SerialValue, Value},
     },
@@ -20,7 +20,10 @@ pub fn create() -> HashMap<Id, Value> {
     preludes.insert(Id::new("from_json"), Value::BuiltinFunction(from_json_fn));
     preludes.insert(Id::new("to_json"), Value::BuiltinFunction(to_json_fn));
 
-    preludes.insert(Id::new("array_len"), Value::BuiltinFunction(array_len_fn));
+    preludes.insert(
+        Id::new("array_length"),
+        Value::BuiltinFunction(array_length_fn),
+    );
     preludes.insert(Id::new("array_push"), Value::BuiltinFunction(array_push_fn));
     preludes.insert(Id::new("array_pop"), Value::BuiltinFunction(array_pop_fn));
     preludes.insert(
@@ -124,17 +127,10 @@ fn print_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Valu
 }
 
 fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
-    if args.len() != 2 {
-        return Err(Error::WrongNumberOfArgument(
-            Value::BuiltinFunction(assert_fn),
-            2,
-            args.len(),
-        ));
-    }
+    check_exact_args(assert_fn, &args, 2)?;
 
-    let mut args_iter = args.into_iter();
-    let condition = args_iter.next().unwrap();
-    let message_val = args_iter.next().unwrap();
+    let condition = args[0];
+    let message_val = args[1];
 
     match condition.get_bool() {
         Some(v) => {
@@ -155,16 +151,10 @@ fn assert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Val
 }
 
 fn from_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
-    let Some(value) = args.first() else {
-        // TODO: maybe throw error here
-        return Ok(Value::make_nil());
-    };
-    let value = *value;
-    let Value::Str(handle) = value else {
-        // TODO: maybe throw error here
-        return Ok(Value::make_nil());
-    };
-    let s = itp.environment.get_string(handle)?;
+    check_exact_args(from_json_fn, &args, 1)?;
+    let value = args[0];
+    let str_id = get_str_arg(from_json_fn, value)?;
+    let s = itp.environment.get_string(str_id)?;
     let serial_value = serde_json::from_str::<SerialValue>(s)
         .map_err(|e| Error::DeserializeFailed(value, e.to_string()))?;
 
@@ -174,9 +164,7 @@ fn from_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
 }
 
 fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
-    if args.is_empty() {
-        return Ok(Value::make_nil());
-    }
+    check_min_args(to_json_fn, &args, 1)?;
     let value = args[0];
 
     let serial_value = SerialValue::convert_from_value(value, itp.environment)?;
@@ -201,9 +189,9 @@ fn to_json_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Va
 
 // Array functions
 
-fn array_len_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
-    check_exact_args(array_len_fn, &args, 1)?;
-    let handle = get_array_arg(array_len_fn, args[0])?;
+fn array_length_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
+    check_exact_args(array_length_fn, &args, 1)?;
+    let handle = get_array_arg(array_length_fn, args[0])?;
     let len = itp.environment.get_array(handle)?.len();
     Ok(Value::make_number(Number::Integer(len as i64)))
 }
@@ -221,7 +209,7 @@ fn array_push_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result
     for v in args.into_iter().skip(1) {
         arr.push(v);
     }
-    Ok(Value::make_nil())
+    Ok(Value::Unit)
 }
 
 fn array_pop_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
@@ -231,7 +219,7 @@ fn array_pop_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<
         return Err(Error::GcObjectNotFound(handle));
     };
     // ownership of the popped value transfers to the caller; ref count stays at 1
-    Ok(arr.pop().unwrap_or(Value::Unit))
+    Ok(arr.pop().unwrap_or(Value::make_nil()))
 }
 
 fn array_insert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
@@ -253,7 +241,7 @@ fn array_insert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Resu
     for (i, v) in args.into_iter().skip(2).enumerate() {
         arr.insert(idx + i, v);
     }
-    Ok(Value::make_nil())
+    Ok(Value::Unit)
 }
 
 // Map functions
@@ -309,7 +297,7 @@ fn map_insert_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result
         return Err(Error::GcObjectNotFound(handle));
     };
     // ownership of the old value transfers to the caller; ref count stays at 1
-    Ok(map.insert(key, new_value).unwrap_or(Value::Unit))
+    Ok(map.insert(key, new_value).unwrap_or(Value::make_nil()))
 }
 
 fn map_remove_fn(itp: &mut interpreter::Interpreter, args: Vec<Value>) -> Result<Value, Error> {
@@ -345,6 +333,17 @@ fn check_min_args(func: BuiltinFn, args: &[Value], min: usize) -> Result<(), Err
         ));
     }
     Ok(())
+}
+
+fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<StrId, Error> {
+    match arg {
+        Value::Str(str_id) => Ok(str_id),
+        _ => Err(Error::WrongArgumentType(
+            Value::BuiltinFunction(func),
+            arg,
+            "str",
+        )),
+    }
 }
 
 fn get_array_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, Error> {

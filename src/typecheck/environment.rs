@@ -12,7 +12,7 @@ const BUILTIN_NAMES: &[&str] = &[
     "assert",
     "from_json",
     "to_json",
-    "array_len",
+    "array_length",
     "array_push",
     "array_pop",
     "array_insert",
@@ -36,17 +36,109 @@ pub struct Environment {
     type_interner: TypeInterner,
 }
 
+fn get_builtin_fn_type(name: &str) -> Type {
+    // TODO: Generate type parameters for arrays and maps function
+    match name {
+        "print" => Type::Function {
+            params: vec![],
+            varidict: Some(TypeId::STR),
+            return_: TypeId::STR,
+        },
+
+        "assert" => Type::Function {
+            params: vec![TypeId::BOOL, TypeId::STR],
+            varidict: None,
+            return_: TypeId::STR,
+        },
+
+        "from_json" => Type::Function {
+            params: vec![TypeId::STR],
+            varidict: None,
+            return_: TypeId::STR,
+        },
+        "to_json" => Type::Function {
+            params: vec![TypeId::STR],
+            varidict: Some(TypeId::BOOL),
+            return_: TypeId::STR,
+        },
+
+        "array_length" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: None,
+            return_: TypeId::NUMBER,
+        },
+        "array_push" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: Some(TypeId::ANY),
+            return_: TypeId::UNIT,
+        },
+        "array_pop" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: None,
+            // Nill  or T
+            return_: TypeId::ANY,
+        },
+        "array_insert" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: Some(TypeId::ANY),
+            return_: TypeId::UNIT,
+        },
+
+        "map_length" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: None,
+            return_: TypeId::NUMBER,
+        },
+        "map_keys" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: None,
+            // array of strings
+            return_: TypeId::ANY,
+        },
+        "map_values" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: None,
+            // array of value type
+            return_: TypeId::ANY,
+        },
+        "map_insert" => Type::Function {
+            params: vec![TypeId::ANY, TypeId::STR, TypeId::ANY],
+            varidict: None,
+            return_: TypeId::NIL,
+        },
+        "map_remove" => Type::Function {
+            params: vec![TypeId::ANY],
+            varidict: None,
+            return_: TypeId::ANY,
+        },
+
+        "_dbg_print" | "_dbg_state" | "_dbg_gc_mark" | "_dbg_gc_sweep" | "_dbg_gc_mark_sweep"
+        | "_dbg_heap_stats" => Type::Function {
+            params: vec![],
+            varidict: None,
+            return_: TypeId::UNIT,
+        },
+
+        _ => Type::Any,
+    }
+}
+
 impl Environment {
     pub fn new() -> Self {
         let mut builtins = HashMap::new();
+        let mut type_interner = TypeInterner::new();
+
         for &name in BUILTIN_NAMES {
-            builtins.insert(Id::new(name), TypeId::ANY);
+            let type_ = get_builtin_fn_type(name);
+            let type_id = type_interner.intern(&type_);
+            builtins.insert(Id::new(name), type_id);
         }
+
         // Scope 0 holds builtins; scope 1 is the user-global scope. Keeping them
         // separate lets user code shadow builtins without a re-declaration error.
         Self {
             scopes: vec![builtins, HashMap::new()],
-            type_interner: TypeInterner::new(),
+            type_interner,
         }
     }
 

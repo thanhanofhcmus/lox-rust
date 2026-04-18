@@ -136,10 +136,10 @@ impl Error {
                         )
                     })
                     .collect::<Vec<_>>()
-                    .join(", ");
+                    .join(",\n");
 
                 format!(
-                    "The function of type `{}` received wrong argument type(s), {}",
+                    "The function of type `{}` received wrong argument type(s),b\n{}",
                     interner.generate_readable_name(*caller_type_id),
                     wrong_type_str
                 )

@@ -31,8 +31,11 @@ pub enum Type {
         value: TypeId,
     },
 
+    // TODO: support generic types
     Function {
         params: Vec<TypeId>,
+        /// If the function is variadict, this type will be the type of the varidict args
+        varidict: Option<TypeId>,
         return_: TypeId,
     },
 }
@@ -97,11 +100,21 @@ impl TypeInterner {
             Some(Type::Map { value }) => {
                 format!("%{{string, {}}}", self.generate_readable_name(*value))
             }
-            Some(Type::Function { params, return_ }) => {
-                let p: Vec<String> = params
+            Some(Type::Function {
+                params,
+                varidict,
+                return_,
+            }) => {
+                let mut p: Vec<String> = params
                     .iter()
                     .map(|&i| self.generate_readable_name(i))
                     .collect();
+                if let Some(variadict_type) = varidict {
+                    p.push(format!(
+                        "{} ...",
+                        self.generate_readable_name(*variadict_type)
+                    ))
+                }
                 format!(
                     "fn({}) -> {}",
                     p.join(", "),

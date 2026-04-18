@@ -451,6 +451,8 @@ impl<'cl> TypeChecker<'cl> {
 
             let type_id = this.environment.declare_type(&Type::Function {
                 params: params_type_ids,
+                // Normal function does not have a way to declare variadict function yet
+                varidict: None,
                 return_: return_type,
             });
 
@@ -511,30 +513,48 @@ impl<'cl> TypeChecker<'cl> {
             .environment
             .lookup_type_id(caller_type_id)
             .ok_or(Error::TypeIsNotDeclared(caller_type_id))?;
-        let (param_type_ids, return_type_id) = match caller_type {
-            Type::Function { params, return_ } => (params, *return_),
+        let (param_type_ids, variadict_type_id, return_type_id) = match caller_type {
+            Type::Function {
+                params,
+                return_,
+                varidict,
+            } => (params, *varidict, *return_),
             _ => return Err(Error::TypeIsNoCallable(caller_type_id)),
         };
 
-        if param_type_ids.len() != args.len() {
-            return Err(Error::WrongNumberOfArgument(
-                caller_type_id,
-                param_type_ids.len(),
-                args.len(),
-            ));
-        }
+        // TODO: check variadict
+        // check for aleast number of args
+        // check for type variadict type is match with actual type
 
-        let arg_type_id = args.iter().map(|e| e.extra);
+        if variadict_type_id.is_none() {
+            if variadict_type_id.is_none() && param_type_ids.len() != args.len() {
+                return Err(Error::WrongNumberOfArgument(
+                    caller_type_id,
+                    param_type_ids.len(),
+                    args.len(),
+                ));
+            }
 
-        let wrong_type_args = param_type_ids
-            .iter()
-            .zip(arg_type_id)
-            .enumerate()
-            .filter(|(_, (l, r))| **l == *r)
-            .map(|(i, (l, r))| (i, *l, r))
-            .collect::<Vec<(usize, TypeId, TypeId)>>();
-        if !wrong_type_args.is_empty() {
-            return Err(Error::WrongArgumentTypes(caller_type_id, wrong_type_args));
+            fn is_convertable(lhs: TypeId, rhs: TypeId) -> bool {
+                match (lhs, rhs) {
+                    (TypeId::ANY, _) | (_, TypeId::ANY) => true,
+                    _ if lhs == rhs => true,
+                    _ => false,
+                }
+            }
+
+            let arg_type_id = args.iter().map(|e| e.extra);
+
+            let wrong_type_args = param_type_ids
+                .iter()
+                .zip(arg_type_id)
+                .enumerate()
+                .filter(|(_, (l, r))| !is_convertable(**l, *r))
+                .map(|(i, (l, r))| (i, *l, r))
+                .collect::<Vec<(usize, TypeId, TypeId)>>();
+            if !wrong_type_args.is_empty() {
+                return Err(Error::WrongArgumentTypes(caller_type_id, wrong_type_args));
+            }
         }
 
         Ok((
