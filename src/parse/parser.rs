@@ -8,7 +8,11 @@ use super::lex::LexItem;
 use crate::span::Span;
 use crate::token::Token;
 
-pub fn parse(input: &str, items: &[LexItem], should_eval_string: bool) -> Result<UntypedAST, ParseError> {
+pub fn parse(
+    input: &str,
+    items: &[LexItem],
+    should_eval_string: bool,
+) -> Result<UntypedAST, ParseError> {
     let mut state = Context::new(input, items, should_eval_string);
     let mut imports = vec![];
     let mut global_stmts = vec![];
@@ -246,13 +250,13 @@ fn parse_if(state: &mut Context) -> Result<UntypedExpr, ParseError> {
 
 fn parse_when(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     state.consume_token(Token::When)?;
-    let case_nodes = parse_comma_list(
+    let arms = parse_comma_list(
         state,
         Token::LPointParen,
         Token::RPointParen,
         parse_when_arm,
     )?;
-    Ok(Expression::new(ExprCase::When(case_nodes)))
+    Ok(Expression::new(ExprCase::When(WhenNode { arms })))
 }
 
 fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode<()>, ParseError> {
@@ -793,10 +797,10 @@ mod tests {
 
     #[test]
     fn parse_float_literal() {
-        let ast = parse_str("3.14;");
+        let ast = parse_str("9.8765;");
         match first_clause(&ast) {
             ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::Floating(v))) => {
-                assert!((v - 3.14).abs() < 1e-10);
+                assert!((v - 9.8765).abs() < 1e-10);
             }
             other => panic!("expected Floating, got {other:?}"),
         }

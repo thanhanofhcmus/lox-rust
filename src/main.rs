@@ -152,7 +152,7 @@ fn run_stmt(
 
     debug!("type checking start");
 
-    let ast = match typecheck::TypeChecker::new(typecheck_env, input).convert(ast) {
+    let ast = match typecheck::TypeChecker::new(typecheck_env).convert(ast) {
         Ok(v) => v,
         Err(err) => {
             error!("Typecheck error: {}", err);

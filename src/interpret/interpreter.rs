@@ -118,7 +118,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             .map_err(|err| Error::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         let mut tc_env = crate::typecheck::Environment::new();
-        let statement = crate::typecheck::TypeChecker::new(&mut tc_env, &content)
+        let statement = crate::typecheck::TypeChecker::new(&mut tc_env)
             .convert(untyped)
             .map_err(|err| Error::TypeCheckModuleFailed(name.clone(), path.clone(), err))?;
 
@@ -214,7 +214,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_expr(&mut self, expr: &Expression<Type>) -> Result<ValueReturn, Error> {
         match &expr.case {
             ExprCase::Return(expr) => self.interpret_return_expr(expr),
-            ExprCase::When(nodes) => self.interpret_when_expr(nodes),
+            ExprCase::When(node) => self.interpret_when_expr(node),
             ExprCase::Clause(node) => self.interpret_clause_expr(node).map(ValueReturn::new),
             ExprCase::Block(node) => self.interpret_block_node(node),
             ExprCase::While(node) => self.interpret_while_expr(node),
@@ -299,10 +299,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(ValueReturn::none())
     }
 
-    fn interpret_if_chain_expr(
-        &mut self,
-        node: &IfChainNode<Type>,
-    ) -> Result<ValueReturn, Error> {
+    fn interpret_if_chain_expr(&mut self, node: &IfChainNode<Type>) -> Result<ValueReturn, Error> {
         if self.is_truthy(&node.if_node.cond)? {
             return self.interpret_block_node(&node.if_node.stmts);
         }
@@ -537,11 +534,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
-    fn interpret_when_expr(
-        &mut self,
-        cases: &[WhenArmNode<Type>],
-    ) -> Result<ValueReturn, Error> {
-        for WhenArmNode { cond, expr } in cases {
+    fn interpret_when_expr(&mut self, node: &WhenNode<Type>) -> Result<ValueReturn, Error> {
+        for WhenArmNode { cond, expr } in &node.arms {
             if self.is_truthy(cond)? {
                 return self.interpret_clause_expr(expr).map(ValueReturn::new);
             }

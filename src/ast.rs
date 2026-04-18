@@ -67,7 +67,7 @@ impl Expression<()> {
 
 #[derive(Debug, Clone)]
 pub enum ExprCase<T> {
-    When(Vec<WhenArmNode<T>>),
+    When(WhenNode<T>),
     Clause(ClauseNode<T>),
     Block(BlockNode<T>),
     IfChain(IfChainNode<T>),
@@ -100,6 +100,17 @@ pub struct ForNode<T> {
 pub struct WhileNode<T> {
     pub cond: ClauseNode<T>,
     pub body: BlockNode<T>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhenArmNode<T> {
+    pub cond: ClauseNode<T>,
+    pub expr: ClauseNode<T>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhenNode<T> {
+    pub arms: Vec<WhenArmNode<T>>,
 }
 
 #[derive(Debug, Clone)]
@@ -209,12 +220,6 @@ pub struct BinaryOpNode<T> {
     pub lhs: Box<ClauseNode<T>>,
     pub op: Token,
     pub rhs: Box<ClauseNode<T>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WhenArmNode<T> {
-    pub cond: ClauseNode<T>,
-    pub expr: ClauseNode<T>,
 }
 
 #[derive(Debug, Clone)]

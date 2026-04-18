@@ -75,14 +75,13 @@ const BUILTIN_NAMES: &[&str] = &[
     "_dbg_heap_stats",
 ];
 
-pub struct TypeChecker<'cl, 'sl> {
+pub struct TypeChecker<'cl> {
     pub(super) environment: &'cl mut Environment,
-    pub(super) input: &'sl str,
 }
 
-impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
-    pub fn new(environment: &'cl mut Environment, input: &'sl str) -> Self {
-        Self { environment, input }
+impl<'cl> TypeChecker<'cl> {
+    pub fn new(environment: &'cl mut Environment) -> Self {
+        Self { environment }
     }
 
     /// Run `f` with a fresh scope pushed on the environment. The scope is
@@ -123,8 +122,8 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                     Some(type_annot) if *type_annot == expr.type_ => {}
                     Some(_) => {
                         return Err(Error::ExplitcitTypeDeclartionMismatchActualType(
-                            iden.name,
                             iden.name_id,
+                            iden.name,
                         ));
                     }
                 }
@@ -195,18 +194,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             ExprCase::IfChain(if_chain) => Ok(ExprCase::IfChain(self.convert_if_chain(if_chain)?)),
             ExprCase::While(while_node) => Ok(ExprCase::While(self.convert_while(while_node)?)),
             ExprCase::For(for_node) => Ok(ExprCase::For(self.convert_for(for_node)?)),
-            ExprCase::When(arms) => {
-                let arms = arms
-                    .into_iter()
-                    .map(|arm| {
-                        Ok(WhenArmNode {
-                            cond: self.convert_clause(arm.cond)?,
-                            expr: self.convert_clause(arm.expr)?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, Error>>()?;
-                Ok(ExprCase::When(arms))
-            }
+            ExprCase::When(node) => Ok(ExprCase::When(self.convert_when(node)?)),
             ExprCase::Return(expr) => {
                 let expr = expr
                     .map(|e| self.convert_expr(*e).map(Box::new))
@@ -252,17 +240,17 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
     }
 
     fn convert_else_if(&mut self, node: ElseIfNode<()>) -> Result<ElseIfNode<Type>, Error> {
-        Ok(ElseIfNode {
-            cond: self.convert_clause(node.cond)?,
-            stmts: self.convert_block(node.stmts)?,
-        })
+        let cond = self.convert_clause(node.cond)?;
+        require_type(&Type::Bool, &cond.type_)?;
+        let stmts = self.convert_block(node.stmts)?;
+        Ok(ElseIfNode { cond, stmts })
     }
 
     fn convert_while(&mut self, node: WhileNode<()>) -> Result<WhileNode<Type>, Error> {
-        Ok(WhileNode {
-            cond: self.convert_clause(node.cond)?,
-            body: self.convert_block(node.body)?,
-        })
+        let cond = self.convert_clause(node.cond)?;
+        require_type(&Type::Bool, &cond.type_)?;
+        let body = self.convert_block(node.body)?;
+        Ok(WhileNode { cond, body })
     }
 
     fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<Type>, Error> {
@@ -282,6 +270,22 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 body,
             })
         })
+    }
+
+    fn convert_when(&mut self, node: WhenNode<()>) -> Result<WhenNode<Type>, Error> {
+        let arms = node
+            .arms
+            .into_iter()
+            .map(|arm| self.convert_when_arm(arm))
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(WhenNode { arms })
+    }
+
+    fn convert_when_arm(&mut self, node: WhenArmNode<()>) -> Result<WhenArmNode<Type>, Error> {
+        let cond = self.convert_clause(node.cond)?;
+        require_type(&Type::Bool, &cond.type_)?;
+        let expr = self.convert_clause(node.expr)?;
+        Ok(WhenArmNode { cond, expr })
     }
 
     fn convert_clause(&mut self, ut_clause: UntypedClause) -> Result<TypedClause, Error> {
@@ -361,61 +365,139 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 Ok((type_, RawValueNode::Scalar(s)))
             }
             RawValueNode::ArrayLiteral(arr) => {
-                let (elem_ty, arr) = self.convert_array_literal(arr)?;
-                Ok((
-                    Type::Array(Box::new(elem_ty)),
-                    RawValueNode::ArrayLiteral(arr),
-                ))
+                let (type_, arr) = self.convert_array_literal(arr)?;
+                Ok((type_, RawValueNode::ArrayLiteral(arr)))
             }
             RawValueNode::MapLiteral(map) => {
-                let mut nodes = Vec::with_capacity(map.nodes.len());
-                for elem in map.nodes {
-                    if !scalar_is_string(&elem.key) {
-                        return Err(Error::MapKeyMustBeString(elem.key));
-                    }
-                    let value = self.convert_clause(elem.value)?;
-                    nodes.push(MapLiteralElementNode {
-                        key: elem.key,
-                        value,
-                    });
-                }
-                let value_ty = unify_types(nodes.iter().map(|n| &n.value.type_));
-                Ok((
-                    Type::Map {
-                        value: Box::new(value_ty),
-                    },
-                    RawValueNode::MapLiteral(MapLiteralNode { nodes }),
-                ))
+                let (type_, map) = self.convert_map_literal(map)?;
+                Ok((type_, RawValueNode::MapLiteral(map)))
             }
             RawValueNode::FnDecl(fn_decl) => {
-                // Params are declared in a fresh scope surrounding the body. The
-                // body itself opens its own scope via `convert_block`, so param
-                // shadowing by locals is handled naturally.
+                let (type_, fn_decl) = self.convert_fn_decl(fn_decl)?;
+                Ok((type_, RawValueNode::FnDecl(fn_decl)))
+            }
+        }
+    }
+
+    /// Typecheck an array literal and return the array's *element type* alongside
+    /// the converted node. The caller wraps it in `Type::Array(...)`.
+    fn convert_array_literal(
+        &mut self,
+        arr: ArrayLiteralNode<()>,
+    ) -> Result<(Type, ArrayLiteralNode<Type>), Error> {
+        match arr {
+            ArrayLiteralNode::List(items) => {
+                let items = items
+                    .into_iter()
+                    .map(|c| self.convert_clause(c))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let elem_ty = unify_types(items.iter().map(|c| &c.type_));
+                Ok((
+                    Type::Array(Box::new(elem_ty)),
+                    ArrayLiteralNode::List(items),
+                ))
+            }
+            ArrayLiteralNode::Repeat(rep) => {
+                let value = self.convert_clause(rep.value)?;
+                let repeat = self.convert_clause(rep.repeat)?;
+                require_type(&Type::Number, &repeat.type_)?;
+                Ok((
+                    Type::Array(Box::new(value.type_.clone())),
+                    ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode { value, repeat })),
+                ))
+            }
+            ArrayLiteralNode::ForComprehension(comp) => {
+                let ArrayForComprehentionNode {
+                    iden,
+                    collection,
+                    transformer,
+                    filter,
+                } = *comp;
+                let collection = self.convert_clause(collection)?;
+                // TODO: derive iden type from collection's element type.
+                let iden_name = iden.name;
+                let iden_id = iden.name_id;
                 self.with_scope(|this| {
-                    for param in &fn_decl.params {
-                        let ty = param.type_.clone().unwrap_or(Type::Any);
-                        this.environment
-                            .declare(param.id.name_id, ty)
-                            .map_err(|_| {
-                                Error::DuplicateDeclaration(param.id.name, param.id.name_id)
-                            })?;
+                    this.environment
+                        .declare(iden_id, Type::Any)
+                        .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
+                    let transformer = this.convert_clause(transformer)?;
+                    let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
+                    if let Some(f) = &filter {
+                        require_type(&Type::Bool, &f.type_)?;
                     }
-                    let body = this.convert_block(fn_decl.body)?;
-                    // TODO: derive signature from params/return_type
                     Ok((
-                        Type::Function {
-                            params: vec![],
-                            return_: Box::new(Type::Any),
-                        },
-                        RawValueNode::FnDecl(FnDeclNode {
-                            params: fn_decl.params,
-                            body,
-                            return_type: fn_decl.return_type,
-                        }),
+                        Type::Array(Box::new(transformer.type_.clone())),
+                        ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehentionNode {
+                            iden,
+                            collection,
+                            transformer,
+                            filter,
+                        })),
                     ))
                 })
             }
         }
+    }
+
+    fn convert_map_literal(
+        &mut self,
+        map: MapLiteralNode<()>,
+    ) -> Result<(Type, MapLiteralNode<Type>), Error> {
+        let mut nodes = Vec::with_capacity(map.nodes.len());
+        for elem in map.nodes {
+            if !scalar_is_string(&elem.key) {
+                return Err(Error::MapKeyMustBeString(elem.key));
+            }
+            let value = self.convert_clause(elem.value)?;
+            nodes.push(MapLiteralElementNode {
+                key: elem.key,
+                value,
+            });
+        }
+        let value_ty = unify_types(nodes.iter().map(|n| &n.value.type_));
+        Ok((
+            Type::Map {
+                value: Box::new(value_ty),
+            },
+            MapLiteralNode { nodes },
+        ))
+    }
+
+    fn convert_fn_decl(&mut self, node: FnDeclNode<()>) -> Result<(Type, FnDeclNode<Type>), Error> {
+        // Params are declared in a fresh scope surrounding the body. The
+        // body itself opens its own scope via `convert_block`, so param
+        // shadowing by locals is handled naturally.
+        self.with_scope(|this| {
+            for param in &node.params {
+                let ty = param.type_.clone().unwrap_or(Type::Any);
+                this.environment
+                    .declare(param.id.name_id, ty)
+                    .map_err(|_| Error::DuplicateDeclaration(param.id.name, param.id.name_id))?;
+            }
+            let body = this.convert_block(node.body)?;
+            // TODO: derive signature from params/return_type
+            match &node.return_type {
+                // infered or convert to any
+                None | Some(Type::Any) => {}
+                // same type
+                Some(type_annot) if *type_annot == body.type_ => {}
+                Some(_) => {
+                    return Err(Error::ExplitcitFunctionReturnTypeDeclartionMismatchActualType);
+                }
+            }
+            Ok((
+                Type::Function {
+                    params: vec![],
+                    return_: Box::new(Type::Any),
+                },
+                FnDeclNode {
+                    params: node.params,
+                    body,
+                    return_type: node.return_type,
+                },
+            ))
+        })
     }
 
     /// Compute the result type of a binary operator applied to operand types.
@@ -500,66 +582,6 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             _ => unreachable!("non-unary-op token in Unary: {:?}", op),
         }
     }
-
-    /// Typecheck an array literal and return the array's *element type* alongside
-    /// the converted node. The caller wraps it in `Type::Array(...)`.
-    fn convert_array_literal(
-        &mut self,
-        arr: ArrayLiteralNode<()>,
-    ) -> Result<(Type, ArrayLiteralNode<Type>), Error> {
-        match arr {
-            ArrayLiteralNode::List(items) => {
-                let items = items
-                    .into_iter()
-                    .map(|c| self.convert_clause(c))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let elem_ty = unify_types(items.iter().map(|c| &c.type_));
-                Ok((elem_ty, ArrayLiteralNode::List(items)))
-            }
-            ArrayLiteralNode::Repeat(rep) => {
-                let value = self.convert_clause(rep.value)?;
-                let repeat = self.convert_clause(rep.repeat)?;
-                require_type(&Type::Number, &repeat.type_)?;
-                let elem_ty = value.type_.clone();
-                Ok((
-                    elem_ty,
-                    ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode { value, repeat })),
-                ))
-            }
-            ArrayLiteralNode::ForComprehension(comp) => {
-                let ArrayForComprehentionNode {
-                    iden,
-                    collection,
-                    transformer,
-                    filter,
-                } = *comp;
-                let collection = self.convert_clause(collection)?;
-                // TODO: derive iden type from collection's element type.
-                let iden_name = iden.name;
-                let iden_id = iden.name_id;
-                self.with_scope(|this| {
-                    this.environment
-                        .declare(iden_id, Type::Any)
-                        .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
-                    let transformer = this.convert_clause(transformer)?;
-                    let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
-                    if let Some(f) = &filter {
-                        require_type(&Type::Bool, &f.type_)?;
-                    }
-                    let elem_ty = transformer.type_.clone();
-                    Ok((
-                        elem_ty,
-                        ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehentionNode {
-                            iden,
-                            collection,
-                            transformer,
-                            filter,
-                        })),
-                    ))
-                })
-            }
-        }
-    }
 }
 
 /// Join multiple types using gradual-typing-friendly unification:
@@ -600,7 +622,11 @@ pub enum Error {
     #[error("Type with name id {0:?} and position {1:?} have an explicit type mismatch")]
     // (Type span, Expected type, Actualt Type for now)
     // TODO: Update to be actual type and error message later if we we have a /resolved type id/things
-    ExplitcitTypeDeclartionMismatchActualType(Span, Id),
+    ExplitcitTypeDeclartionMismatchActualType(Id, Span),
+
+    #[error("Function have an explicit return type mismatch")]
+    // TODO: Make this mention function name
+    ExplitcitFunctionReturnTypeDeclartionMismatchActualType,
 
     #[error("Binary operator {0:?} cannot apply to types {1:?} and {2:?}")]
     BinaryOpTypeMismatch(Token, Type, Type),
@@ -631,7 +657,7 @@ mod tests {
         let items = lex(input).expect("lex failed");
         let ast = crate::parse::parse(input, &items, false).expect("parse failed");
         let mut env = Environment::new();
-        TypeChecker::new(&mut env, input).convert(ast)
+        TypeChecker::new(&mut env).convert(ast)
     }
 
     /// Type of the expression inside the first top-level Expr statement's Clause.
