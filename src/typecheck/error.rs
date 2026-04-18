@@ -27,6 +27,9 @@ pub enum Error {
     #[error("The type `{0:?}` cannot be indexed by the type`{1:?}`.")]
     IndexOpTypeMismatch(TypeId, TypeId),
 
+    #[error("The type `{0:?}` is not a callable")]
+    TypeIsNoCallable(TypeId),
+
     #[error("Expected type `{0:?}`, but found `{1:?}`.")]
     ExpectedType(TypeId, TypeId),
 
@@ -38,6 +41,9 @@ pub enum Error {
 
     #[error("Name collision: '{1:?}' is already declared in this scope.")]
     DuplicateDeclaration(Span, Id),
+
+    #[error("Internal: Type with id {0:?} should have been declared but not found")]
+    TypeIsNotDeclared(TypeId),
 }
 
 impl Error {
@@ -98,6 +104,11 @@ impl Error {
                 interner.generate_readable_name(*indexee_type_id)
             ),
 
+            Self::TypeIsNoCallable(caller_type_id) => format!(
+                "The type `{}` is not a function or built-in function",
+                interner.generate_readable_name(*caller_type_id)
+            ),
+
             Self::UnaryOpTypeMismatch(op, type_id) => format!(
                 "The operator `{:?}` cannot be applied to type `{}`.",
                 op,
@@ -121,6 +132,8 @@ impl Error {
             Self::DuplicateDeclaration(_, id) => {
                 format!("The identifier '{id:?}' has already been declared.")
             }
+
+            Self::TypeIsNotDeclared(_) => self.to_string(),
         }
     }
 

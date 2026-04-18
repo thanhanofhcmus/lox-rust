@@ -279,14 +279,8 @@ impl<'cl> TypeChecker<'cl> {
                 (type_id, ClauseCase::Subscription(case))
             }
             ClauseCase::FnCall(call) => {
-                let caller = Box::new(self.convert_clause(*call.caller)?);
-                let args = call
-                    .args
-                    .into_iter()
-                    .map(|e| self.convert_expr(e))
-                    .collect::<Result<Vec<_>, _>>()?;
-                // TODO: implement
-                (TypeId::ANY, ClauseCase::FnCall(FnCallNode { caller, args }))
+                let (type_id, case) = self.convert_fn_call(call)?;
+                (type_id, ClauseCase::FnCall(case))
             }
         };
         Ok(ClauseNode {
@@ -431,10 +425,13 @@ impl<'cl> TypeChecker<'cl> {
             let body = this.convert_block(node.body)?;
             // TODO: derive signature from params after we support annotating in the parser
             let return_type = match &node.return_type {
-                // inferred or convert to any
-                None | Some(TypeId::ANY) => TypeId::ANY,
+                // inferred type got from the computed body
+                None => body.extra,
+                // explicit any type "swallow" the body type
+                Some(TypeId::ANY) => TypeId::ANY,
                 // same type
                 Some(type_annot) if *type_annot == body.extra => *type_annot,
+                // error case
                 Some(type_id) => {
                     return Err(Error::ExplicitFnReturnTypeMismatch(body.extra, *type_id));
                 }
@@ -462,13 +459,18 @@ impl<'cl> TypeChecker<'cl> {
     ) -> Result<(TypeId, SubscriptionNode<TypeId>), Error> {
         let indexer = self.convert_clause(*node.indexer)?;
         let indexee = self.convert_clause(*node.indexee)?;
+        let indexer_type_id = indexer.extra;
+        let indexee_type_id = indexee.extra;
 
-        let indexer_type = self.environment.lookup_type_id(indexer.extra).unwrap();
+        let indexer_type = self
+            .environment
+            .lookup_type_id(indexer_type_id)
+            .ok_or(Error::TypeIsNotDeclared(indexer_type_id))?;
 
-        let result_type_id = match (indexer_type, indexee.extra) {
+        let result_type_id = match (indexer_type, indexee_type_id) {
             (Type::Array { elem }, TypeId::NUMBER) => *elem,
             (Type::Map { value }, TypeId::STR) => *value,
-            _ => return Err(Error::IndexOpTypeMismatch(indexer.extra, indexee.extra)),
+            _ => return Err(Error::IndexOpTypeMismatch(indexer_type_id, indexee_type_id)),
         };
 
         Ok((
@@ -480,17 +482,37 @@ impl<'cl> TypeChecker<'cl> {
         ))
     }
 
-    /// Compute the result type of a binary operator applied to operand types.
-    ///
-    /// Opinionated choices (adjust if your language differs):
-    /// - `+` does numeric add OR string concat (same-typed operands).
-    /// - `-` `*` `/` `%` are numbers only.
-    /// - `<` `<=` `>` `>=` are numbers only (no lexicographic string compare).
-    /// - `==` `!=` require both sides to be the same type.
-    /// - `and` `or` require both sides to be `Bool`.
-    /// - `Any` on either side is permissive: the op is accepted and the
-    ///   result is the "natural" output type (Number for arithmetic, Bool for
-    ///   comparison/logical, Any for `+` when we can't disambiguate).
+    fn convert_fn_call(
+        &mut self,
+        node: FnCallNode<()>,
+    ) -> Result<(TypeId, FnCallNode<TypeId>), Error> {
+        let caller = self.convert_clause(*node.caller)?;
+        // TODO: type check the type of args
+        let args = node
+            .args
+            .into_iter()
+            .map(|e| self.convert_expr(e))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let caller_type_id = caller.extra;
+        let caller_type = self
+            .environment
+            .lookup_type_id(caller_type_id)
+            .ok_or(Error::TypeIsNotDeclared(caller_type_id))?;
+        let result_type_id = match caller_type {
+            Type::Function { params: _, return_ } => *return_,
+            _ => return Err(Error::TypeIsNoCallable(caller_type_id)),
+        };
+
+        Ok((
+            result_type_id,
+            FnCallNode {
+                caller: Box::new(caller),
+                args,
+            },
+        ))
+    }
+
     fn type_binary_op(&self, op: Token, lhs: TypeId, rhs: TypeId) -> Result<TypeId, Error> {
         use Token::*;
         let any = lhs == TypeId::ANY || rhs == TypeId::ANY;
