@@ -53,11 +53,11 @@ impl<'cl> TypeChecker<'cl> {
         match ut_stmt {
             Statement::Declare(DeclareStatementNode {
                 iden,
-                explicit_type: type_,
+                explicit_type: type_id,
                 expr,
             }) => {
                 let expr = self.convert_expr(expr)?;
-                match &type_ {
+                match &type_id {
                     None | Some(TypeId::ANY) => {}
                     Some(type_annot) if *type_annot == expr.extra => {}
                     Some(type_annot) => {
@@ -70,14 +70,14 @@ impl<'cl> TypeChecker<'cl> {
                     }
                 }
                 // Annotation wins when written (including `Any`); otherwise infer from expr.
-                let var_type = type_.clone().unwrap_or_else(|| expr.extra.clone());
+                let var_type = type_id.unwrap_or(expr.extra);
                 self.environment
                     .declare(iden.name_id, var_type)
                     .map_err(|_| Error::DuplicateDeclaration(iden.name, iden.name_id))?;
                 Ok(Statement::Declare(DeclareStatementNode {
                     expr,
                     iden,
-                    explicit_type: type_,
+                    explicit_type: type_id,
                 }))
             }
             Statement::ReassignIden(target, expr) => {
@@ -429,7 +429,7 @@ impl<'cl> TypeChecker<'cl> {
         // shadowing by locals is handled naturally.
         self.with_scope(|this| {
             for param in &node.params {
-                let ty = param.type_.clone().unwrap_or(TypeId::ANY);
+                let ty = param.type_.unwrap_or(TypeId::ANY);
                 this.environment
                     .declare(param.id.name_id, ty)
                     .map_err(|_| Error::DuplicateDeclaration(param.id.name, param.id.name_id))?;
@@ -571,7 +571,7 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), Error> {
     if matches!(actual, TypeId::ANY) || actual == expected {
         Ok(())
     } else {
-        Err(Error::ExpectedType(expected.clone(), actual.clone()))
+        Err(Error::ExpectedType(expected, actual))
     }
 }
 

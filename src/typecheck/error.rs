@@ -49,7 +49,7 @@ impl Error {
         // Resolve the technical error into a readable description
         let description = self.resolve_description(interner);
 
-        let source_name = source_name.map(|v| v.to_string()).unwrap_or(String::new());
+        let source_name = source_name.map(|v| v.to_string()).unwrap_or_default();
         let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
         let line_label = line.to_string();
         let gutter = " ".repeat(line_label.len());

@@ -248,11 +248,13 @@ impl Heap {
         match &entry.object {
             GcObject::Function(_) => { /* do nothing */ }
             GcObject::Array(arr) => {
+                // have to use clone here since we are modifying the backing GC object
                 for value in arr.clone() {
                     self.shallow_dispose_value(value);
                 }
             }
             GcObject::Map(map) => {
+                // have to use clone here since we are modifying the backing GC object
                 for (_, value) in map.clone() {
                     self.shallow_dispose_value(value);
                 }
@@ -434,11 +436,7 @@ impl DebugString for Heap {
 
         for (i, slot) in self.slots.iter().enumerate() {
             let Some(entry) = slot else { continue };
-            let status = if entry.is_marked_for_delete {
-                "dead"
-            } else {
-                "live"
-            };
+            let status = if entry.is_marked_for_delete { "dead" } else { "live" };
             let ref_count = entry.ref_count;
             let type_name = entry.object.get_kind().type_name();
             writeln!(

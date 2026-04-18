@@ -57,7 +57,7 @@ impl ParseError {
         let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
 
         // Format the visual components
-        let source_name = source_name.map(|v| v.to_string()).unwrap_or(String::new());
+        let source_name = source_name.map(|v| v.to_string()).unwrap_or_default();
         let line_label = line.to_string();
         let gutter_padding = " ".repeat(line_label.len());
         let pointer_indent = " ".repeat(col.saturating_sub(1));

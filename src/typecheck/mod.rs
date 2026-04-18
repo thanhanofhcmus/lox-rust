@@ -1,7 +1,7 @@
 mod environment;
 mod error;
-mod typecheker;
+mod typechecker;
 
 pub use environment::Environment;
 pub use error::Error;
-pub use typecheker::TypeChecker;
+pub use typechecker::TypeChecker;
