@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{id::Id, types::Type};
+use crate::{id::Id, types::TypeId};
 
 /// Keep in sync with `src/interpret/predule.rs::create()`. Registered as
 /// `Type::Any` — we don't model their signatures yet.
@@ -29,14 +29,14 @@ const BUILTIN_NAMES: &[&str] = &[
 /// Scoped symbol table mapping `Id` → `Type` for typechecking.
 /// The outermost scope is seeded with interpreter builtins (see `BUILTIN_NAMES`).
 pub struct Environment {
-    scopes: Vec<HashMap<Id, Type>>,
+    scopes: Vec<HashMap<Id, TypeId>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         let mut builtins = HashMap::new();
         for &name in BUILTIN_NAMES {
-            builtins.insert(Id::new(name), Type::Any);
+            builtins.insert(Id::new(name), TypeId::ANY);
         }
         // Scope 0 holds builtins; scope 1 is the user-global scope. Keeping them
         // separate lets user code shadow builtins without a redeclaration error.
@@ -56,19 +56,19 @@ impl Environment {
     /// Declare `id` in the current (innermost) scope. Returns `Err` with the
     /// existing type if `id` is already bound *in the same scope*. Shadowing
     /// a binding from an outer scope is allowed and is not an error.
-    pub fn declare(&mut self, id: Id, ty: Type) -> Result<(), Type> {
+    pub fn declare(&mut self, id: Id, type_id: TypeId) -> Result<(), TypeId> {
         let scope = self.scopes.last_mut().expect("at least one scope");
         use std::collections::hash_map::Entry;
         match scope.entry(id) {
-            Entry::Occupied(o) => Err(o.get().clone()),
+            Entry::Occupied(o) => Err(*o.get()),
             Entry::Vacant(v) => {
-                v.insert(ty);
+                v.insert(type_id);
                 Ok(())
             }
         }
     }
 
-    pub fn lookup(&self, id: Id) -> Option<&Type> {
-        self.scopes.iter().rev().find_map(|s| s.get(&id))
+    pub fn lookup(&self, id: Id) -> Option<TypeId> {
+        self.scopes.iter().rev().find_map(|s| s.get(&id)).copied()
     }
 }

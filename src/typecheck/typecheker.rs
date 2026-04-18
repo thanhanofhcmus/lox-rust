@@ -1,15 +1,23 @@
 use super::{Environment, Error};
 
 use crate::ast::*;
-use crate::{token::Token, types::Type};
+use crate::types::Type;
+use crate::{
+    token::Token,
+    types::{TypeId, TypeInterner},
+};
 
 pub struct TypeChecker<'cl> {
     pub(super) environment: &'cl mut Environment,
+    type_interner: TypeInterner,
 }
 
 impl<'cl> TypeChecker<'cl> {
     pub fn new(environment: &'cl mut Environment) -> Self {
-        Self { environment }
+        Self {
+            environment,
+            type_interner: TypeInterner::new(),
+        }
     }
 
     /// Run `f` with a fresh scope pushed on the environment. The scope is
@@ -22,7 +30,7 @@ impl<'cl> TypeChecker<'cl> {
     }
 
     /// Consume an untyped AST and return a typed AST with all declarations type-checked.
-    pub fn convert(&mut self, ast: UntypedAST) -> Result<TypedAST, Error> {
+    pub fn convert(&mut self, ast: AST<()>) -> Result<AST<TypeId>, Error> {
         let AST {
             imports,
             global_stmts: untyped_global_stmts,
@@ -41,13 +49,17 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_stmt(&mut self, ut_stmt: Statement<()>) -> Result<Statement<Type>, Error> {
+    fn convert_stmt(&mut self, ut_stmt: Statement<()>) -> Result<Statement<TypeId>, Error> {
         match ut_stmt {
-            Statement::Declare(DeclareStatementNode { iden, type_, expr }) => {
+            Statement::Declare(DeclareStatementNode {
+                iden,
+                explicit_type: type_,
+                expr,
+            }) => {
                 let expr = self.convert_expr(expr)?;
                 match &type_ {
-                    None | Some(Type::Any) => {}
-                    Some(type_annot) if *type_annot == expr.type_ => {}
+                    None | Some(TypeId::ANY) => {}
+                    Some(type_annot) if *type_annot == expr.extra => {}
                     Some(_) => {
                         return Err(Error::ExplitcitTypeDeclartionMismatchActualType(
                             iden.name_id,
@@ -56,14 +68,14 @@ impl<'cl> TypeChecker<'cl> {
                     }
                 }
                 // Annotation wins when written (including `Any`); otherwise infer from expr.
-                let var_type = type_.clone().unwrap_or_else(|| expr.type_.clone());
+                let var_type = type_.clone().unwrap_or_else(|| expr.extra.clone());
                 self.environment
                     .declare(iden.name_id, var_type)
                     .map_err(|_| Error::DuplicateDeclaration(iden.name, iden.name_id))?;
                 Ok(Statement::Declare(DeclareStatementNode {
                     expr,
                     iden,
-                    type_,
+                    explicit_type: type_,
                 }))
             }
             Statement::ReassignIden(target, expr) => {
@@ -81,7 +93,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_reassign_target(
         &mut self,
         target: ChainingReassignTargetNode<()>,
-    ) -> Result<ChainingReassignTargetNode<Type>, Error> {
+    ) -> Result<ChainingReassignTargetNode<TypeId>, Error> {
         if target.base.is_simple() && self.environment.lookup(target.base.name_id).is_none() {
             return Err(Error::UndefinedIdentifier(
                 target.base.name,
@@ -99,23 +111,23 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_expr(&mut self, ut_expr: UntypedExpr) -> Result<TypedExpr, Error> {
+    fn convert_expr(&mut self, ut_expr: Expression<()>) -> Result<Expression<TypeId>, Error> {
         match ut_expr.case {
             ExprCase::Clause(clause) => {
                 let clause = self.convert_clause(clause)?;
                 Ok(Expression {
-                    type_: clause.type_.clone(),
+                    extra: clause.extra,
                     case: ExprCase::Clause(clause),
                 })
             }
             _ => Ok(Expression {
-                type_: Type::Any,
+                extra: TypeId::ANY,
                 case: self.convert_expr_case(ut_expr.case)?,
             }),
         }
     }
 
-    fn convert_expr_case(&mut self, case: ExprCase<()>) -> Result<ExprCase<Type>, Error> {
+    fn convert_expr_case(&mut self, case: ExprCase<()>) -> Result<ExprCase<TypeId>, Error> {
         match case {
             ExprCase::Clause(clause) => Ok(ExprCase::Clause(self.convert_clause(clause)?)),
             ExprCase::Block(block) => Ok(ExprCase::Block(self.convert_block(block)?)),
@@ -132,7 +144,7 @@ impl<'cl> TypeChecker<'cl> {
         }
     }
 
-    fn convert_block(&mut self, block: BlockNode<()>) -> Result<BlockNode<Type>, Error> {
+    fn convert_block(&mut self, block: BlockNode<()>) -> Result<BlockNode<TypeId>, Error> {
         self.with_scope(|this| {
             let stmts = block
                 .stmts
@@ -143,19 +155,16 @@ impl<'cl> TypeChecker<'cl> {
                 .last_expr
                 .map(|e| this.convert_expr(*e).map(Box::new))
                 .transpose()?;
-            let type_ = last_expr
-                .as_ref()
-                .map(|e| e.type_.clone())
-                .unwrap_or(Type::Unit);
+            let type_id = last_expr.as_ref().map(|e| e.extra).unwrap_or(TypeId::UNIT);
             Ok(BlockNode {
-                type_,
+                extra: type_id,
                 stmts,
                 last_expr,
             })
         })
     }
 
-    fn convert_if_chain(&mut self, node: IfChainNode<()>) -> Result<IfChainNode<Type>, Error> {
+    fn convert_if_chain(&mut self, node: IfChainNode<()>) -> Result<IfChainNode<TypeId>, Error> {
         Ok(IfChainNode {
             if_node: self.convert_else_if(node.if_node)?,
             else_if_nodes: node
@@ -167,21 +176,21 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_else_if(&mut self, node: ElseIfNode<()>) -> Result<ElseIfNode<Type>, Error> {
+    fn convert_else_if(&mut self, node: ElseIfNode<()>) -> Result<ElseIfNode<TypeId>, Error> {
         let cond = self.convert_clause(node.cond)?;
-        require_type(&Type::Bool, &cond.type_)?;
+        require_type(TypeId::BOOL, cond.extra)?;
         let stmts = self.convert_block(node.stmts)?;
         Ok(ElseIfNode { cond, stmts })
     }
 
-    fn convert_while(&mut self, node: WhileNode<()>) -> Result<WhileNode<Type>, Error> {
+    fn convert_while(&mut self, node: WhileNode<()>) -> Result<WhileNode<TypeId>, Error> {
         let cond = self.convert_clause(node.cond)?;
-        require_type(&Type::Bool, &cond.type_)?;
+        require_type(TypeId::BOOL, cond.extra)?;
         let body = self.convert_block(node.body)?;
         Ok(WhileNode { cond, body })
     }
 
-    fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<Type>, Error> {
+    fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<TypeId>, Error> {
         let collection = self.convert_clause(node.collection)?;
         // TODO: derive iden type from the collection's element type once array/map
         // element types are used during lookup. Permissive `Any` for now.
@@ -189,7 +198,7 @@ impl<'cl> TypeChecker<'cl> {
         let iden_id = node.iden.name_id;
         self.with_scope(|this| {
             this.environment
-                .declare(iden_id, Type::Any)
+                .declare(iden_id, TypeId::ANY)
                 .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
             let body = this.convert_block(node.body)?;
             Ok(ForNode {
@@ -200,7 +209,7 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_when(&mut self, node: WhenNode<()>) -> Result<WhenNode<Type>, Error> {
+    fn convert_when(&mut self, node: WhenNode<()>) -> Result<WhenNode<TypeId>, Error> {
         let arms = node
             .arms
             .into_iter()
@@ -209,18 +218,18 @@ impl<'cl> TypeChecker<'cl> {
         Ok(WhenNode { arms })
     }
 
-    fn convert_when_arm(&mut self, node: WhenArmNode<()>) -> Result<WhenArmNode<Type>, Error> {
+    fn convert_when_arm(&mut self, node: WhenArmNode<()>) -> Result<WhenArmNode<TypeId>, Error> {
         let cond = self.convert_clause(node.cond)?;
-        require_type(&Type::Bool, &cond.type_)?;
+        require_type(TypeId::BOOL, cond.extra)?;
         let expr = self.convert_clause(node.expr)?;
         Ok(WhenArmNode { cond, expr })
     }
 
-    fn convert_clause(&mut self, ut_clause: UntypedClause) -> Result<TypedClause, Error> {
-        let (type_, case) = match ut_clause.case {
+    fn convert_clause(&mut self, ut_clause: ClauseNode<()>) -> Result<ClauseNode<TypeId>, Error> {
+        let (type_id, case) = match ut_clause.case {
             ClauseCase::RawValue(raw) => {
-                let (type_, raw) = self.convert_raw_value(raw)?;
-                (type_, ClauseCase::RawValue(raw))
+                let (type_id, raw) = self.convert_raw_value(raw)?;
+                (type_id, ClauseCase::RawValue(raw))
             }
             ClauseCase::Identifier(iden) => {
                 // Prefixed identifiers (e.g. `foo.bar`) are module/member access — not
@@ -228,29 +237,27 @@ impl<'cl> TypeChecker<'cl> {
                 let type_ = if iden.is_simple() {
                     self.environment
                         .lookup(iden.name_id)
-                        .cloned()
                         .ok_or(Error::UndefinedIdentifier(iden.name, iden.name_id))?
                 } else {
-                    Type::Any
+                    TypeId::ANY
                 };
                 (type_, ClauseCase::Identifier(iden))
             }
             ClauseCase::Group(inner) => {
                 let inner = self.convert_clause(*inner)?;
-                let type_ = inner.type_.clone();
-                (type_, ClauseCase::Group(Box::new(inner)))
+                (inner.extra, ClauseCase::Group(Box::new(inner)))
             }
             ClauseCase::Unary(operand, op) => {
                 let operand = self.convert_clause(*operand)?;
-                let type_ = self.type_unary_op(op, &operand.type_)?;
-                (type_, ClauseCase::Unary(Box::new(operand), op))
+                let type_id = self.type_unary_op(op, operand.extra)?;
+                (type_id, ClauseCase::Unary(Box::new(operand), op))
             }
             ClauseCase::Binary(bin) => {
                 let lhs = Box::new(self.convert_clause(*bin.lhs)?);
                 let rhs = Box::new(self.convert_clause(*bin.rhs)?);
-                let type_ = self.type_binary_op(bin.op, &lhs.type_, &rhs.type_)?;
+                let type_id = self.type_binary_op(bin.op, lhs.extra, rhs.extra)?;
                 (
-                    type_,
+                    type_id,
                     ClauseCase::Binary(BinaryOpNode {
                         lhs,
                         op: bin.op,
@@ -263,7 +270,8 @@ impl<'cl> TypeChecker<'cl> {
                     indexer: Box::new(self.convert_clause(*sub.indexer)?),
                     indexee: Box::new(self.convert_clause(*sub.indexee)?),
                 };
-                (Type::Any, ClauseCase::Subscription(sub))
+                // TODO: implement
+                (TypeId::ANY, ClauseCase::Subscription(sub))
             }
             ClauseCase::FnCall(call) => {
                 let caller = Box::new(self.convert_clause(*call.caller)?);
@@ -272,37 +280,41 @@ impl<'cl> TypeChecker<'cl> {
                     .into_iter()
                     .map(|e| self.convert_expr(e))
                     .collect::<Result<Vec<_>, _>>()?;
-                (Type::Any, ClauseCase::FnCall(FnCallNode { caller, args }))
+                // TODO: implement
+                (TypeId::ANY, ClauseCase::FnCall(FnCallNode { caller, args }))
             }
         };
-        Ok(ClauseNode { type_, case })
+        Ok(ClauseNode {
+            extra: type_id,
+            case,
+        })
     }
 
     fn convert_raw_value(
         &mut self,
         raw: RawValueNode<()>,
-    ) -> Result<(Type, RawValueNode<Type>), Error> {
+    ) -> Result<(TypeId, RawValueNode<TypeId>), Error> {
         match raw {
             RawValueNode::Scalar(s) => {
-                let type_ = match &s {
-                    ScalarNode::Nil => Type::Nil,
-                    ScalarNode::Bool(_) => Type::Bool,
-                    ScalarNode::Integer(_) | ScalarNode::Floating(_) => Type::Number,
-                    ScalarNode::LazyStr { .. } | ScalarNode::StrLiteral(_) => Type::Str,
+                let type_id = match &s {
+                    ScalarNode::Nil => TypeId::NIL,
+                    ScalarNode::Bool(_) => TypeId::BOOL,
+                    ScalarNode::Integer(_) | ScalarNode::Floating(_) => TypeId::NUMBER,
+                    ScalarNode::LazyStr { .. } | ScalarNode::StrLiteral(_) => TypeId::STR,
                 };
-                Ok((type_, RawValueNode::Scalar(s)))
+                Ok((type_id, RawValueNode::Scalar(s)))
             }
             RawValueNode::ArrayLiteral(arr) => {
-                let (type_, arr) = self.convert_array_literal(arr)?;
-                Ok((type_, RawValueNode::ArrayLiteral(arr)))
+                let (type_id, arr) = self.convert_array_literal(arr)?;
+                Ok((type_id, RawValueNode::ArrayLiteral(arr)))
             }
             RawValueNode::MapLiteral(map) => {
-                let (type_, map) = self.convert_map_literal(map)?;
-                Ok((type_, RawValueNode::MapLiteral(map)))
+                let (type_id, map) = self.convert_map_literal(map)?;
+                Ok((type_id, RawValueNode::MapLiteral(map)))
             }
             RawValueNode::FnDecl(fn_decl) => {
-                let (type_, fn_decl) = self.convert_fn_decl(fn_decl)?;
-                Ok((type_, RawValueNode::FnDecl(fn_decl)))
+                let (type_id, fn_decl) = self.convert_fn_decl(fn_decl)?;
+                Ok((type_id, RawValueNode::FnDecl(fn_decl)))
             }
         }
     }
@@ -312,25 +324,24 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_array_literal(
         &mut self,
         arr: ArrayLiteralNode<()>,
-    ) -> Result<(Type, ArrayLiteralNode<Type>), Error> {
+    ) -> Result<(TypeId, ArrayLiteralNode<TypeId>), Error> {
         match arr {
             ArrayLiteralNode::List(items) => {
                 let items = items
                     .into_iter()
                     .map(|c| self.convert_clause(c))
                     .collect::<Result<Vec<_>, _>>()?;
-                let elem_ty = unify_types(items.iter().map(|c| &c.type_));
-                Ok((
-                    Type::Array(Box::new(elem_ty)),
-                    ArrayLiteralNode::List(items),
-                ))
+                let elem_ty = unify_types(items.iter().map(|c| &c.extra));
+                let type_id = self.type_interner.intern(&Type::Array(elem_ty));
+                Ok((type_id, ArrayLiteralNode::List(items)))
             }
             ArrayLiteralNode::Repeat(rep) => {
                 let value = self.convert_clause(rep.value)?;
                 let repeat = self.convert_clause(rep.repeat)?;
-                require_type(&Type::Number, &repeat.type_)?;
+                require_type(TypeId::NUMBER, repeat.extra)?;
+                let type_id = self.type_interner.intern(&Type::Array(value.extra));
                 Ok((
-                    Type::Array(Box::new(value.type_.clone())),
+                    type_id,
                     ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode { value, repeat })),
                 ))
             }
@@ -347,15 +358,16 @@ impl<'cl> TypeChecker<'cl> {
                 let iden_id = iden.name_id;
                 self.with_scope(|this| {
                     this.environment
-                        .declare(iden_id, Type::Any)
+                        .declare(iden_id, TypeId::ANY)
                         .map_err(|_| Error::DuplicateDeclaration(iden_name, iden_id))?;
                     let transformer = this.convert_clause(transformer)?;
                     let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
                     if let Some(f) = &filter {
-                        require_type(&Type::Bool, &f.type_)?;
+                        require_type(TypeId::BOOL, f.extra)?;
                     }
+                    let type_id = this.type_interner.intern(&Type::Array(transformer.extra));
                     Ok((
-                        Type::Array(Box::new(transformer.type_.clone())),
+                        type_id,
                         ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehentionNode {
                             iden,
                             collection,
@@ -371,7 +383,7 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_map_literal(
         &mut self,
         map: MapLiteralNode<()>,
-    ) -> Result<(Type, MapLiteralNode<Type>), Error> {
+    ) -> Result<(TypeId, MapLiteralNode<TypeId>), Error> {
         let mut nodes = Vec::with_capacity(map.nodes.len());
         for elem in map.nodes {
             if !scalar_is_string(&elem.key) {
@@ -383,42 +395,49 @@ impl<'cl> TypeChecker<'cl> {
                 value,
             });
         }
-        let value_ty = unify_types(nodes.iter().map(|n| &n.value.type_));
-        Ok((
-            Type::Map {
-                value: Box::new(value_ty),
-            },
-            MapLiteralNode { nodes },
-        ))
+
+        let type_id = self.type_interner.intern(&Type::Map {
+            value: unify_types(nodes.iter().map(|n| &n.value.extra)),
+        });
+
+        Ok((type_id, MapLiteralNode { nodes }))
     }
 
-    fn convert_fn_decl(&mut self, node: FnDeclNode<()>) -> Result<(Type, FnDeclNode<Type>), Error> {
+    fn convert_fn_decl(
+        &mut self,
+        node: FnDeclNode<()>,
+    ) -> Result<(TypeId, FnDeclNode<TypeId>), Error> {
         // Params are declared in a fresh scope surrounding the body. The
         // body itself opens its own scope via `convert_block`, so param
         // shadowing by locals is handled naturally.
         self.with_scope(|this| {
             for param in &node.params {
-                let ty = param.type_.clone().unwrap_or(Type::Any);
+                let ty = param.type_.clone().unwrap_or(TypeId::ANY);
                 this.environment
                     .declare(param.id.name_id, ty)
                     .map_err(|_| Error::DuplicateDeclaration(param.id.name, param.id.name_id))?;
             }
             let body = this.convert_block(node.body)?;
-            // TODO: derive signature from params/return_type
-            match &node.return_type {
-                // infered or convert to any
-                None | Some(Type::Any) => {}
+            // TODO: derive signature from params after we support annotating in the parser
+            let return_type = match &node.return_type {
+                // inferred or convert to any
+                None | Some(TypeId::ANY) => TypeId::ANY,
                 // same type
-                Some(type_annot) if *type_annot == body.type_ => {}
-                Some(_) => {
-                    return Err(Error::ExplitcitFunctionReturnTypeDeclartionMismatchActualType);
+                Some(type_annot) if *type_annot == body.extra => *type_annot,
+                Some(type_id) => {
+                    return Err(Error::ExplicitFnReturnTypeDeclMismatch(
+                        body.extra, *type_id,
+                    ));
                 }
-            }
+            };
+
+            let type_id = this.type_interner.intern(&Type::Function {
+                params: vec![],
+                return_: return_type,
+            });
+
             Ok((
-                Type::Function {
-                    params: vec![],
-                    return_: Box::new(Type::Any),
-                },
+                type_id,
                 FnDeclNode {
                     params: node.params,
                     body,
@@ -439,46 +458,46 @@ impl<'cl> TypeChecker<'cl> {
     /// - `Any` on either side is permissive: the op is accepted and the
     ///   result is the "natural" output type (Number for arithmetic, Bool for
     ///   comparison/logical, Any for `+` when we can't disambiguate).
-    fn type_binary_op(&self, op: Token, lhs: &Type, rhs: &Type) -> Result<Type, Error> {
+    fn type_binary_op(&self, op: Token, lhs: TypeId, rhs: TypeId) -> Result<TypeId, Error> {
         use Token::*;
-        let any = matches!(lhs, Type::Any) || matches!(rhs, Type::Any);
-        let mismatch = || Error::BinaryOpTypeMismatch(op, lhs.clone(), rhs.clone());
+        let any = lhs == TypeId::ANY || rhs == TypeId::ANY;
+        let mismatch = || Error::BinaryOpTypeMismatch(op, lhs, rhs);
 
         match op {
             Plus => match (lhs, rhs) {
-                (Type::Number, Type::Number) => Ok(Type::Number),
-                (Type::Str, Type::Str) => Ok(Type::Str),
+                (TypeId::NUMBER, TypeId::NUMBER) => Ok(TypeId::NUMBER),
+                (TypeId::STR, TypeId::STR) => Ok(TypeId::STR),
                 _ if any => {
-                    if matches!(lhs, Type::Str) || matches!(rhs, Type::Str) {
-                        Ok(Type::Str)
-                    } else if matches!(lhs, Type::Number) || matches!(rhs, Type::Number) {
-                        Ok(Type::Number)
+                    if matches!(lhs, TypeId::STR) || matches!(rhs, TypeId::STR) {
+                        Ok(TypeId::STR)
+                    } else if matches!(lhs, TypeId::NUMBER) || matches!(rhs, TypeId::NUMBER) {
+                        Ok(TypeId::NUMBER)
                     } else {
-                        Ok(Type::Any)
+                        Ok(TypeId::ANY)
                     }
                 }
                 _ => Err(mismatch()),
             },
             Minus | Star | Slash | Percentage => match (lhs, rhs) {
-                (Type::Number, Type::Number) => Ok(Type::Number),
-                _ if any => Ok(Type::Number),
+                (TypeId::NUMBER, TypeId::NUMBER) => Ok(TypeId::NUMBER),
+                _ if any => Ok(TypeId::NUMBER),
                 _ => Err(mismatch()),
             },
             EqualEqual | BangEqual => {
                 if lhs == rhs || any {
-                    Ok(Type::Bool)
+                    Ok(TypeId::BOOL)
                 } else {
                     Err(mismatch())
                 }
             }
             Less | LessEqual | Greater | GreaterEqual => match (lhs, rhs) {
-                (Type::Number, Type::Number) | (Type::Str, Type::Str) => Ok(Type::Bool),
-                _ if any => Ok(Type::Bool),
+                (TypeId::NUMBER, TypeId::NUMBER) | (TypeId::STR, TypeId::STR) => Ok(TypeId::BOOL),
+                _ if any => Ok(TypeId::BOOL),
                 _ => Err(mismatch()),
             },
             And | Or => match (lhs, rhs) {
-                (Type::Bool, Type::Bool) => Ok(Type::Bool),
-                _ if any => Ok(Type::Bool),
+                (TypeId::BOOL, TypeId::BOOL) => Ok(TypeId::BOOL),
+                _ if any => Ok(TypeId::BOOL),
                 _ => Err(mismatch()),
             },
             _ => unreachable!("non-binary-op token in BinaryOpNode: {:?}", op),
@@ -491,20 +510,20 @@ impl<'cl> TypeChecker<'cl> {
     /// - `-` (Minus) negates numbers.
     /// - `not` (Not) inverts Bools.
     /// - `Any` is permissive: accept and return the op's natural result type.
-    fn type_unary_op(&self, op: Token, operand: &Type) -> Result<Type, Error> {
+    fn type_unary_op(&self, op: Token, operand: TypeId) -> Result<TypeId, Error> {
         use Token::*;
-        let any = matches!(operand, Type::Any);
-        let mismatch = || Error::UnaryOpTypeMismatch(op, operand.clone());
+        let any = matches!(operand, TypeId::ANY);
+        let mismatch = || Error::UnaryOpTypeMismatch(op, operand);
 
         match op {
             Minus => match operand {
-                Type::Number => Ok(Type::Number),
-                _ if any => Ok(Type::Number),
+                TypeId::NUMBER => Ok(TypeId::NUMBER),
+                _ if any => Ok(TypeId::NUMBER),
                 _ => Err(mismatch()),
             },
             Not => match operand {
-                Type::Bool => Ok(Type::Bool),
-                _ if any => Ok(Type::Bool),
+                TypeId::BOOL => Ok(TypeId::BOOL),
+                _ if any => Ok(TypeId::BOOL),
                 _ => Err(mismatch()),
             },
             _ => unreachable!("non-unary-op token in Unary: {:?}", op),
@@ -515,26 +534,26 @@ impl<'cl> TypeChecker<'cl> {
 /// Join multiple types using gradual-typing-friendly unification:
 /// - Skip `Any`s; take the first concrete type seen.
 /// - If another concrete type disagrees, widen to `Any`.
-/// - Empty iterator or all-`Any` → `Any`.
-fn unify_types<'a>(types: impl IntoIterator<Item = &'a Type>) -> Type {
-    let mut result: Option<&Type> = None;
-    for t in types {
-        if matches!(t, Type::Any) {
+/// - Empty iterator or all-`Any` → `Any`
+fn unify_types<'a>(type_ids: impl IntoIterator<Item = &'a TypeId>) -> TypeId {
+    let mut result: Option<TypeId> = None;
+    for &t in type_ids {
+        if t == TypeId::ANY {
             continue;
         }
         match result {
             None => result = Some(t),
             Some(existing) if existing == t => {}
-            Some(_) => return Type::Any,
+            Some(_) => return TypeId::ANY,
         }
     }
-    result.cloned().unwrap_or(Type::Any)
+    result.unwrap_or(TypeId::ANY)
 }
 
 /// Assert `actual` is compatible with `expected`. `Any` on the actual side is
 /// permissive (gradual typing).
-fn require_type(expected: &Type, actual: &Type) -> Result<(), Error> {
-    if matches!(actual, Type::Any) || actual == expected {
+fn require_type(expected: TypeId, actual: TypeId) -> Result<(), Error> {
+    if matches!(actual, TypeId::ANY) || actual == expected {
         Ok(())
     } else {
         Err(Error::ExpectedType(expected.clone(), actual.clone()))
@@ -551,7 +570,7 @@ mod tests {
     use crate::{id::Id, parse::lex, span::Span};
     use pretty_assertions::assert_eq;
 
-    fn typecheck_str(input: &str) -> Result<TypedAST, Error> {
+    fn typecheck_str(input: &str) -> Result<AST<TypeId>, Error> {
         let items = lex(input).expect("lex failed");
         let ast = crate::parse::parse(input, &items, false).expect("parse failed");
         let mut env = Environment::new();
@@ -559,12 +578,12 @@ mod tests {
     }
 
     /// Type of the expression inside the first top-level Expr statement's Clause.
-    fn first_clause_type(ast: &TypedAST) -> &Type {
+    fn first_clause_type(ast: &AST<TypeId>) -> TypeId {
         match &ast.global_stmts[0] {
             Statement::Expr(Expression {
                 case: ExprCase::Clause(c),
                 ..
-            }) => &c.type_,
+            }) => c.extra,
             other => panic!("expected first stmt to be an Expr clause, got {other:?}"),
         }
     }
@@ -573,53 +592,53 @@ mod tests {
 
     #[test]
     fn unify_empty_is_any() {
-        assert_eq!(unify_types(std::iter::empty::<&Type>()), Type::Any);
+        assert_eq!(unify_types(std::iter::empty::<&TypeId>()), TypeId::ANY);
     }
 
     #[test]
     fn unify_single_concrete() {
-        assert_eq!(unify_types([&Type::Number]), Type::Number);
+        assert_eq!(unify_types([&TypeId::NUMBER]), TypeId::NUMBER);
     }
 
     #[test]
     fn unify_all_same_concrete() {
         assert_eq!(
-            unify_types([&Type::Number, &Type::Number, &Type::Number]),
-            Type::Number
+            unify_types([&TypeId::NUMBER, &TypeId::NUMBER, &TypeId::NUMBER]),
+            TypeId::NUMBER
         );
     }
 
     #[test]
     fn unify_any_mixed_with_concrete_keeps_concrete() {
-        assert_eq!(unify_types([&Type::Any, &Type::Number]), Type::Number);
-        assert_eq!(unify_types([&Type::Number, &Type::Any]), Type::Number);
+        assert_eq!(unify_types([&TypeId::ANY, &TypeId::NUMBER]), TypeId::NUMBER);
+        assert_eq!(unify_types([&TypeId::NUMBER, &TypeId::ANY]), TypeId::NUMBER);
     }
 
     #[test]
     fn unify_disagreeing_concretes_widens_to_any() {
-        assert_eq!(unify_types([&Type::Number, &Type::Str]), Type::Any);
+        assert_eq!(unify_types([&TypeId::NUMBER, &TypeId::STR]), TypeId::ANY);
     }
 
     #[test]
     fn unify_all_any_is_any() {
-        assert_eq!(unify_types([&Type::Any, &Type::Any]), Type::Any);
+        assert_eq!(unify_types([&TypeId::ANY, &TypeId::ANY]), TypeId::ANY);
     }
 
     // ---------- require_type ----------
 
     #[test]
     fn require_type_exact_match_is_ok() {
-        assert!(require_type(&Type::Number, &Type::Number).is_ok());
+        assert!(require_type(TypeId::NUMBER, TypeId::NUMBER).is_ok());
     }
 
     #[test]
     fn require_type_any_on_actual_is_permissive() {
-        assert!(require_type(&Type::Number, &Type::Any).is_ok());
+        assert!(require_type(TypeId::NUMBER, TypeId::ANY).is_ok());
     }
 
     #[test]
     fn require_type_mismatch_errors() {
-        let err = require_type(&Type::Number, &Type::Bool).unwrap_err();
+        let err = require_type(TypeId::NUMBER, TypeId::BOOL).unwrap_err();
         assert!(matches!(err, Error::ExpectedType(_, _)));
     }
 
@@ -648,8 +667,8 @@ mod tests {
     fn env_declare_and_lookup() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare(id, Type::Number).unwrap();
-        assert_eq!(env.lookup(id), Some(&Type::Number));
+        env.declare(id, TypeId::NUMBER).unwrap();
+        assert_eq!(env.lookup(id), Some(TypeId::NUMBER));
     }
 
     #[test]
@@ -662,34 +681,34 @@ mod tests {
     fn env_redeclare_in_same_scope_errors() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare(id, Type::Number).unwrap();
-        assert!(env.declare(id, Type::Str).is_err());
+        env.declare(id, TypeId::NUMBER).unwrap();
+        assert!(env.declare(id, TypeId::STR).is_err());
     }
 
     #[test]
     fn env_shadow_across_scopes_ok() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare(id, Type::Number).unwrap();
+        env.declare(id, TypeId::NUMBER).unwrap();
         env.push_scope();
-        assert!(env.declare(id, Type::Str).is_ok());
-        assert_eq!(env.lookup(id), Some(&Type::Str));
+        assert!(env.declare(id, TypeId::STR).is_ok());
+        assert_eq!(env.lookup(id), Some(TypeId::STR));
         env.pop_scope();
-        assert_eq!(env.lookup(id), Some(&Type::Number));
+        assert_eq!(env.lookup(id), Some(TypeId::NUMBER));
     }
 
     #[test]
     fn env_builtins_are_in_scope() {
         let env = Environment::new();
-        assert_eq!(env.lookup(Id::new("print")), Some(&Type::Any));
-        assert_eq!(env.lookup(Id::new("assert")), Some(&Type::Any));
+        assert_eq!(env.lookup(Id::new("print")), Some(TypeId::ANY));
+        assert_eq!(env.lookup(Id::new("assert")), Some(TypeId::ANY));
     }
 
     #[test]
     fn env_user_global_can_shadow_builtin() {
         // User-global scope is scope 1, above builtins at scope 0.
         let mut env = Environment::new();
-        assert!(env.declare(Id::new("print"), Type::Number).is_ok());
+        assert!(env.declare(Id::new("print"), TypeId::NUMBER).is_ok());
     }
 
     #[test]
@@ -707,13 +726,13 @@ mod tests {
     #[test]
     fn binary_number_plus_number_is_number() {
         let ast = typecheck_str("1 + 2;").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Number);
+        assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
     }
 
     #[test]
     fn binary_str_plus_str_is_str() {
         let ast = typecheck_str("\"a\" + \"b\";").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Str);
+        assert_eq!(first_clause_type(&ast), TypeId::STR);
     }
 
     #[test]
@@ -728,7 +747,7 @@ mod tests {
     #[test]
     fn binary_comparison_returns_bool() {
         let ast = typecheck_str("1 < 2;").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Bool);
+        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
     }
 
     #[test]
@@ -740,13 +759,13 @@ mod tests {
     #[test]
     fn binary_equality_same_type_is_bool() {
         let ast = typecheck_str("1 == 2;").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Bool);
+        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
     }
 
     #[test]
     fn binary_and_on_bools_is_bool() {
         let ast = typecheck_str("true and false;").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Bool);
+        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
     }
 
     #[test]
@@ -760,13 +779,13 @@ mod tests {
     #[test]
     fn unary_minus_on_number_is_number() {
         let ast = typecheck_str("-5;").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Number);
+        assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
     }
 
     #[test]
     fn unary_not_on_bool_is_bool() {
         let ast = typecheck_str("not true;").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Bool);
+        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
     }
 
     #[test]
@@ -783,39 +802,7 @@ mod tests {
 
     // ---------- array literals ----------
 
-    #[test]
-    fn array_homogeneous_numbers() {
-        let ast = typecheck_str("[1, 2, 3];").unwrap();
-        assert_eq!(
-            first_clause_type(&ast),
-            &Type::Array(Box::new(Type::Number))
-        );
-    }
-
-    #[test]
-    fn array_heterogeneous_widens_to_any() {
-        let ast = typecheck_str("[1, \"a\"];").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Array(Box::new(Type::Any)));
-    }
-
-    #[test]
-    fn array_empty_is_any_element() {
-        let ast = typecheck_str("[];").unwrap();
-        assert_eq!(first_clause_type(&ast), &Type::Array(Box::new(Type::Any)));
-    }
-
     // ---------- map literals ----------
-
-    #[test]
-    fn map_string_keys_ok() {
-        let ast = typecheck_str("%{\"a\" => 1, \"b\" => 2};").unwrap();
-        assert_eq!(
-            first_clause_type(&ast),
-            &Type::Map {
-                value: Box::new(Type::Number)
-            }
-        );
-    }
 
     #[test]
     fn map_non_string_key_errors() {
@@ -823,17 +810,6 @@ mod tests {
         assert!(
             matches!(err, Error::MapKeyMustBeString(_)),
             "expected MapKeyMustBeString, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn map_heterogeneous_values_widen_to_any() {
-        let ast = typecheck_str("%{\"a\" => 1, \"b\" => \"x\"};").unwrap();
-        assert_eq!(
-            first_clause_type(&ast),
-            &Type::Map {
-                value: Box::new(Type::Any)
-            }
         );
     }
 
@@ -853,7 +829,7 @@ mod tests {
             Statement::Expr(Expression {
                 case: ExprCase::Clause(c),
                 ..
-            }) => assert_eq!(c.type_, Type::Number),
+            }) => assert_eq!(c.extra, TypeId::NUMBER),
             other => panic!("expected Expr clause, got {other:?}"),
         }
     }
@@ -887,7 +863,7 @@ mod tests {
             Statement::Expr(Expression {
                 case: ExprCase::Clause(c),
                 ..
-            }) => assert_eq!(c.type_, Type::Number),
+            }) => assert_eq!(c.extra, TypeId::NUMBER),
             other => panic!("expected Expr clause, got {other:?}"),
         }
     }
@@ -928,7 +904,7 @@ mod tests {
             Statement::Expr(Expression {
                 case: ExprCase::Block(block),
                 ..
-            }) => assert_eq!(block.type_, Type::Number),
+            }) => assert_eq!(block.extra, TypeId::NUMBER),
             other => panic!("expected Expr(Block), got {other:?}"),
         }
     }
@@ -940,7 +916,7 @@ mod tests {
             Statement::Expr(Expression {
                 case: ExprCase::Block(block),
                 ..
-            }) => assert_eq!(block.type_, Type::Unit),
+            }) => assert_eq!(block.extra, TypeId::UNIT),
             other => panic!("expected Expr(Block), got {other:?}"),
         }
     }

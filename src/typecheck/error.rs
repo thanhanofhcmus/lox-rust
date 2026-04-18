@@ -1,26 +1,26 @@
 use thiserror::Error;
 
-use crate::{ast::ScalarNode, id::Id, span::Span, token::Token, types::Type};
+use crate::{ast::ScalarNode, id::Id, span::Span, token::Token, types::TypeId};
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Type with name id {0:?} and position {1:?} have an explicit type mismatch")]
-    // (Type span, Expected type, Actualt Type for now)
+    // (Type span, Expected type, actual Type for now)
     // TODO: Update to be actual type and error message later if we we have a /resolved type id/things
     ExplitcitTypeDeclartionMismatchActualType(Id, Span),
 
     #[error("Function have an explicit return type mismatch")]
     // TODO: Make this mention function name
-    ExplitcitFunctionReturnTypeDeclartionMismatchActualType,
+    ExplicitFnReturnTypeDeclMismatch(TypeId, TypeId),
 
     #[error("Binary operator {0:?} cannot apply to types {1:?} and {2:?}")]
-    BinaryOpTypeMismatch(Token, Type, Type),
+    BinaryOpTypeMismatch(Token, TypeId, TypeId),
 
     #[error("Unary operator {0:?} cannot apply to type {1:?}")]
-    UnaryOpTypeMismatch(Token, Type),
+    UnaryOpTypeMismatch(Token, TypeId),
 
     #[error("Expected type {0:?}, got {1:?}")]
-    ExpectedType(Type, Type),
+    ExpectedType(TypeId, TypeId),
 
     #[error("Map keys must be strings; got {0:?}")]
     MapKeyMustBeString(ScalarNode),

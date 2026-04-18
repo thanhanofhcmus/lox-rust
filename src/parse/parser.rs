@@ -1,4 +1,4 @@
-use crate::types::Type;
+use crate::types::TypeId;
 use crate::{ast::*, string_utils};
 
 use super::context::Context;
@@ -12,7 +12,7 @@ pub fn parse(
     input: &str,
     items: &[LexItem],
     should_eval_string: bool,
-) -> Result<UntypedAST, ParseError> {
+) -> Result<AST<()>, ParseError> {
     let mut state = Context::new(input, items, should_eval_string);
     let mut imports = vec![];
     let mut global_stmts = vec![];
@@ -73,7 +73,7 @@ fn parse_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
     }
 }
 
-fn parse_block_node(state: &mut Context) -> Result<UntypedBlockNode, ParseError> {
+fn parse_block_node(state: &mut Context) -> Result<BlockNode<()>, ParseError> {
     state.consume_token(Token::LPointParen)?;
 
     let mut stmts = vec![];
@@ -118,16 +118,16 @@ fn parse_expr_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
 fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
     state.consume_token(Token::Var)?;
     let id_item = state.consume_token(Token::Identifier)?;
-    let type_ = if state.peek(&[Token::Colon]) {
+    let explicit_type = if state.peek(&[Token::Colon]) {
         state.consume_token(Token::Colon)?;
         let type_item = *state.get_curr()?;
         state.advance();
         // for a simple case we we can work out the type right a way
         Some(match type_item.token {
-            Token::TypeAny => Type::Any,
-            Token::TypeBool => Type::Bool,
-            Token::TypeNumber => Type::Number,
-            Token::TypeStr => Type::Str,
+            Token::TypeAny => TypeId::ANY,
+            Token::TypeBool => TypeId::BOOL,
+            Token::TypeNumber => TypeId::NUMBER,
+            Token::TypeStr => TypeId::STR,
             // Token::Identifier => Typed::Name(...)
             _ => {
                 return Err(ParseError::UnexpectedToken(
@@ -145,7 +145,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
     state.consume_token(Token::Semicolon)?;
     Ok(Statement::Declare(DeclareStatementNode {
         iden: IdentifierNode::new_from_name(id_item.span, state.get_input()),
-        type_,
+        explicit_type,
         expr,
     }))
 }
@@ -166,7 +166,7 @@ fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement<()>, Pars
     Ok(Statement::ReassignIden(node, expr))
 }
 
-fn parse_expr(state: &mut Context) -> Result<UntypedExpr, ParseError> {
+fn parse_expr(state: &mut Context) -> Result<Expression<()>, ParseError> {
     match state.get_curr()?.token {
         Token::Return => parse_return(state),
         Token::When => parse_when(state),
@@ -178,7 +178,7 @@ fn parse_expr(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     }
 }
 
-fn parse_return(state: &mut Context) -> Result<UntypedExpr, ParseError> {
+fn parse_return(state: &mut Context) -> Result<Expression<()>, ParseError> {
     let li = state.consume_token(Token::Return)?;
     if !state.is_in_fn {
         return Err(ParseError::UnexpectedReturn(li.span));
@@ -193,14 +193,14 @@ fn parse_return(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     Ok(Expression::new(ExprCase::Return(return_expr)))
 }
 
-fn parse_while(state: &mut Context) -> Result<UntypedExpr, ParseError> {
+fn parse_while(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::While)?;
     let cond = parse_clause_node(state)?;
     let body = parse_block_node(state)?;
     Ok(Expression::new(ExprCase::While(WhileNode { cond, body })))
 }
 
-fn parse_for(state: &mut Context) -> Result<UntypedExpr, ParseError> {
+fn parse_for(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::For)?;
     let iden_li = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::In)?;
@@ -213,7 +213,7 @@ fn parse_for(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     })))
 }
 
-fn parse_if(state: &mut Context) -> Result<UntypedExpr, ParseError> {
+fn parse_if(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::If)?;
 
     let cond = parse_clause_node(state)?;
@@ -248,7 +248,7 @@ fn parse_if(state: &mut Context) -> Result<UntypedExpr, ParseError> {
     })))
 }
 
-fn parse_when(state: &mut Context) -> Result<UntypedExpr, ParseError> {
+fn parse_when(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::When)?;
     let arms = parse_comma_list(
         state,
@@ -266,7 +266,7 @@ fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode<()>, ParseError> {
     Ok(WhenArmNode { cond, expr })
 }
 
-fn parse_clause_node(state: &mut Context) -> Result<UntypedClause, ParseError> {
+fn parse_clause_node(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     parse_pratt(state, BindingPower::None)
 }
 
@@ -305,7 +305,7 @@ fn get_binding_power(token: Token) -> Option<(BindingPower, BindingPower)> {
     Some(bp)
 }
 
-fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<UntypedClause, ParseError> {
+fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode<()>, ParseError> {
     let mut lhs = parse_pratt_prefix(state)?;
 
     loop {
@@ -327,9 +327,9 @@ fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<UntypedClaus
 
 fn parse_pratt_infix(
     state: &mut Context,
-    lhs: UntypedClause,
+    lhs: ClauseNode<()>,
     min_bp: BindingPower,
-) -> Result<UntypedClause, ParseError> {
+) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
         // TODO: Fix this when supporting member/module call
@@ -366,7 +366,7 @@ fn parse_pratt_infix(
     }
 }
 
-fn parse_pratt_prefix(state: &mut Context) -> Result<UntypedClause, ParseError> {
+fn parse_pratt_prefix(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     parse_unary(state)
 }
 
@@ -389,7 +389,7 @@ fn is_binary_op(token: Token) -> bool {
     )
 }
 
-fn parse_unary(state: &mut Context) -> Result<UntypedClause, ParseError> {
+fn parse_unary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Not => parse_recursive_unary(state, Token::Not),
@@ -401,7 +401,7 @@ fn parse_unary(state: &mut Context) -> Result<UntypedClause, ParseError> {
 fn parse_recursive_unary(
     state: &mut Context,
     match_token: Token,
-) -> Result<UntypedClause, ParseError> {
+) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr()?;
     if li.token == match_token {
         state.advance();
@@ -415,7 +415,7 @@ fn parse_recursive_unary(
     }
 }
 
-fn parse_primary(state: &mut Context) -> Result<UntypedClause, ParseError> {
+fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     let base = if state.peek(&[Token::Identifier]) {
         let node = parse_identifier_node(state)?;
         ClauseCase::Identifier(node)
@@ -475,7 +475,7 @@ fn parse_identifier_node(state: &mut Context) -> Result<IdentifierNode, ParseErr
     ))
 }
 
-fn parse_group(state: &mut Context) -> Result<UntypedClause, ParseError> {
+fn parse_group(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     state.consume_token(Token::LRoundParen)?;
     let node = parse_clause_node(state)?;
     state.consume_token(Token::RRoundParen)?;
@@ -690,7 +690,7 @@ fn get_identifier(state: &mut Context) -> Result<LexItem, ParseError> {
 }
 
 fn convert_chaining(
-    Expression { type_: _, case }: UntypedExpr,
+    Expression { extra: _, case }: Expression<()>,
 ) -> Result<ChainingReassignTargetNode<()>, ParseError> {
     let ExprCase::Clause(clause) = case else {
         return Err(ParseError::ReassignRootIsNotAnIdentifier);
@@ -706,7 +706,7 @@ fn convert_chaining(
                 clause = *indexer;
             }
             v => {
-                index_chain.push(ClauseNode { case: v, type_: () });
+                index_chain.push(ClauseNode { case: v, extra: () });
                 break;
             }
         }
@@ -732,10 +732,13 @@ fn convert_chaining(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::{ParseError, lex};
+    use crate::{
+        parse::{ParseError, lex},
+        types::TypeId,
+    };
     use pretty_assertions::assert_eq;
 
-    fn parse_str(input: &str) -> UntypedAST {
+    fn parse_str(input: &str) -> AST<()> {
         let items = lex(input).expect("lex failed");
         parse(input, &items, false).expect("parse failed")
     }
@@ -747,7 +750,7 @@ mod tests {
 
     /// Extract the first top-level expression statement's inner clause.
     /// Most tests use this to look at the shape of a single expression.
-    fn first_clause(ast: &UntypedAST) -> &ClauseCase<()> {
+    fn first_clause(ast: &AST<()>) -> &ClauseCase<()> {
         match &ast.global_stmts[0] {
             Statement::Expr(Expression {
                 case: ExprCase::Clause(c),
@@ -757,7 +760,7 @@ mod tests {
         }
     }
 
-    fn first_stmt(ast: &UntypedAST) -> &Statement<()> {
+    fn first_stmt(ast: &AST<()>) -> &Statement<()> {
         &ast.global_stmts[0]
     }
 
@@ -964,7 +967,10 @@ mod tests {
     fn parse_declaration_no_annotation() {
         let ast = parse_str("var x = 5;");
         match first_stmt(&ast) {
-            Statement::Declare(DeclareStatementNode { type_, .. }) => {
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => {
                 assert_eq!(*type_, None);
             }
             other => panic!("expected Declare, got {other:?}"),
@@ -975,8 +981,11 @@ mod tests {
     fn parse_declaration_with_number_annotation() {
         let ast = parse_str("var x: number = 5;");
         match first_stmt(&ast) {
-            Statement::Declare(DeclareStatementNode { type_, .. }) => {
-                assert_eq!(*type_, Some(Type::Number));
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => {
+                assert_eq!(*type_, Some(TypeId::NUMBER));
             }
             other => panic!("expected Declare, got {other:?}"),
         }
@@ -986,8 +995,11 @@ mod tests {
     fn parse_declaration_with_any_annotation() {
         let ast = parse_str("var x: any = 5;");
         match first_stmt(&ast) {
-            Statement::Declare(DeclareStatementNode { type_, .. }) => {
-                assert_eq!(*type_, Some(Type::Any));
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => {
+                assert_eq!(*type_, Some(TypeId::ANY));
             }
             other => panic!("expected Declare, got {other:?}"),
         }
@@ -997,8 +1009,11 @@ mod tests {
     fn parse_declaration_with_bool_annotation() {
         let ast = parse_str("var x: bool = true;");
         match first_stmt(&ast) {
-            Statement::Declare(DeclareStatementNode { type_, .. }) => {
-                assert_eq!(*type_, Some(Type::Bool));
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => {
+                assert_eq!(*type_, Some(TypeId::BOOL));
             }
             other => panic!("expected Declare, got {other:?}"),
         }

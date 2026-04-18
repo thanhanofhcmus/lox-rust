@@ -1,4 +1,4 @@
-use crate::{id::Id, span::Span, token::Token, types::Type};
+use crate::{id::Id, span::Span, token::Token, types::TypeId};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
@@ -18,7 +18,7 @@ pub enum Statement<T> {
 pub struct DeclareStatementNode<T> {
     pub iden: IdentifierNode,
     /// User-declared type annotation. `None` means no annotation was written.
-    pub type_: Option<Type>,
+    pub explicit_type: Option<TypeId>,
     pub expr: Expression<T>,
 }
 
@@ -32,7 +32,7 @@ pub struct ChainingReassignTargetNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct BlockNode<T> {
-    pub type_: T,
+    pub extra: T,
     pub stmts: StatementList<T>,
     pub last_expr: Option<Box<Expression<T>>>,
 }
@@ -40,7 +40,7 @@ pub struct BlockNode<T> {
 impl BlockNode<()> {
     pub fn new(stmts: StatementList<()>, last_expr: Option<Box<Expression<()>>>) -> Self {
         Self {
-            type_: (),
+            extra: (),
             stmts,
             last_expr,
         }
@@ -55,13 +55,13 @@ pub struct ImportNode {
 
 #[derive(Debug, Clone)]
 pub struct Expression<T> {
-    pub type_: T,
+    pub extra: T,
     pub case: ExprCase<T>,
 }
 
 impl Expression<()> {
     pub fn new(case: ExprCase<()>) -> Self {
-        Self { type_: (), case }
+        Self { extra: (), case }
     }
 }
 
@@ -115,13 +115,13 @@ pub struct WhenNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct ClauseNode<T> {
-    pub type_: T,
+    pub extra: T,
     pub case: ClauseCase<T>,
 }
 
 impl ClauseNode<()> {
     pub fn new(case: ClauseCase<()>) -> Self {
-        Self { type_: (), case }
+        Self { extra: (), case }
     }
 }
 
@@ -205,14 +205,14 @@ pub struct ArrayForComprehentionNode<T> {
 #[derive(Debug, Clone)]
 pub struct FnParamNode {
     pub id: IdentifierNode,
-    pub type_: Option<Type>,
+    pub type_: Option<TypeId>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FnDeclNode<T> {
     pub params: Vec<FnParamNode>,
     pub body: BlockNode<T>,
-    pub return_type: Option<Type>,
+    pub return_type: Option<TypeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -278,13 +278,3 @@ impl From<&IdentifierNode> for Id {
         val.get_id()
     }
 }
-
-// Type aliases for pipeline stages
-pub type UntypedAST = AST<()>;
-pub type TypedAST = AST<Type>;
-pub type UntypedBlockNode = BlockNode<()>;
-pub type TypedBlockNode = BlockNode<Type>;
-pub type UntypedExpr = Expression<()>;
-pub type TypedExpr = Expression<Type>;
-pub type UntypedClause = ClauseNode<()>;
-pub type TypedClause = ClauseNode<Type>;

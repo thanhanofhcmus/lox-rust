@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    ast::{FnParamNode, TypedBlockNode},
+    ast::{BlockNode, FnParamNode},
     interpret::{
         Environment, Interpreter,
         error::Error,
@@ -9,6 +9,7 @@ use crate::{
         string_interner::StrId,
         values::{display_writer::DisplayWriter, number::Number, scalar::Scalar},
     },
+    types::TypeId,
 };
 
 pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
@@ -16,7 +17,7 @@ pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, Error>;
 #[derive(Debug, Clone)]
 pub struct Function {
     pub params: Vec<FnParamNode>,
-    pub body: TypedBlockNode,
+    pub body: BlockNode<TypeId>,
 }
 
 pub type Array = Vec<Value>;
@@ -322,10 +323,7 @@ mod tests {
     #[test]
     fn get_bool_on_non_bool_returns_none() {
         assert_eq!(Value::make_nil().get_bool(), None);
-        assert_eq!(
-            Value::make_number(Number::Integer(0)).get_bool(),
-            None
-        );
+        assert_eq!(Value::make_number(Number::Integer(0)).get_bool(), None);
     }
 
     // ---------- get_number ----------
@@ -356,9 +354,11 @@ mod tests {
     fn get_handle_on_non_handle_returns_none() {
         assert!(Value::make_nil().get_handle().is_none());
         assert!(Value::make_bool(true).get_handle().is_none());
-        assert!(Value::make_number(Number::Integer(0))
-            .get_handle()
-            .is_none());
+        assert!(
+            Value::make_number(Number::Integer(0))
+                .get_handle()
+                .is_none()
+        );
         // Unit and BuiltinFunction are also non-handle
         assert!(Value::Unit.get_handle().is_none());
     }
@@ -380,15 +380,19 @@ mod tests {
 
     #[test]
     fn to_index_non_integer_float_errors() {
-        assert!(Value::make_number(Number::Floating(2.5))
-            .to_index()
-            .is_err());
+        assert!(
+            Value::make_number(Number::Floating(2.5))
+                .to_index()
+                .is_err()
+        );
     }
 
     #[test]
     fn to_index_integer_valued_float_ok() {
         assert_eq!(
-            Value::make_number(Number::Floating(7.0)).to_index().unwrap(),
+            Value::make_number(Number::Floating(7.0))
+                .to_index()
+                .unwrap(),
             7
         );
     }

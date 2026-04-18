@@ -8,7 +8,7 @@ use crate::interpret::values::{Array, BuiltinFn, Function, Map, MapKey, Number, 
 use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
-use crate::types::Type;
+use crate::types::TypeId;
 use std::panic;
 use std::path::Path;
 
@@ -60,7 +60,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Self { environment, input }
     }
 
-    pub fn interpret(&mut self, ast: &'sl TypedAST) -> Result<Value, Error> {
+    pub fn interpret(&mut self, ast: &'sl AST<TypeId>) -> Result<Value, Error> {
         for import in &ast.imports {
             self.interpret_import_stmt(import)?;
         }
@@ -77,7 +77,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(Value::Unit)
     }
 
-    fn interpret_stmt(&mut self, stmt: &Statement<Type>) -> Result<ValueReturn, Error> {
+    fn interpret_stmt(&mut self, stmt: &Statement<TypeId>) -> Result<ValueReturn, Error> {
         match stmt {
             Statement::Declare(node) => self.interpret_declare_stmt(node),
             Statement::ReassignIden(node, expr) => self.interpret_reassign_id_stmt(node, expr),
@@ -147,7 +147,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_declare_stmt(
         &mut self,
-        node: &DeclareStatementNode<Type>,
+        node: &DeclareStatementNode<TypeId>,
     ) -> Result<ValueReturn, Error> {
         let iden = &node.iden;
         if self.environment.get_variable_current_scope(iden).is_some() {
@@ -165,8 +165,8 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_reassign_id_stmt(
         &mut self,
-        node: &ChainingReassignTargetNode<Type>,
-        expr: &Expression<Type>,
+        node: &ChainingReassignTargetNode<TypeId>,
+        expr: &Expression<TypeId>,
     ) -> Result<ValueReturn, Error> {
         // evaluate right hand side first, in case it returns
         let res = self.interpret_expr(expr)?;
@@ -211,7 +211,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(ValueReturn::none())
     }
 
-    fn interpret_expr(&mut self, expr: &Expression<Type>) -> Result<ValueReturn, Error> {
+    fn interpret_expr(&mut self, expr: &Expression<TypeId>) -> Result<ValueReturn, Error> {
         match &expr.case {
             ExprCase::Return(expr) => self.interpret_return_expr(expr),
             ExprCase::When(node) => self.interpret_when_expr(node),
@@ -225,7 +225,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_return_expr(
         &mut self,
-        return_expr: &Option<Box<Expression<Type>>>,
+        return_expr: &Option<Box<Expression<TypeId>>>,
     ) -> Result<ValueReturn, Error> {
         let value = match return_expr {
             Some(expr) => self.interpret_expr(expr)?.get_or_unit(),
@@ -234,14 +234,17 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(ValueReturn::new(value).should_bubble_up())
     }
 
-    fn interpret_block_node(&mut self, node: &TypedBlockNode) -> Result<ValueReturn, Error> {
+    fn interpret_block_node(&mut self, node: &BlockNode<TypeId>) -> Result<ValueReturn, Error> {
         self.environment.push_scope(false);
         let result = self.interpret_block_node_inner(node);
         self.environment.pop_scope();
         result
     }
 
-    fn interpret_block_node_inner(&mut self, node: &TypedBlockNode) -> Result<ValueReturn, Error> {
+    fn interpret_block_node_inner(
+        &mut self,
+        node: &BlockNode<TypeId>,
+    ) -> Result<ValueReturn, Error> {
         for stmt in &node.stmts {
             let res = self.interpret_stmt(stmt)?;
             if res.should_bubble_up {
@@ -261,7 +264,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             iden,
             collection,
             body,
-        }: &ForNode<Type>,
+        }: &ForNode<TypeId>,
     ) -> Result<ValueReturn, Error> {
         let arr = self.interpret_and_get_array(collection)?.clone();
         for collection_value in arr {
@@ -282,7 +285,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_while_expr(
         &mut self,
-        WhileNode { cond, body }: &WhileNode<Type>,
+        WhileNode { cond, body }: &WhileNode<TypeId>,
     ) -> Result<ValueReturn, Error> {
         loop {
             if !self.is_truthy(cond)? {
@@ -299,7 +302,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(ValueReturn::none())
     }
 
-    fn interpret_if_chain_expr(&mut self, node: &IfChainNode<Type>) -> Result<ValueReturn, Error> {
+    fn interpret_if_chain_expr(
+        &mut self,
+        node: &IfChainNode<TypeId>,
+    ) -> Result<ValueReturn, Error> {
         if self.is_truthy(&node.if_node.cond)? {
             return self.interpret_block_node(&node.if_node.stmts);
         }
@@ -314,7 +320,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(ValueReturn::none())
     }
 
-    fn interpret_clause_expr(&mut self, node: &ClauseNode<Type>) -> Result<Value, Error> {
+    fn interpret_clause_expr(&mut self, node: &ClauseNode<TypeId>) -> Result<Value, Error> {
         match &node.case {
             ClauseCase::Unary(node, op) => self.interpret_unary_op(node, *op),
             ClauseCase::Binary(node) => self.interpret_binary_op(node),
@@ -330,7 +336,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
-    fn interpret_raw_value_node(&mut self, node: &RawValueNode<Type>) -> Result<Value, Error> {
+    fn interpret_raw_value_node(&mut self, node: &RawValueNode<TypeId>) -> Result<Value, Error> {
         let val = match node {
             RawValueNode::Scalar(node) => self.interpret_scalar_expr(node),
             RawValueNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
@@ -358,7 +364,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
-    fn interpret_array_literal(&mut self, node: &ArrayLiteralNode<Type>) -> Result<Value, Error> {
+    fn interpret_array_literal(&mut self, node: &ArrayLiteralNode<TypeId>) -> Result<Value, Error> {
         match node {
             ArrayLiteralNode::List(clauses) => {
                 let mut arr = Vec::with_capacity(clauses.len());
@@ -395,7 +401,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_array_literal_comprehension_inner(
         &mut self,
-        node: &ArrayForComprehentionNode<Type>,
+        node: &ArrayForComprehentionNode<TypeId>,
     ) -> Result<Option<Value>, Error> {
         // filter
         if let Some(filter) = &node.filter
@@ -407,7 +413,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(Some(value))
     }
 
-    fn interpret_map_literal(&mut self, node: &MapLiteralNode<Type>) -> Result<Value, Error> {
+    fn interpret_map_literal(&mut self, node: &MapLiteralNode<TypeId>) -> Result<Value, Error> {
         let mut map = Map::new();
         for kv in &node.nodes {
             let raw_key = self.interpret_scalar_expr(&kv.key);
@@ -418,20 +424,20 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         Ok(self.environment.insert_map_variable(map))
     }
 
-    fn interpret_fn_decl(&mut self, node: &FnDeclNode<Type>) -> Result<Value, Error> {
+    fn interpret_fn_decl(&mut self, node: &FnDeclNode<TypeId>) -> Result<Value, Error> {
         Ok(self.environment.insert_function_variable(Function {
             params: node.params.clone(),
             body: node.body.clone(),
         }))
     }
 
-    fn interpret_subscription(&mut self, node: &SubscriptionNode<Type>) -> Result<Value, Error> {
+    fn interpret_subscription(&mut self, node: &SubscriptionNode<TypeId>) -> Result<Value, Error> {
         let indexer = self.interpret_clause_expr(&node.indexer)?;
         let indexee = self.interpret_clause_expr(&node.indexee)?;
         indexer.get_at_index(indexee, self.environment)
     }
 
-    fn interpret_fn_call(&mut self, node: &FnCallNode<Type>) -> Result<Value, Error> {
+    fn interpret_fn_call(&mut self, node: &FnCallNode<TypeId>) -> Result<Value, Error> {
         let value = self.interpret_clause_expr(&node.caller)?;
         match value {
             Value::Function(handle) => self.interpret_normal_fn_call_expr(handle, &node.args),
@@ -445,7 +451,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_normal_fn_call_expr(
         &mut self,
         handle: GcHandle,
-        args: &[Expression<Type>],
+        args: &[Expression<TypeId>],
     ) -> Result<Value, Error> {
         let func = self.environment.get_function(handle)?;
 
@@ -484,7 +490,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn intepret_builtin_fn_call_expr(
         &mut self,
         function: BuiltinFn,
-        args: &[Expression<Type>],
+        args: &[Expression<TypeId>],
     ) -> Result<Value, Error> {
         let args = args
             .iter()
@@ -493,7 +499,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         function(self, args)
     }
 
-    fn interpret_unary_op(&mut self, node: &ClauseNode<Type>, op: Token) -> Result<Value, Error> {
+    fn interpret_unary_op(&mut self, node: &ClauseNode<TypeId>, op: Token) -> Result<Value, Error> {
         let res = self.interpret_clause_expr(node)?;
         match op {
             Token::Not => match res.get_bool() {
@@ -510,7 +516,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_binary_op(
         &mut self,
-        BinaryOpNode { lhs, op, rhs }: &BinaryOpNode<Type>,
+        BinaryOpNode { lhs, op, rhs }: &BinaryOpNode<TypeId>,
     ) -> Result<Value, Error> {
         let lhs_val = self.interpret_clause_expr(lhs)?;
         let rhs_val = self.interpret_clause_expr(rhs)?;
@@ -534,7 +540,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
     }
 
-    fn interpret_when_expr(&mut self, node: &WhenNode<Type>) -> Result<ValueReturn, Error> {
+    fn interpret_when_expr(&mut self, node: &WhenNode<TypeId>) -> Result<ValueReturn, Error> {
         for WhenArmNode { cond, expr } in &node.arms {
             if self.is_truthy(cond)? {
                 return self.interpret_clause_expr(expr).map(ValueReturn::new);
@@ -582,7 +588,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     // also calling other interpreter methods (which borrow &mut self) must
     // .clone() the result immediately — the clone is the owned copy that
     // survives the subsequent mutable borrows.
-    fn interpret_and_get_array(&mut self, clause: &ClauseNode<Type>) -> Result<&Array, Error> {
+    fn interpret_and_get_array(&mut self, clause: &ClauseNode<TypeId>) -> Result<&Array, Error> {
         let collection = self.interpret_clause_expr(clause)?;
 
         let Value::Array(handle) = collection else {
@@ -595,7 +601,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         self.environment.get_array(handle)
     }
 
-    fn is_truthy(&mut self, expr: &ClauseNode<Type>) -> Result<bool, Error> {
+    fn is_truthy(&mut self, expr: &ClauseNode<TypeId>) -> Result<bool, Error> {
         let b = self.interpret_clause_expr(expr)?;
         match b.get_bool() {
             Some(v) => Ok(v),
