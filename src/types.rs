@@ -4,12 +4,12 @@ use std::collections::HashMap;
 pub struct TypeId(usize);
 
 impl TypeId {
-    pub const ANY: TypeId = TypeId(0);
-    pub const BOOL: TypeId = TypeId(1);
-    pub const NUMBER: TypeId = TypeId(2);
-    pub const STR: TypeId = TypeId(3);
-    pub const UNIT: TypeId = TypeId(4);
-    pub const NIL: TypeId = TypeId(5);
+    pub const ANY: Self = Self(0);
+    pub const BOOL: Self = Self(1);
+    pub const NUMBER: Self = Self(2);
+    pub const STR: Self = Self(3);
+    pub const UNIT: Self = Self(4);
+    pub const NIL: Self = Self(5);
 
     pub const LAST_RESVERED_COUNTER: usize = 10;
 }
@@ -23,7 +23,9 @@ pub enum Type {
     Unit, // the `()` value — bare `return`, statement-only blocks, void-ish calls
     Nil,
 
-    Array(TypeId),
+    Array {
+        elem: TypeId,
+    },
     Map {
         // Key is always string
         value: TypeId,

@@ -112,36 +112,44 @@ impl<'cl> TypeChecker<'cl> {
     }
 
     fn convert_expr(&mut self, ut_expr: Expression<()>) -> Result<Expression<TypeId>, Error> {
-        match ut_expr.case {
-            ExprCase::Clause(clause) => {
-                let clause = self.convert_clause(clause)?;
-                Ok(Expression {
-                    extra: clause.extra,
-                    case: ExprCase::Clause(clause),
-                })
+        let (type_id, case) = match ut_expr.case {
+            ExprCase::Clause(ut_clause) => {
+                let clause = self.convert_clause(ut_clause)?;
+                (clause.extra, ExprCase::Clause(clause))
             }
-            _ => Ok(Expression {
-                extra: TypeId::ANY,
-                case: self.convert_expr_case(ut_expr.case)?,
-            }),
-        }
-    }
-
-    fn convert_expr_case(&mut self, case: ExprCase<()>) -> Result<ExprCase<TypeId>, Error> {
-        match case {
-            ExprCase::Clause(clause) => Ok(ExprCase::Clause(self.convert_clause(clause)?)),
-            ExprCase::Block(block) => Ok(ExprCase::Block(self.convert_block(block)?)),
-            ExprCase::IfChain(if_chain) => Ok(ExprCase::IfChain(self.convert_if_chain(if_chain)?)),
-            ExprCase::While(while_node) => Ok(ExprCase::While(self.convert_while(while_node)?)),
-            ExprCase::For(for_node) => Ok(ExprCase::For(self.convert_for(for_node)?)),
-            ExprCase::When(node) => Ok(ExprCase::When(self.convert_when(node)?)),
-            ExprCase::Return(expr) => {
-                let expr = expr
+            ExprCase::Block(ut_block) => {
+                let block = self.convert_block(ut_block)?;
+                (block.extra, ExprCase::Block(block))
+            }
+            ExprCase::IfChain(ut_if_chain) => {
+                let if_chain = self.convert_if_chain(ut_if_chain)?;
+                // TODO
+                (TypeId::ANY, ExprCase::IfChain(if_chain))
+            }
+            ExprCase::Return(ut_expr) => {
+                let expr = ut_expr
                     .map(|e| self.convert_expr(*e).map(Box::new))
                     .transpose()?;
-                Ok(ExprCase::Return(expr))
+                let type_id = expr.as_ref().map(|e| e.extra).unwrap_or(TypeId::UNIT);
+                (type_id, ExprCase::Return(expr))
             }
-        }
+            ExprCase::While(ut_while_node) => (
+                TypeId::UNIT,
+                ExprCase::While(self.convert_while(ut_while_node)?),
+            ),
+            ExprCase::For(ut_for_node) => {
+                (TypeId::UNIT, ExprCase::For(self.convert_for(ut_for_node)?))
+            }
+            ExprCase::When(ut_when_node) => (
+                TypeId::UNIT,
+                ExprCase::When(self.convert_when(ut_when_node)?),
+            ),
+        };
+
+        Ok(Expression {
+            extra: type_id,
+            case,
+        })
     }
 
     fn convert_block(&mut self, block: BlockNode<()>) -> Result<BlockNode<TypeId>, Error> {
@@ -331,15 +339,19 @@ impl<'cl> TypeChecker<'cl> {
                     .into_iter()
                     .map(|c| self.convert_clause(c))
                     .collect::<Result<Vec<_>, _>>()?;
-                let elem_ty = unify_types(items.iter().map(|c| &c.extra));
-                let type_id = self.type_interner.intern(&Type::Array(elem_ty));
+                let elem_type_id = unify_types(items.iter().map(|c| &c.extra));
+                let type_id = self
+                    .type_interner
+                    .intern(&Type::Array { elem: elem_type_id });
                 Ok((type_id, ArrayLiteralNode::List(items)))
             }
             ArrayLiteralNode::Repeat(rep) => {
                 let value = self.convert_clause(rep.value)?;
                 let repeat = self.convert_clause(rep.repeat)?;
                 require_type(TypeId::NUMBER, repeat.extra)?;
-                let type_id = self.type_interner.intern(&Type::Array(value.extra));
+                let type_id = self
+                    .type_interner
+                    .intern(&Type::Array { elem: value.extra });
                 Ok((
                     type_id,
                     ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode { value, repeat })),
@@ -365,7 +377,9 @@ impl<'cl> TypeChecker<'cl> {
                     if let Some(f) = &filter {
                         require_type(TypeId::BOOL, f.extra)?;
                     }
-                    let type_id = this.type_interner.intern(&Type::Array(transformer.extra));
+                    let type_id = this.type_interner.intern(&Type::Array {
+                        elem: transformer.extra,
+                    });
                     Ok((
                         type_id,
                         ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehentionNode {

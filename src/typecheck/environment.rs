@@ -39,7 +39,7 @@ impl Environment {
             builtins.insert(Id::new(name), TypeId::ANY);
         }
         // Scope 0 holds builtins; scope 1 is the user-global scope. Keeping them
-        // separate lets user code shadow builtins without a redeclaration error.
+        // separate lets user code shadow builtins without a re-declaration error.
         Self {
             scopes: vec![builtins, HashMap::new()],
         }
