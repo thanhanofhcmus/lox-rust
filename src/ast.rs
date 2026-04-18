@@ -7,6 +7,12 @@ pub struct AST<T> {
     pub global_stmts: StatementList<T>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeNode {
+    BuiltIn(TypeId),
+    // Identifier(IdentifierNode),
+}
+
 #[derive(Debug, Clone)]
 pub enum Statement<T> {
     Declare(DeclareStatementNode<T>),
@@ -18,7 +24,7 @@ pub enum Statement<T> {
 pub struct DeclareStatementNode<T> {
     pub iden: IdentifierNode,
     /// User-declared type annotation. `None` means no annotation was written.
-    pub explicit_type: Option<TypeId>,
+    pub explicit_type: Option<TypeNode>,
     pub expr: Expression<T>,
 }
 
@@ -171,13 +177,6 @@ pub enum ScalarNode {
 }
 
 #[derive(Debug, Clone)]
-pub enum ArrayLiteralNode<T> {
-    List(Vec<ClauseNode<T>>),
-    Repeat(Box<ArrayRepeatNode<T>>),
-    ForComprehension(Box<ArrayForComprehentionNode<T>>),
-}
-
-#[derive(Debug, Clone)]
 pub struct MapLiteralNode<T> {
     pub nodes: Vec<MapLiteralElementNode<T>>,
 }
@@ -186,6 +185,13 @@ pub struct MapLiteralNode<T> {
 pub struct MapLiteralElementNode<T> {
     pub key: ScalarNode,
     pub value: ClauseNode<T>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ArrayLiteralNode<T> {
+    List(Vec<ClauseNode<T>>),
+    Repeat(Box<ArrayRepeatNode<T>>),
+    ForComprehension(Box<ArrayForComprehentionNode<T>>),
 }
 
 #[derive(Debug, Clone)]
@@ -205,14 +211,14 @@ pub struct ArrayForComprehentionNode<T> {
 #[derive(Debug, Clone)]
 pub struct FnParamNode {
     pub id: IdentifierNode,
-    pub type_: Option<TypeId>,
+    pub explicit_type: Option<TypeNode>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FnDeclNode<T> {
     pub params: Vec<FnParamNode>,
     pub body: BlockNode<T>,
-    pub return_type: Option<TypeId>,
+    pub return_type: Option<TypeNode>,
 }
 
 #[derive(Debug, Clone)]

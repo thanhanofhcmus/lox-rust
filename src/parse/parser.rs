@@ -73,6 +73,27 @@ fn parse_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
     }
 }
 
+fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
+    let type_item = *state.get_curr()?;
+    state.advance();
+    // for a simple case we we can work out the type right a way
+    let type_id = match type_item.token {
+        Token::TypeAny => TypeId::ANY,
+        Token::TypeBool => TypeId::BOOL,
+        Token::TypeNumber => TypeId::NUMBER,
+        Token::TypeStr => TypeId::STR,
+        // Token::Identifier => Typed::Name(...)
+        _ => {
+            return Err(ParseError::UnexpectedToken(
+                type_item.token,
+                type_item.span,
+                None,
+            ));
+        }
+    };
+    Ok(TypeNode::BuiltIn(type_id))
+}
+
 fn parse_block_node(state: &mut Context) -> Result<BlockNode<()>, ParseError> {
     state.consume_token(Token::LPointParen)?;
 
@@ -120,23 +141,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
     let id_item = state.consume_token(Token::Identifier)?;
     let explicit_type = if state.peek(&[Token::Colon]) {
         state.consume_token(Token::Colon)?;
-        let type_item = *state.get_curr()?;
-        state.advance();
-        // for a simple case we we can work out the type right a way
-        Some(match type_item.token {
-            Token::TypeAny => TypeId::ANY,
-            Token::TypeBool => TypeId::BOOL,
-            Token::TypeNumber => TypeId::NUMBER,
-            Token::TypeStr => TypeId::STR,
-            // Token::Identifier => Typed::Name(...)
-            _ => {
-                return Err(ParseError::UnexpectedToken(
-                    type_item.token,
-                    type_item.span,
-                    None,
-                ));
-            }
-        })
+        Some(parse_type_node(state)?)
     } else {
         None
     };
@@ -564,6 +569,14 @@ fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError
         parse_fn_param,
     )?;
 
+    let return_type = if state.peek(&[Token::RTArrow]) {
+        // TODO: consider if we have type annotation, do not allow  single expr form
+        state.consume_token(Token::RTArrow)?;
+        Some(parse_type_node(state)?)
+    } else {
+        None
+    };
+
     let body;
 
     if state.peek(&[Token::LPointParen]) {
@@ -578,16 +591,21 @@ fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError
     Ok(FnDeclNode {
         params,
         body,
-        // TODO:
-        return_type: None,
+        return_type,
     })
 }
 
 fn parse_fn_param(state: &mut Context) -> Result<FnParamNode, ParseError> {
     let li = get_identifier(state)?;
+    let explicit_type = if state.peek(&[Token::Colon]) {
+        state.consume_token(Token::Colon)?;
+        Some(parse_type_node(state)?)
+    } else {
+        None
+    };
     Ok(FnParamNode {
         id: IdentifierNode::new_from_name(li.span, state.get_input()),
-        type_: None,
+        explicit_type,
     })
 }
 
@@ -985,7 +1003,7 @@ mod tests {
                 explicit_type: type_,
                 ..
             }) => {
-                assert_eq!(*type_, Some(TypeId::NUMBER));
+                assert_eq!(*type_, Some(TypeNode::BuiltIn(TypeId::NUMBER)));
             }
             other => panic!("expected Declare, got {other:?}"),
         }
@@ -999,7 +1017,7 @@ mod tests {
                 explicit_type: type_,
                 ..
             }) => {
-                assert_eq!(*type_, Some(TypeId::ANY));
+                assert_eq!(*type_, Some(TypeNode::BuiltIn(TypeId::ANY)));
             }
             other => panic!("expected Declare, got {other:?}"),
         }
@@ -1013,7 +1031,7 @@ mod tests {
                 explicit_type: type_,
                 ..
             }) => {
-                assert_eq!(*type_, Some(TypeId::BOOL));
+                assert_eq!(*type_, Some(TypeNode::BuiltIn(TypeId::BOOL)));
             }
             other => panic!("expected Declare, got {other:?}"),
         }

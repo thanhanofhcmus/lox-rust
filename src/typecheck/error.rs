@@ -30,6 +30,12 @@ pub enum Error {
     #[error("The type `{0:?}` is not a callable")]
     TypeIsNoCallable(TypeId),
 
+    #[error("Callable `{0:?}` accepts {1} number of arguments but received {2}")]
+    WrongNumberOfArgument(TypeId, usize, usize),
+
+    #[error("Callable `{0:?}` received wrong argument types {1:?}")]
+    WrongArgumentTypes(TypeId, Vec<(usize, TypeId, TypeId)>),
+
     #[error("Expected type `{0:?}`, but found `{1:?}`.")]
     ExpectedType(TypeId, TypeId),
 
@@ -78,7 +84,7 @@ impl Error {
         match self {
             Self::ExplicitTypeMismatch(id, _, declared, actual) => {
                 format!(
-                    "The value assigned to '{:?}' declared type `{}` but got assigned value of type `{}`.",
+                    "The value assigned to '{:?}' is declared as type `{}` but got assigned value of type `{}`.",
                     id,
                     interner.generate_readable_name(*declared),
                     interner.generate_readable_name(*actual)
@@ -105,9 +111,39 @@ impl Error {
             ),
 
             Self::TypeIsNoCallable(caller_type_id) => format!(
-                "The type `{}` is not a function or built-in function",
+                "The type `{}` is not a function or built-in function.",
                 interner.generate_readable_name(*caller_type_id)
             ),
+
+            Self::WrongNumberOfArgument(caller_type_id, expected_size, actual_size) => {
+                format!(
+                    "The function of type `{}` is expected to received {} of arguments received {} instead.",
+                    interner.generate_readable_name(*caller_type_id),
+                    *expected_size,
+                    *actual_size,
+                )
+            }
+
+            Self::WrongArgumentTypes(caller_type_id, wrong_types) => {
+                let wrong_type_str = wrong_types
+                    .iter()
+                    .map(|(index, expected, actual)| {
+                        format!(
+                            "argument at position {} expect type `{}` but got type `{}`",
+                            *index,
+                            interner.generate_readable_name(*expected),
+                            interner.generate_readable_name(*actual)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                format!(
+                    "The function of type `{}` received wrong argument type(s), {}",
+                    interner.generate_readable_name(*caller_type_id),
+                    wrong_type_str
+                )
+            }
 
             Self::UnaryOpTypeMismatch(op, type_id) => format!(
                 "The operator `{:?}` cannot be applied to type `{}`.",

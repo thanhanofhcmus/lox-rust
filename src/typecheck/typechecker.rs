@@ -46,14 +46,14 @@ impl<'cl> TypeChecker<'cl> {
         match ut_stmt {
             Statement::Declare(DeclareStatementNode {
                 iden,
-                explicit_type: type_id,
+                explicit_type: type_node,
                 expr,
             }) => {
                 let expr = self.convert_expr(expr)?;
-                match &type_id {
-                    None | Some(TypeId::ANY) => {}
-                    Some(type_annot) if *type_annot == expr.extra => {}
-                    Some(type_annot) => {
+                match &type_node {
+                    None | Some(TypeNode::BuiltIn(TypeId::ANY)) => {}
+                    Some(TypeNode::BuiltIn(type_annot)) if *type_annot == expr.extra => {}
+                    Some(TypeNode::BuiltIn(type_annot)) => {
                         return Err(Error::ExplicitTypeMismatch(
                             iden.name_id,
                             iden.name,
@@ -63,14 +63,14 @@ impl<'cl> TypeChecker<'cl> {
                     }
                 }
                 // Annotation wins when written (including `Any`); otherwise infer from expr.
-                let var_type = type_id.unwrap_or(expr.extra);
+                let var_type = type_node.map(extract_type_node_id).unwrap_or(expr.extra);
                 self.environment
                     .declare_id(iden.name_id, var_type)
                     .map_err(|_| Error::DuplicateDeclaration(iden.name, iden.name_id))?;
                 Ok(Statement::Declare(DeclareStatementNode {
                     expr,
                     iden,
-                    explicit_type: type_id,
+                    explicit_type: type_node,
                 }))
             }
             Statement::ReassignIden(target, expr) => {
@@ -416,29 +416,41 @@ impl<'cl> TypeChecker<'cl> {
         // body itself opens its own scope via `convert_block`, so param
         // shadowing by locals is handled naturally.
         self.with_scope(|this| {
-            for param in &node.params {
-                let ty = param.type_.unwrap_or(TypeId::ANY);
+            let params_type_ids = node
+                .params
+                .iter()
+                .map(|p| {
+                    p.explicit_type
+                        .map(extract_type_node_id)
+                        .unwrap_or(TypeId::ANY)
+                })
+                .collect::<Vec<_>>();
+
+            for (param, type_id) in node.params.iter().zip(&params_type_ids) {
                 this.environment
-                    .declare_id(param.id.name_id, ty)
+                    .declare_id(param.id.name_id, *type_id)
                     .map_err(|_| Error::DuplicateDeclaration(param.id.name, param.id.name_id))?;
             }
             let body = this.convert_block(node.body)?;
-            // TODO: derive signature from params after we support annotating in the parser
+
             let return_type = match &node.return_type {
                 // inferred type got from the computed body
                 None => body.extra,
                 // explicit any type "swallow" the body type
-                Some(TypeId::ANY) => TypeId::ANY,
+                Some(TypeNode::BuiltIn(TypeId::ANY)) => TypeId::ANY,
                 // same type
-                Some(type_annot) if *type_annot == body.extra => *type_annot,
+                Some(TypeNode::BuiltIn(type_annot)) if *type_annot == body.extra => *type_annot,
                 // error case
-                Some(type_id) => {
-                    return Err(Error::ExplicitFnReturnTypeMismatch(body.extra, *type_id));
+                Some(node) => {
+                    return Err(Error::ExplicitFnReturnTypeMismatch(
+                        body.extra,
+                        extract_type_node_id(*node),
+                    ));
                 }
             };
 
             let type_id = this.environment.declare_type(&Type::Function {
-                params: vec![],
+                params: params_type_ids,
                 return_: return_type,
             });
 
@@ -487,7 +499,7 @@ impl<'cl> TypeChecker<'cl> {
         node: FnCallNode<()>,
     ) -> Result<(TypeId, FnCallNode<TypeId>), Error> {
         let caller = self.convert_clause(*node.caller)?;
-        // TODO: type check the type of args
+
         let args = node
             .args
             .into_iter()
@@ -499,13 +511,35 @@ impl<'cl> TypeChecker<'cl> {
             .environment
             .lookup_type_id(caller_type_id)
             .ok_or(Error::TypeIsNotDeclared(caller_type_id))?;
-        let result_type_id = match caller_type {
-            Type::Function { params: _, return_ } => *return_,
+        let (param_type_ids, return_type_id) = match caller_type {
+            Type::Function { params, return_ } => (params, *return_),
             _ => return Err(Error::TypeIsNoCallable(caller_type_id)),
         };
 
+        if param_type_ids.len() != args.len() {
+            return Err(Error::WrongNumberOfArgument(
+                caller_type_id,
+                param_type_ids.len(),
+                args.len(),
+            ));
+        }
+
+        let arg_type_id = args.iter().map(|e| e.extra);
+
+        let wrong_type_args = param_type_ids
+            .iter()
+            .zip(arg_type_id)
+            .enumerate()
+            .filter(|(_, (l, r))| **l == *r)
+            .map(|(i, (l, r))| (i, *l, r))
+            .collect::<Vec<(usize, TypeId, TypeId)>>();
+        if !wrong_type_args.is_empty() {
+            return Err(Error::WrongArgumentTypes(caller_type_id, wrong_type_args));
+        }
+
         Ok((
-            result_type_id,
+            // The type of this whole fn call is the return type
+            return_type_id,
             FnCallNode {
                 caller: Box::new(caller),
                 args,
@@ -617,6 +651,12 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), Error> {
 
 fn scalar_is_string(s: &ScalarNode) -> bool {
     matches!(s, ScalarNode::LazyStr { .. } | ScalarNode::LiteralStr(_))
+}
+
+fn extract_type_node_id(node: TypeNode) -> TypeId {
+    match node {
+        TypeNode::BuiltIn(type_id) => type_id,
+    }
 }
 
 #[cfg(test)]
