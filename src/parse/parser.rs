@@ -622,7 +622,7 @@ fn parse_string(state: &mut Context) -> Result<ScalarNode, ParseError> {
         } else {
             string_utils::unescape(span.str_from_source(state.get_input()))
         };
-        Ok(ScalarNode::StrLiteral(string))
+        Ok(ScalarNode::LiteralStr(string))
     } else {
         Ok(ScalarNode::LazyStr { span, is_raw })
     }

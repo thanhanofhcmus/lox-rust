@@ -352,7 +352,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ScalarNode::Bool(v) => Value::make_bool(*v),
             ScalarNode::Integer(v) => Value::make_number(Number::Integer(*v)),
             ScalarNode::Floating(v) => Value::make_number(Number::Floating(*v)),
-            ScalarNode::StrLiteral(v) => self.environment.insert_string_variable(v.to_owned()),
+            ScalarNode::LiteralStr(v) => self.environment.insert_string_variable(v.to_owned()),
             ScalarNode::LazyStr { span, is_raw } => {
                 let string = if *is_raw {
                     span.string_from_source(self.input)

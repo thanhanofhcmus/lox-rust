@@ -167,7 +167,7 @@ pub enum ScalarNode {
         is_raw: bool,
     },
     /// Store the actual string, for REPL intepreter
-    StrLiteral(String),
+    LiteralStr(String),
 }
 
 #[derive(Debug, Clone)]

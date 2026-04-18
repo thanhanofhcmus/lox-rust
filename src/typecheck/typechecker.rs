@@ -305,7 +305,7 @@ impl<'cl> TypeChecker<'cl> {
                     ScalarNode::Nil => TypeId::NIL,
                     ScalarNode::Bool(_) => TypeId::BOOL,
                     ScalarNode::Integer(_) | ScalarNode::Floating(_) => TypeId::NUMBER,
-                    ScalarNode::LazyStr { .. } | ScalarNode::StrLiteral(_) => TypeId::STR,
+                    ScalarNode::LazyStr { .. } | ScalarNode::LiteralStr(_) => TypeId::STR,
                 };
                 Ok((type_id, RawValueNode::Scalar(s)))
             }
@@ -501,9 +501,9 @@ impl<'cl> TypeChecker<'cl> {
                 (TypeId::NUMBER, TypeId::NUMBER) => Ok(TypeId::NUMBER),
                 (TypeId::STR, TypeId::STR) => Ok(TypeId::STR),
                 _ if any => {
-                    if matches!(lhs, TypeId::STR) || matches!(rhs, TypeId::STR) {
+                    if lhs == TypeId::STR || rhs == TypeId::STR {
                         Ok(TypeId::STR)
-                    } else if matches!(lhs, TypeId::NUMBER) || matches!(rhs, TypeId::NUMBER) {
+                    } else if lhs == TypeId::NUMBER || rhs == TypeId::NUMBER {
                         Ok(TypeId::NUMBER)
                     } else {
                         Ok(TypeId::ANY)
@@ -545,7 +545,7 @@ impl<'cl> TypeChecker<'cl> {
     /// - `Any` is permissive: accept and return the op's natural result type.
     fn type_unary_op(&self, op: Token, operand: TypeId) -> Result<TypeId, Error> {
         use Token::*;
-        let any = matches!(operand, TypeId::ANY);
+        let any = operand == TypeId::ANY;
         let mismatch = || Error::UnaryOpTypeMismatch(op, operand);
 
         match op {
@@ -586,7 +586,7 @@ fn unify_types<'a>(type_ids: impl IntoIterator<Item = &'a TypeId>) -> TypeId {
 /// Assert `actual` is compatible with `expected`. `Any` on the actual side is
 /// permissive (gradual typing).
 fn require_type(expected: TypeId, actual: TypeId) -> Result<(), Error> {
-    if matches!(actual, TypeId::ANY) || actual == expected {
+    if actual == TypeId::ANY || actual == expected {
         Ok(())
     } else {
         Err(Error::ExpectedType(expected, actual))
@@ -594,7 +594,7 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), Error> {
 }
 
 fn scalar_is_string(s: &ScalarNode) -> bool {
-    matches!(s, ScalarNode::LazyStr { .. } | ScalarNode::StrLiteral(_))
+    matches!(s, ScalarNode::LazyStr { .. } | ScalarNode::LiteralStr(_))
 }
 
 #[cfg(test)]
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn scalar_is_string_recognizes_string_variants() {
-        assert!(scalar_is_string(&ScalarNode::StrLiteral(String::new())));
+        assert!(scalar_is_string(&ScalarNode::LiteralStr(String::new())));
         assert!(scalar_is_string(&ScalarNode::LazyStr {
             span: Span::one(0),
             is_raw: false,
