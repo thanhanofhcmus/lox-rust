@@ -6,11 +6,18 @@ use crate::{token::Token, types::TypeId};
 
 pub struct TypeChecker<'cl> {
     pub(super) environment: &'cl mut Environment,
+
+    // This is a horable horable cheat to get what we are trying to assing to
+    // to avoid recursiving function does not resole id
+    current_declaration_id: Option<IdentifierNode>,
 }
 
 impl<'cl> TypeChecker<'cl> {
     pub fn new(environment: &'cl mut Environment) -> Self {
-        Self { environment }
+        Self {
+            environment,
+            current_declaration_id: None,
+        }
     }
 
     /// Run `f` with a fresh scope pushed on the environment. The scope is
@@ -44,34 +51,11 @@ impl<'cl> TypeChecker<'cl> {
 
     fn convert_stmt(&mut self, ut_stmt: Statement<()>) -> Result<Statement<TypeId>, Error> {
         match ut_stmt {
-            Statement::Declare(DeclareStatementNode {
-                iden,
-                explicit_type: type_node,
-                expr,
-            }) => {
-                let expr = self.convert_expr(expr)?;
-                match &type_node {
-                    None | Some(TypeNode::BuiltIn(TypeId::ANY)) => {}
-                    Some(TypeNode::BuiltIn(type_annot)) if *type_annot == expr.extra => {}
-                    Some(TypeNode::BuiltIn(type_annot)) => {
-                        return Err(Error::ExplicitTypeMismatch(
-                            iden.name_id,
-                            iden.name,
-                            *type_annot,
-                            expr.extra,
-                        ));
-                    }
-                }
-                // Annotation wins when written (including `Any`); otherwise infer from expr.
-                let var_type = type_node.map(extract_type_node_id).unwrap_or(expr.extra);
-                self.environment
-                    .declare_id(iden.name_id, var_type)
-                    .map_err(|_| Error::DuplicateDeclaration(iden.name, iden.name_id))?;
-                Ok(Statement::Declare(DeclareStatementNode {
-                    expr,
-                    iden,
-                    explicit_type: type_node,
-                }))
+            Statement::Declare(node) => {
+                self.current_declaration_id.replace(node.iden.clone());
+                let result = self.convert_declare_stmt(node);
+                self.current_declaration_id.take();
+                Ok(Statement::Declare(result?))
             }
             Statement::ReassignIden(target, expr) => {
                 let target = self.convert_reassign_target(target)?;
@@ -83,6 +67,39 @@ impl<'cl> TypeChecker<'cl> {
                 Ok(Statement::Expr(expr))
             }
         }
+    }
+
+    fn convert_declare_stmt(
+        &mut self,
+        DeclareStatementNode {
+            iden,
+            explicit_type: type_node,
+            expr,
+        }: DeclareStatementNode<()>,
+    ) -> Result<DeclareStatementNode<TypeId>, Error> {
+        let expr = self.convert_expr(expr)?;
+        match &type_node {
+            None | Some(TypeNode::BuiltIn(TypeId::ANY)) => {}
+            Some(TypeNode::BuiltIn(type_annot)) if *type_annot == expr.extra => {}
+            Some(TypeNode::BuiltIn(type_annot)) => {
+                return Err(Error::ExplicitTypeMismatch(
+                    iden.name_id,
+                    iden.name,
+                    *type_annot,
+                    expr.extra,
+                ));
+            }
+        }
+        // Annotation wins when written (including `Any`); otherwise infer from expr.
+        let var_type = type_node.map(extract_type_node_id).unwrap_or(expr.extra);
+        self.environment
+            .declare_id(iden.name_id, var_type)
+            .map_err(|_| Error::DuplicateDeclaration(iden.name, iden.name_id))?;
+        Ok(DeclareStatementNode {
+            expr,
+            iden,
+            explicit_type: type_node,
+        })
     }
 
     fn convert_reassign_target(
@@ -391,9 +408,6 @@ impl<'cl> TypeChecker<'cl> {
     ) -> Result<(TypeId, MapLiteralNode<TypeId>), Error> {
         let mut nodes = Vec::with_capacity(map.nodes.len());
         for elem in map.nodes {
-            if !scalar_is_string(&elem.key) {
-                return Err(Error::MapKeyMustBeString(elem.key));
-            }
             let value = self.convert_clause(elem.value)?;
             nodes.push(MapLiteralElementNode {
                 key: elem.key,
@@ -425,6 +439,12 @@ impl<'cl> TypeChecker<'cl> {
                         .unwrap_or(TypeId::ANY)
                 })
                 .collect::<Vec<_>>();
+
+            if let Some(iden) = &this.current_declaration_id {
+                this.environment
+                    .declare_id(iden.name_id, TypeId::ANY_FUNCTION)
+                    .unwrap();
+            }
 
             for (param, type_id) in node.params.iter().zip(&params_type_ids) {
                 this.environment
@@ -481,9 +501,21 @@ impl<'cl> TypeChecker<'cl> {
             .lookup_type_id(indexer_type_id)
             .ok_or(Error::TypeIsNotDeclared(indexer_type_id))?;
 
-        let result_type_id = match (indexer_type, indexee_type_id) {
-            (Type::Array { elem }, TypeId::NUMBER) => *elem,
-            (Type::Map { value }, TypeId::STR) => *value,
+        // Any is a special case, will need to resovle the actual type at runtime
+        let result_type_id = match indexer_type {
+            Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => {
+                *elem
+            }
+            Type::Map { value }
+                if matches!(
+                    indexee_type_id,
+                    TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR
+                ) =>
+            {
+                *value
+            }
+            // defered to runtime
+            Type::Any => TypeId::ANY,
             _ => return Err(Error::IndexOpTypeMismatch(indexer_type_id, indexee_type_id)),
         };
 
@@ -509,6 +541,18 @@ impl<'cl> TypeChecker<'cl> {
             .collect::<Result<Vec<_>, _>>()?;
 
         let caller_type_id = caller.extra;
+
+        // Runtime defered
+        if caller_type_id == TypeId::ANY {
+            return Ok((
+                TypeId::ANY,
+                FnCallNode {
+                    caller: Box::new(caller),
+                    args,
+                },
+            ));
+        }
+
         let caller_type = self
             .environment
             .lookup_type_id(caller_type_id)
@@ -593,11 +637,9 @@ impl<'cl> TypeChecker<'cl> {
                 _ => Err(mismatch()),
             },
             EqualEqual | BangEqual => {
-                if lhs == rhs || any {
-                    Ok(TypeId::BOOL)
-                } else {
-                    Err(mismatch())
-                }
+                // TODO: enable for for strict type comparation
+                // if lhs == rhs || any { Ok(TypeId::BOOL) } else { Err(mismatch()) }
+                Ok(TypeId::BOOL)
             }
             Less | LessEqual | Greater | GreaterEqual => match (lhs, rhs) {
                 (TypeId::NUMBER, TypeId::NUMBER) | (TypeId::STR, TypeId::STR) => Ok(TypeId::BOOL),
@@ -669,10 +711,6 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), Error> {
     }
 }
 
-fn scalar_is_string(s: &ScalarNode) -> bool {
-    matches!(s, ScalarNode::LazyStr { .. } | ScalarNode::LiteralStr(_))
-}
-
 fn extract_type_node_id(node: TypeNode) -> TypeId {
     match node {
         TypeNode::BuiltIn(type_id) => type_id,
@@ -682,7 +720,7 @@ fn extract_type_node_id(node: TypeNode) -> TypeId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{id::Id, parse::lex, span::Span};
+    use crate::{id::Id, parse::lex};
     use pretty_assertions::assert_eq;
 
     fn typecheck_str(input: &str) -> Result<AST<TypeId>, Error> {
@@ -755,25 +793,6 @@ mod tests {
     fn require_type_mismatch_errors() {
         let err = require_type(TypeId::NUMBER, TypeId::BOOL).unwrap_err();
         assert!(matches!(err, Error::ExpectedType(_, _)));
-    }
-
-    // ---------- scalar_is_string ----------
-
-    #[test]
-    fn scalar_is_string_recognizes_string_variants() {
-        assert!(scalar_is_string(&ScalarNode::LiteralStr(String::new())));
-        assert!(scalar_is_string(&ScalarNode::LazyStr {
-            span: Span::one(0),
-            is_raw: false,
-        }));
-    }
-
-    #[test]
-    fn scalar_is_string_rejects_non_string_variants() {
-        assert!(!scalar_is_string(&ScalarNode::Nil));
-        assert!(!scalar_is_string(&ScalarNode::Bool(true)));
-        assert!(!scalar_is_string(&ScalarNode::Integer(0)));
-        assert!(!scalar_is_string(&ScalarNode::Floating(0.0)));
     }
 
     // ---------- Environment ----------
@@ -918,15 +937,6 @@ mod tests {
     // ---------- array literals ----------
 
     // ---------- map literals ----------
-
-    #[test]
-    fn map_non_string_key_errors() {
-        let err = typecheck_str("%{1 => \"a\"};").unwrap_err();
-        assert!(
-            matches!(err, Error::MapKeyMustBeString(_)),
-            "expected MapKeyMustBeString, got {err:?}"
-        );
-    }
 
     // ---------- identifier lookup ----------
 

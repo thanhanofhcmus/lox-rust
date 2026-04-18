@@ -152,7 +152,7 @@ impl Value {
         }
     }
 
-    pub fn get_at_index(&self, indexee: Value, env: &Environment) -> Result<Value, Error> {
+    pub fn get_by_subscription(&self, indexee: Value, env: &Environment) -> Result<Value, Error> {
         // all the 2 types array and map that have the index method also have to get the value through a handle
         let Some(handle) = self.get_handle() else {
             return Err(Error::ValueUnIndexable(*self));
@@ -160,7 +160,7 @@ impl Value {
         env.heap
             .get_object(handle)
             .ok_or(Error::GcObjectNotFound(handle))?
-            .get_at_index(indexee)
+            .get_by_subscription(indexee)
     }
 
     pub fn to_index(self) -> Result<usize, Error> {

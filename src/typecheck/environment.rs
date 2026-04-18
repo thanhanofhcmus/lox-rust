@@ -102,12 +102,12 @@ fn get_builtin_fn_type(name: &str) -> Type {
             return_: TypeId::ANY,
         },
         "map_insert" => Type::Function {
-            params: vec![TypeId::ANY, TypeId::STR, TypeId::ANY],
+            params: vec![TypeId::ANY, TypeId::ANY, TypeId::ANY],
             varidict: None,
             return_: TypeId::NIL,
         },
         "map_remove" => Type::Function {
-            params: vec![TypeId::ANY],
+            params: vec![TypeId::ANY, TypeId::ANY],
             varidict: None,
             return_: TypeId::ANY,
         },

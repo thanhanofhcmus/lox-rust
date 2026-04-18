@@ -434,7 +434,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_subscription(&mut self, node: &SubscriptionNode<TypeId>) -> Result<Value, Error> {
         let indexer = self.interpret_clause_expr(&node.indexer)?;
         let indexee = self.interpret_clause_expr(&node.indexee)?;
-        indexer.get_at_index(indexee, self.environment)
+        indexer.get_by_subscription(indexee, self.environment)
     }
 
     fn interpret_fn_call(&mut self, node: &FnCallNode<TypeId>) -> Result<Value, Error> {

@@ -10,6 +10,7 @@ impl TypeId {
     pub const STR: Self = Self(3);
     pub const UNIT: Self = Self(4);
     pub const NIL: Self = Self(5);
+    pub const ANY_FUNCTION: Self = Self(6);
 
     pub const LAST_RESVERED_COUNTER: usize = 10;
 }
@@ -40,6 +41,14 @@ pub enum Type {
     },
 }
 
+impl Type {
+    pub const ANY_FUNCTION: Self = Self::Function {
+        params: vec![],
+        varidict: Some(TypeId::ANY),
+        return_: TypeId::ANY,
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeInterner {
     type_to_id: HashMap<Type, TypeId>,
@@ -56,6 +65,7 @@ impl TypeInterner {
             (Type::Str, TypeId::STR),
             (Type::Unit, TypeId::UNIT),
             (Type::Nil, TypeId::NIL),
+            (Type::ANY_FUNCTION, TypeId::ANY_FUNCTION),
         ]);
         let id_to_type = HashMap::from([
             (TypeId::ANY, Type::Any),
@@ -64,6 +74,7 @@ impl TypeInterner {
             (TypeId::STR, Type::Str),
             (TypeId::UNIT, Type::Unit),
             (TypeId::NIL, Type::Nil),
+            (TypeId::ANY_FUNCTION, Type::ANY_FUNCTION),
         ]);
 
         Self {

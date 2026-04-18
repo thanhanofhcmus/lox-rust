@@ -1,7 +1,6 @@
 use thiserror::Error;
 
 use crate::{
-    ast::ScalarNode,
     id::Id,
     span::Span,
     token::Token,
@@ -38,9 +37,6 @@ pub enum Error {
 
     #[error("Expected type `{0:?}`, but found `{1:?}`.")]
     ExpectedType(TypeId, TypeId),
-
-    #[error("Invalid map key: keys must be strings, but found `{0:?}`.")]
-    MapKeyMustBeString(ScalarNode),
 
     #[error("Undefined name: '{1:?}' is not defined in this scope.")]
     UndefinedIdentifier(Span, Id),
@@ -156,10 +152,6 @@ impl Error {
                 interner.generate_readable_name(*expected),
                 interner.generate_readable_name(*actual)
             ),
-
-            Self::MapKeyMustBeString(_) => {
-                "Map keys must be strings. The provided key has an incompatible type.".to_string()
-            }
 
             Self::UndefinedIdentifier(_, id) => {
                 format!("The identifier '{id:?}' is not defined in the current scope.")

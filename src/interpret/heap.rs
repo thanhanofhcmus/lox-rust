@@ -47,7 +47,7 @@ impl GcObject {
         }
     }
 
-    pub fn get_at_index(&self, indexee: Value) -> Result<Value, Error> {
+    pub fn get_by_subscription(&self, indexee: Value) -> Result<Value, Error> {
         match self {
             GcObject::Array(arr) => {
                 let idx = indexee.to_index()?;
@@ -285,7 +285,7 @@ impl Heap {
         for indexee in chain.iter().copied() {
             let current_value = self
                 .get_object_or_error(current_handle)?
-                .get_at_index(indexee)?;
+                .get_by_subscription(indexee)?;
 
             let (new_handle, new_value) = self.copy_by_value(current_value)?;
 
