@@ -125,8 +125,13 @@ impl<'cl> TypeChecker<'cl> {
             }
             ExprCase::IfChain(ut_if_chain) => {
                 let if_chain = self.convert_if_chain(ut_if_chain)?;
-                // TODO
-                (TypeId::ANY, ExprCase::IfChain(if_chain))
+                let mut type_ids = vec![if_chain.if_node.stmts.extra];
+                type_ids.extend(if_chain.else_if_nodes.iter().map(|v| v.stmts.extra));
+                if let Some(else_node) = &if_chain.else_stmts {
+                    type_ids.push(else_node.extra);
+                }
+                let type_id = unify_types(&type_ids);
+                (type_id, ExprCase::IfChain(if_chain))
             }
             ExprCase::When(ut_when_node) => {
                 let when_node = self.convert_when(ut_when_node)?;
