@@ -28,7 +28,7 @@ pub enum Type {
         elem: TypeId,
     },
     Map {
-        // Key is always string
+        key: TypeId,
         value: TypeId,
     },
 
@@ -108,8 +108,12 @@ impl TypeInterner {
             Some(Type::Unit) => "unit".into(),
             Some(Type::Nil) => "nil".into(),
             Some(Type::Array { elem }) => format!("[{}]", self.generate_readable_name(*elem)),
-            Some(Type::Map { value }) => {
-                format!("%{{string, {}}}", self.generate_readable_name(*value))
+            Some(Type::Map { key, value }) => {
+                format!(
+                    "%{{{}, {}}}",
+                    self.generate_readable_name(*key),
+                    self.generate_readable_name(*value)
+                )
             }
             Some(Type::Function {
                 params,

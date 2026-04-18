@@ -296,15 +296,7 @@ impl<'cl> TypeChecker<'cl> {
         raw: RawValueNode<()>,
     ) -> Result<(TypeId, RawValueNode<TypeId>), Error> {
         match raw {
-            RawValueNode::Scalar(s) => {
-                let type_id = match &s {
-                    ScalarNode::Nil => TypeId::NIL,
-                    ScalarNode::Bool(_) => TypeId::BOOL,
-                    ScalarNode::Integer(_) | ScalarNode::Floating(_) => TypeId::NUMBER,
-                    ScalarNode::LazyStr { .. } | ScalarNode::LiteralStr(_) => TypeId::STR,
-                };
-                Ok((type_id, RawValueNode::Scalar(s)))
-            }
+            RawValueNode::Scalar(s) => Ok((get_scalar_node_type_id(&s), RawValueNode::Scalar(s))),
             RawValueNode::ArrayLiteral(arr) => {
                 let (type_id, arr) = self.convert_array_literal(arr)?;
                 Ok((type_id, RawValueNode::ArrayLiteral(arr)))
@@ -397,7 +389,13 @@ impl<'cl> TypeChecker<'cl> {
             });
         }
 
+        let key_types: Vec<_> = nodes
+            .iter()
+            .map(|n| get_scalar_node_type_id(&n.key))
+            .collect();
+
         let type_id = self.environment.declare_type(&Type::Map {
+            key: unify_types(&key_types),
             value: unify_types(nodes.iter().map(|n| &n.value.extra)),
         });
 
@@ -488,11 +486,13 @@ impl<'cl> TypeChecker<'cl> {
             Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => {
                 *elem
             }
-            Type::Map { value }
-                if matches!(
-                    indexee_type_id,
-                    TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR
-                ) =>
+            Type::Map { key, value }
+                if (*key == indexee_type_id)
+                    || (*key == TypeId::ANY
+                        && matches!(
+                            indexee_type_id,
+                            TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
+                        )) =>
             {
                 *value
             }
@@ -661,6 +661,15 @@ impl<'cl> TypeChecker<'cl> {
             },
             _ => unreachable!("non-unary-op token in Unary: {:?}", op),
         }
+    }
+}
+
+fn get_scalar_node_type_id(node: &ScalarNode) -> TypeId {
+    match &node {
+        ScalarNode::Nil => TypeId::NIL,
+        ScalarNode::Bool(_) => TypeId::BOOL,
+        ScalarNode::Integer(_) | ScalarNode::Floating(_) => TypeId::NUMBER,
+        ScalarNode::LazyStr { .. } | ScalarNode::LiteralStr(_) => TypeId::STR,
     }
 }
 
