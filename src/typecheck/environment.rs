@@ -178,12 +178,22 @@ impl Environment {
         self.type_interner.intern_type(type_)
     }
 
-    pub fn lookup_type_id(&self, type_id: TypeId) -> Option<&Type> {
+    pub fn lookup_type(&self, type_id: TypeId) -> Option<&Type> {
         self.type_interner.get_type(type_id)
     }
 
     pub fn declare_type_symbol(&mut self, node: IdentifierNode, input: &str) -> SymbolId {
-        let name = node.create_name(input);
-        self.type_interner.insert_symbol(name)
+        self.type_interner
+            .insert_symbol(node.get_id(), node.create_name(input))
+    }
+
+    pub fn associate_id_with_type(&mut self, id: Id, type_id: TypeId) {
+        self.type_interner
+            .associate_symbol_with_type(SymbolId::from(id), type_id);
+    }
+
+    pub fn lookup_type_id_from_id(&self, id: Id) -> Option<TypeId> {
+        self.type_interner
+            .get_type_id_by_symbol_id(SymbolId::from(id))
     }
 }

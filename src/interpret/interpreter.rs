@@ -80,7 +80,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         match stmt {
             Statement::Declare(node) => self.interpret_declare_stmt(node),
             Statement::StructDecl(_node) => {
-                // TODO
+                // TODO: implement struct decl
                 Ok(ValueReturn::none())
             }
             Statement::ReassignIden(node, expr) => self.interpret_reassign_id_stmt(node, expr),
@@ -356,6 +356,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             RawValueNode::Scalar(node) => self.interpret_scalar_expr(node),
             RawValueNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
             RawValueNode::MapLiteral(node) => self.interpret_map_literal(node)?,
+            RawValueNode::StructLiteral(_node) => {
+                // TODO: implement
+                unimplemented!()
+            }
             RawValueNode::FnDecl(node) => self.interpret_fn_decl(node)?,
         };
         Ok(val)

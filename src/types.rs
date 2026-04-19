@@ -5,6 +5,12 @@ use crate::id::Id;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SymbolId(Id);
 
+impl From<Id> for SymbolId {
+    fn from(value: Id) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(usize);
 
@@ -74,7 +80,8 @@ pub struct TypeInterner {
     type_to_id: HashMap<Type, TypeId>,
     id_to_type: HashMap<TypeId, Type>,
     /// Store the name of the structs and their assoicated fields, maybe method later
-    symbol_names: HashMap<SymbolId, String>,
+    symbol_to_name: HashMap<SymbolId, String>,
+    symbol_to_id: HashMap<SymbolId, TypeId>,
     next_id: usize,
 }
 
@@ -102,7 +109,8 @@ impl TypeInterner {
         Self {
             type_to_id,
             id_to_type,
-            symbol_names: HashMap::new(),
+            symbol_to_name: HashMap::new(),
+            symbol_to_id: HashMap::new(),
             next_id: TypeId::LAST_RESVERED_COUNTER + 1,
         }
     }
@@ -122,14 +130,22 @@ impl TypeInterner {
         self.id_to_type.get(&type_id)
     }
 
-    pub fn insert_symbol(&mut self, value: String) -> SymbolId {
-        let id = SymbolId(Id::new(&value));
-        self.symbol_names.insert(id, value);
+    pub fn insert_symbol(&mut self, id: Id, name: String) -> SymbolId {
+        let id = SymbolId::from(id);
+        self.symbol_to_name.insert(id, name);
         id
     }
 
     pub fn get_symbol(&self, id: SymbolId) -> Option<&str> {
-        self.symbol_names.get(&id).map(|v| v.as_str())
+        self.symbol_to_name.get(&id).map(|v| v.as_str())
+    }
+
+    pub fn associate_symbol_with_type(&mut self, symbol_id: SymbolId, type_id: TypeId) {
+        _ = self.symbol_to_id.insert(symbol_id, type_id);
+    }
+
+    pub fn get_type_id_by_symbol_id(&self, symbol_id: SymbolId) -> Option<TypeId> {
+        self.symbol_to_id.get(&symbol_id).copied()
     }
 
     pub fn generate_readable_name(&self, id: TypeId) -> String {

@@ -452,8 +452,13 @@ fn parse_recursive_unary(
 
 fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     let base = if state.peek(&[Token::Identifier]) {
-        let node = parse_identifier_node(state)?;
-        ClauseCase::Identifier(node)
+        if state.peek_2_token(&[Token::LPointParen]) {
+            let node = parse_struct_literal_node(state)?;
+            ClauseCase::RawValue(RawValueNode::StructLiteral(node))
+        } else {
+            let node = parse_identifier_node(state)?;
+            ClauseCase::Identifier(node)
+        }
     } else if state.peek(&[Token::LRoundParen]) {
         let node = parse_group(state)?;
         ClauseCase::Group(Box::new(node))
@@ -495,6 +500,32 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
         Token::String | Token::RawString => parse_string(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
+}
+
+fn parse_struct_field_literal_node(
+    state: &mut Context,
+) -> Result<StructLiteralFieldNode<()>, ParseError> {
+    let li = get_identifier(state)?;
+    state.consume_token(Token::Equal)?;
+    let value = parse_clause_node(state)?;
+    Ok(StructLiteralFieldNode {
+        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        value,
+    })
+}
+
+fn parse_struct_literal_node(state: &mut Context) -> Result<StructLiteralNode<()>, ParseError> {
+    let li = get_identifier(state)?;
+    let fields = parse_comma_list(
+        state,
+        Token::LPointParen,
+        Token::RPointParen,
+        parse_struct_field_literal_node,
+    )?;
+    Ok(StructLiteralNode {
+        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        fields,
+    })
 }
 
 fn parse_identifier_node(state: &mut Context) -> Result<IdentifierNode, ParseError> {

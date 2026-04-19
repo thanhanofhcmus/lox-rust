@@ -135,6 +135,8 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             .environment
             .declare_type(&Type::Struct(StructType { symbol_id, fields }));
         self.environment
+            .associate_id_with_type(node.iden.get_id(), type_id);
+        self.environment
             .declare_id(node.iden.id, type_id)
             .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
         Ok(node)
@@ -363,6 +365,10 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 let (type_id, map) = self.convert_map_literal(map)?;
                 Ok((type_id, RawValueNode::MapLiteral(map)))
             }
+            RawValueNode::StructLiteral(node) => {
+                let (type_id, node) = self.convert_struct_literal(node)?;
+                Ok((type_id, RawValueNode::StructLiteral(node)))
+            }
             RawValueNode::FnDecl(fn_decl) => {
                 let (type_id, fn_decl) = self.convert_fn_decl(fn_decl)?;
                 Ok((type_id, RawValueNode::FnDecl(fn_decl)))
@@ -460,6 +466,49 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
         Ok((type_id, MapLiteralNode { nodes }))
     }
 
+    fn convert_struct_literal(
+        &mut self,
+        node: StructLiteralNode<()>,
+    ) -> Result<(TypeId, StructLiteralNode<TypeId>), TypecheckError> {
+        let StructLiteralNode {
+            iden,
+            fields: ut_fields,
+        } = node;
+
+        let mut fields = vec![];
+        for field in ut_fields {
+            let value = self.convert_clause(field.value)?;
+            fields.push(StructLiteralFieldNode {
+                iden: field.iden,
+                value,
+            })
+        }
+
+        // TODO: fix unwrap
+
+        let struct_type_id = self
+            .environment
+            .lookup_type_id_from_id(iden.get_id())
+            .unwrap();
+        let type_ = self
+            .environment
+            .lookup_type(struct_type_id)
+            .ok_or(TypecheckError::TypeIsNotDeclared(struct_type_id))?;
+
+        match type_ {
+            Type::Struct(struct_type) => {
+                // check struct field is of the same type
+                for field in &struct_type.fields {
+                    _ = field;
+                }
+            }
+            Type::Any => {} // ignore, runtime check
+            _ => return Err(TypecheckError::TypeIdNotStructInLiteral(struct_type_id)),
+        }
+
+        Ok((struct_type_id, StructLiteralNode { iden, fields }))
+    }
+
     fn convert_fn_decl(
         &mut self,
         node: FnDeclNode<()>,
@@ -536,7 +585,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
 
         let indexer_type = self
             .environment
-            .lookup_type_id(indexer_type_id)
+            .lookup_type(indexer_type_id)
             .ok_or(TypecheckError::TypeIsNotDeclared(indexer_type_id))?;
 
         // Any is a special case, will need to resovle the actual type at runtime
@@ -600,7 +649,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
 
         let caller_type = self
             .environment
-            .lookup_type_id(caller_type_id)
+            .lookup_type(caller_type_id)
             .ok_or(TypecheckError::TypeIsNotDeclared(caller_type_id))?;
         let (param_type_ids, variadict_type_id, return_type_id) = match caller_type {
             Type::Function {

@@ -32,10 +32,11 @@ unary             = ("not" | "-")* unary | primary
 call              = clause "(" (clause, "," ...)* ")"
 subscription      = clause "[" clause "]"
 primary           = IDENTIFIER | group | raw_value
-raw_value         = scalar | array_literal | map_literal | struct_decl | fn_decl
+raw_value         = scalar | array_literal | map_literal | struct_decl | fn_decl | struct_literal
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
 fn_decl           = "fn" "(" (fn_param "," ...)* ")" ("->" type)? (function_block | expr)
 fn_param          = IDENTIFIER (":" type)?
+struct_literal    = TYPE_IDENTIFIER "{" (IDENTIFIER "=" clause "," ... )* "}"
 array_literal     = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]" | "[" "for" IDENTIFIER "in" clause ("if" clause)? ":" clause "]"
 map_literal       = "%{" (primary "=>" clause , ...)* "}"
 group             = "(" clause ")"

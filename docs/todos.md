@@ -11,6 +11,7 @@
 - Experimenting the byte code VM
 - Add tree-sitter
 - Add LSP
+- Implement better error messages
 
 ## Bugs / Correctness Issues:
 - `heap.rs` `update_ref_count`: `ref_count.sub_assign(1)` can underflow (panic in debug, wrap in release) — use saturating subtraction or a checked decrement

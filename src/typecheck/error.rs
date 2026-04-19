@@ -37,6 +37,9 @@ pub enum TypecheckError {
     #[error("Expected type `{0:?}`, but found `{1:?}`.")]
     ExpectedType(TypeId, TypeId),
 
+    #[error("The type `{0:?}` is not struct and used in struct literal")]
+    TypeIdNotStructInLiteral(TypeId),
+
     #[error("Undefined name: '{:?}' is not defined in this scope.", _0.id)]
     UndefinedIdentifier(IdentifierNode),
 
@@ -139,6 +142,11 @@ impl TypecheckError {
                     wrong_type_str
                 )
             }
+
+            Self::TypeIdNotStructInLiteral(type_id) => format!(
+                "Type type `{}` unused in struct literal is not structure type",
+                interner.generate_readable_name(*type_id),
+            ),
 
             Self::UnaryOpTypeMismatch(op, type_id) => format!(
                 "The operator `{:?}` cannot be applied to type `{}`.",
