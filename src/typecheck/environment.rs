@@ -41,81 +41,81 @@ fn get_builtin_fn_type(name: &str) -> Type {
     match name {
         "print" => Type::Function {
             params: vec![],
-            varidict: Some(TypeId::STR),
+            variadict: Some(TypeId::STR),
             return_: TypeId::STR,
         },
 
         "assert" => Type::Function {
             params: vec![TypeId::BOOL, TypeId::STR],
-            varidict: None,
+            variadict: None,
             return_: TypeId::STR,
         },
 
         "from_json" => Type::Function {
             params: vec![TypeId::STR],
-            varidict: None,
+            variadict: None,
             return_: TypeId::STR,
         },
         "to_json" => Type::Function {
             params: vec![TypeId::STR],
-            varidict: Some(TypeId::BOOL),
+            variadict: Some(TypeId::BOOL),
             return_: TypeId::STR,
         },
 
         "array_length" => Type::Function {
             params: vec![TypeId::ANY],
-            varidict: None,
+            variadict: None,
             return_: TypeId::NUMBER,
         },
         "array_push" => Type::Function {
             params: vec![TypeId::ANY],
-            varidict: Some(TypeId::ANY),
+            variadict: Some(TypeId::ANY),
             return_: TypeId::UNIT,
         },
         "array_pop" => Type::Function {
             params: vec![TypeId::ANY],
-            varidict: None,
+            variadict: None,
             // Nill  or T
             return_: TypeId::ANY,
         },
         "array_insert" => Type::Function {
             params: vec![TypeId::ANY],
-            varidict: Some(TypeId::ANY),
+            variadict: Some(TypeId::ANY),
             return_: TypeId::UNIT,
         },
 
         "map_length" => Type::Function {
             params: vec![TypeId::ANY],
-            varidict: None,
+            variadict: None,
             return_: TypeId::NUMBER,
         },
         "map_keys" => Type::Function {
             params: vec![TypeId::ANY],
-            varidict: None,
+            variadict: None,
             // array of strings
             return_: TypeId::ANY,
         },
         "map_values" => Type::Function {
             params: vec![TypeId::ANY],
-            varidict: None,
+            variadict: None,
             // array of value type
             return_: TypeId::ANY,
         },
         "map_insert" => Type::Function {
             params: vec![TypeId::ANY, TypeId::ANY, TypeId::ANY],
-            varidict: None,
+            variadict: None,
             return_: TypeId::NIL,
         },
         "map_remove" => Type::Function {
             params: vec![TypeId::ANY, TypeId::ANY],
-            varidict: None,
+            variadict: None,
             return_: TypeId::ANY,
         },
 
         "_dbg_print" | "_dbg_state" | "_dbg_gc_mark" | "_dbg_gc_sweep" | "_dbg_gc_mark_sweep"
         | "_dbg_heap_stats" => Type::Function {
             params: vec![],
-            varidict: None,
+            variadict: None,
             return_: TypeId::UNIT,
         },
 

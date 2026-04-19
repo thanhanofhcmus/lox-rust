@@ -36,7 +36,7 @@ pub enum Type {
     Function {
         params: Vec<TypeId>,
         /// If the function is variadict, this type will be the type of the varidict args
-        varidict: Option<TypeId>,
+        variadict: Option<TypeId>,
         return_: TypeId,
     },
 }

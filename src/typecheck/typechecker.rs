@@ -474,7 +474,7 @@ impl<'cl> TypeChecker<'cl> {
             let type_id = this.environment.declare_type(&Type::Function {
                 params: params_type_ids,
                 // Normal function does not have a way to declare variadict function yet
-                varidict: None,
+                variadict: None,
                 return_: return_type,
             });
 
@@ -570,7 +570,7 @@ impl<'cl> TypeChecker<'cl> {
             Type::Function {
                 params,
                 return_,
-                varidict,
+                variadict: varidict,
             } => (params, *varidict, *return_),
             _ => return Err(TypecheckError::TypeIsNoCallable(caller_type_id)),
         };
