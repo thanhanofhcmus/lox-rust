@@ -9,7 +9,9 @@ Syntax point
 
 ```
 global_block      = import* stmt*
-stmt              = declaration | reassignment | expr
+stmt              = declaration | reassignment | struct_decl | expr
+struct_decl       = "struct" "{" (struct_field_decl "," ...)* "}"
+struct_field_decl = IDENTIFIER (":"  TYPE_IDENTIFIER)?
 block             = "{" stmt* "}"
 function_block    = "{" (return | stmt)* "}"
 return            = "return" expr? ";"
@@ -30,7 +32,7 @@ unary             = ("not" | "-")* unary | primary
 call              = clause "(" (clause, "," ...)* ")"
 subscription      = clause "[" clause "]"
 primary           = IDENTIFIER | group | raw_value
-raw_value         = scalar | array_literal | map_literal | fn_decl
+raw_value         = scalar | array_literal | map_literal | struct_decl | fn_decl
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
 fn_decl           = "fn" "(" (fn_param "," ...)* ")" ("->" type)? (function_block | expr)
 fn_param          = IDENTIFIER (":" type)?

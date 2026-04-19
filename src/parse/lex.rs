@@ -29,6 +29,8 @@ static KEYWORDS: phf::Map<&'static [u8], Token> = phf::phf_map!(
     b"number" => Token::TypeNumber,
     b"str" => Token::TypeStr,
 
+    b"struct" => Token::Struct,
+
     b"import" => Token::Import,
     b"as" => Token::As,
 );
@@ -473,10 +475,7 @@ mod tests {
 
     #[test]
     fn floating_literal() {
-        assert_eq!(
-            with_text("3.14"),
-            vec![(Token::Number, "3.14".to_string())]
-        );
+        assert_eq!(with_text("3.14"), vec![(Token::Number, "3.14".to_string())]);
     }
 
     #[test]

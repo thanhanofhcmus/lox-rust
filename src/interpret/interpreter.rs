@@ -79,6 +79,10 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
     fn interpret_stmt(&mut self, stmt: &Statement<TypeId>) -> Result<ValueReturn, InterpretError> {
         match stmt {
             Statement::Declare(node) => self.interpret_declare_stmt(node),
+            Statement::StructDecl(_node) => {
+                // TODO
+                Ok(ValueReturn::none())
+            }
             Statement::ReassignIden(node, expr) => self.interpret_reassign_id_stmt(node, expr),
             Statement::Expr(expr) => self.interpret_expr(expr),
         }
@@ -112,7 +116,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         let mut tc_env = crate::typecheck::Environment::new();
-        let statement = crate::typecheck::TypeChecker::new(&mut tc_env)
+        let statement = crate::typecheck::TypeChecker::new(&mut tc_env, &content)
             .convert(untyped)
             .map_err(|err| {
                 InterpretError::TypeCheckModuleFailed(name.clone(), path.clone(), err)

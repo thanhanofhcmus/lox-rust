@@ -174,7 +174,7 @@ fn run_stmt(
 
     debug!("type checking start");
 
-    let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
+    let mut typechecker = typecheck::TypeChecker::new(typecheck_env, input);
 
     let ast = match typechecker.convert(ast) {
         Ok(v) => v,

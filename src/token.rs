@@ -49,6 +49,7 @@ pub enum Token {
     Import, // import
     As,     // as
     In,     // in
+    Struct, // struct
 
     // Types
     TypeAny,

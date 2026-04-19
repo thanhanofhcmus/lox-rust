@@ -68,6 +68,7 @@ fn parse_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
     let li = state.get_curr()?;
     match li.token {
         Token::Var => parse_declaration(state),
+        Token::Struct => parse_struct_decl(state).map(Statement::StructDecl),
         Token::Identifier => parse_reassignment_or_expr(state),
         _ => parse_expr_stmt(state),
     }
@@ -92,6 +93,35 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
         }
     };
     Ok(TypeNode::BuiltIn(type_id))
+}
+
+fn parse_struct_field_node(state: &mut Context) -> Result<StructFieldNode, ParseError> {
+    let li = get_identifier(state)?;
+    let explicit_type = if state.peek(&[Token::Colon]) {
+        state.consume_token(Token::Colon)?;
+        Some(parse_type_node(state)?)
+    } else {
+        None
+    };
+    Ok(StructFieldNode {
+        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        explicit_type,
+    })
+}
+
+fn parse_struct_decl(state: &mut Context) -> Result<StructDeclNode, ParseError> {
+    state.consume_token(Token::Struct)?;
+    let li = get_identifier(state)?;
+    let fields = parse_comma_list(
+        state,
+        Token::LPointParen,
+        Token::RPointParen,
+        parse_struct_field_node,
+    )?;
+    Ok(StructDeclNode {
+        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        fields,
+    })
 }
 
 fn parse_block_node(state: &mut Context) -> Result<BlockNode<()>, ParseError> {

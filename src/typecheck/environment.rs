@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
+    ast::IdentifierNode,
     id::Id,
-    types::{Type, TypeId, TypeInterner},
+    types::{SymbolId, Type, TypeId, TypeInterner},
 };
 
 /// Keep in sync with `src/interpret/predule.rs::create()`. Registered as
@@ -130,7 +131,7 @@ impl Environment {
 
         for &name in BUILTIN_NAMES {
             let type_ = get_builtin_fn_type(name);
-            let type_id = type_interner.intern(&type_);
+            let type_id = type_interner.intern_type(&type_);
             builtins.insert(Id::new(name), type_id);
         }
 
@@ -174,10 +175,15 @@ impl Environment {
     }
 
     pub fn declare_type(&mut self, type_: &Type) -> TypeId {
-        self.type_interner.intern(type_)
+        self.type_interner.intern_type(type_)
     }
 
     pub fn lookup_type_id(&self, type_id: TypeId) -> Option<&Type> {
-        self.type_interner.get(type_id)
+        self.type_interner.get_type(type_id)
+    }
+
+    pub fn declare_type_symbol(&mut self, node: IdentifierNode, input: &str) -> SymbolId {
+        let name = node.create_name(input);
+        self.type_interner.insert_symbol(name)
     }
 }

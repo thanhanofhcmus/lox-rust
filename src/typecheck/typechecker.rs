@@ -1,21 +1,23 @@
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
-use crate::types::Type;
+use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
-pub struct TypeChecker<'cl> {
+pub struct TypeChecker<'cl, 'sl> {
     pub(super) environment: &'cl mut Environment,
+    pub(super) input: &'sl str,
 
     // This is a horable horable cheat to get what we are trying to assing to
     // to avoid recursiving function does not resole id
     current_declaration_id: Option<IdentifierNode>,
 }
 
-impl<'cl> TypeChecker<'cl> {
-    pub fn new(environment: &'cl mut Environment) -> Self {
+impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
+    pub fn new(environment: &'cl mut Environment, input: &'sl str) -> Self {
         Self {
             environment,
+            input,
             current_declaration_id: None,
         }
     }
@@ -60,6 +62,10 @@ impl<'cl> TypeChecker<'cl> {
                 self.current_declaration_id.take();
                 Ok(Statement::Declare(result?))
             }
+            Statement::StructDecl(node) => {
+                let node = self.convert_struct_decl(node)?;
+                Ok(Statement::StructDecl(node))
+            }
             Statement::ReassignIden(target, expr) => {
                 let target = self.convert_reassign_target(target)?;
                 let expr = self.convert_expr(expr)?;
@@ -102,6 +108,36 @@ impl<'cl> TypeChecker<'cl> {
             iden,
             explicit_type: type_node,
         })
+    }
+
+    fn convert_struct_decl(
+        &mut self,
+        node: StructDeclNode,
+    ) -> Result<StructDeclNode, TypecheckError> {
+        let fields = node
+            .fields
+            .iter()
+            .map(|field| {
+                let type_id = field
+                    .explicit_type
+                    .map(extract_type_node_id)
+                    .unwrap_or(TypeId::ANY);
+                let symbol_id = self.environment.declare_type_symbol(field.iden, self.input);
+                StructField {
+                    symbol_id,
+                    type_: type_id,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let symbol_id = self.environment.declare_type_symbol(node.iden, self.input);
+        let type_id = self
+            .environment
+            .declare_type(&Type::Struct(StructType { symbol_id, fields }));
+        self.environment
+            .declare_id(node.iden.id, type_id)
+            .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
+        Ok(node)
     }
 
     fn convert_reassign_target(
@@ -753,7 +789,7 @@ mod tests {
         let items = lex(input).expect("lex failed");
         let ast = crate::parse::parse(input, &items, false).expect("parse failed");
         let mut env = Environment::new();
-        TypeChecker::new(&mut env).convert(ast)
+        TypeChecker::new(&mut env, input).convert(ast)
     }
 
     /// Type of the expression inside the first top-level Expr statement's Clause.

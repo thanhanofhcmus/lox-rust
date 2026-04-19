@@ -16,8 +16,21 @@ pub enum TypeNode {
 #[derive(Debug, Clone)]
 pub enum Statement<T> {
     Declare(DeclareStatementNode<T>),
+    StructDecl(StructDeclNode),
     ReassignIden(ChainingReassignTargetNode<T>, Expression<T>),
     Expr(Expression<T>),
+}
+
+#[derive(Debug, Clone)]
+pub struct StructFieldNode {
+    pub iden: IdentifierNode,
+    pub explicit_type: Option<TypeNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDeclNode {
+    pub iden: IdentifierNode,
+    pub fields: Vec<StructFieldNode>,
 }
 
 #[derive(Debug, Clone)]
