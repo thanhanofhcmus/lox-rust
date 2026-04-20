@@ -230,7 +230,9 @@ fn parse_return(state: &mut Context) -> Result<Expression<()>, ParseError> {
 
 fn parse_while(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::While)?;
+    state.allow_struct_literal = false;
     let cond = parse_clause_node(state)?;
+    state.allow_struct_literal = true;
     let body = parse_block_node(state)?;
     Ok(Expression::new(ExprCase::While(WhileNode { cond, body })))
 }
@@ -239,7 +241,9 @@ fn parse_for(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::For)?;
     let iden_li = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::In)?;
+    state.allow_struct_literal = false;
     let collection = parse_clause_node(state)?;
+    state.allow_struct_literal = true;
     let body = parse_block_node(state)?;
     Ok(Expression::new(ExprCase::For(ForNode {
         iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
@@ -251,7 +255,9 @@ fn parse_for(state: &mut Context) -> Result<Expression<()>, ParseError> {
 fn parse_if(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::If)?;
 
+    state.allow_struct_literal = false;
     let cond = parse_clause_node(state)?;
+    state.allow_struct_literal = true;
     let if_stmts = parse_block_node(state)?;
 
     let mut else_if_nodes = vec![];
@@ -261,7 +267,9 @@ fn parse_if(state: &mut Context) -> Result<Expression<()>, ParseError> {
         state.consume_token(Token::Else)?;
         if state.peek(&[Token::If]) {
             state.consume_token(Token::If)?;
+            state.allow_struct_literal = false;
             let cond = parse_clause_node(state)?;
+            state.allow_struct_literal = true;
             let if_stmts = parse_block_node(state)?;
             else_if_nodes.push(ElseIfNode {
                 cond,
@@ -452,7 +460,12 @@ fn parse_recursive_unary(
 
 fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     let base = if state.peek(&[Token::Identifier]) {
-        if state.peek_2_token(&[Token::LPointParen]) {
+        // Struct literal: `Name { field = value }`.
+        // Only attempted when the context allows it (disabled in if/while/for conditions
+        // to avoid ambiguity with block expressions — same restriction as Rust).
+        let is_struct_literal = state.allow_struct_literal
+            && state.peek_2_token(&[Token::LPointParen]);
+        if is_struct_literal {
             let node = parse_struct_literal_node(state)?;
             ClauseCase::RawValue(RawValueNode::StructLiteral(node))
         } else {

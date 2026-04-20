@@ -14,6 +14,11 @@ pub struct Context<'a> {
     should_eval_string: bool,
 
     pub fn_depth: usize,
+
+    /// When false, `Identifier {` is NOT parsed as a struct literal.
+    /// Set to false while parsing if/while/for conditions to avoid ambiguity
+    /// with block expressions (mirrors Rust's grammar restriction).
+    pub allow_struct_literal: bool,
 }
 
 impl<'a> Context<'a> {
@@ -24,6 +29,7 @@ impl<'a> Context<'a> {
             curr_pos: 0,
             should_eval_string,
             fn_depth: 0,
+            allow_struct_literal: true,
         }
     }
 
