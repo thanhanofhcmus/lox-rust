@@ -1156,6 +1156,67 @@ mod tests {
         assert!(matches!(err, TypecheckError::DuplicateDeclaration(_)));
     }
 
+    // ---------- struct declarations & literals ----------
+
+    #[test]
+    fn struct_decl_registers_type() {
+        typecheck_str("struct Point { x: number, y: number }").unwrap();
+    }
+
+    #[test]
+    fn struct_literal_correct_fields_ok() {
+        typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, y = 2 };")
+            .unwrap();
+    }
+
+    #[test]
+    fn struct_literal_undeclared_name_errors() {
+        let err = typecheck_str("var p = Foo { x = 1 };").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::UndefinedIdentifier(_)),
+            "expected UndefinedIdentifier, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn struct_field_count_mismatch_errors() {
+        let err =
+            typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1 };")
+                .unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::StructFieldCountMismatch(_, 2, 1)),
+            "expected StructFieldCountMismatch(_, 2, 1), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn struct_field_name_mismatch_errors() {
+        let err =
+            typecheck_str("struct Point { x: number } var p = Point { z = 1 };").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::StructFieldNameMismatch(_, _)),
+            "expected StructFieldNameMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn struct_field_type_mismatch_errors() {
+        let err =
+            typecheck_str("struct Point { x: number } var p = Point { x = \"hello\" };")
+                .unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::StructFieldTypeMismatch(_, _, _)),
+            "expected StructFieldTypeMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn struct_field_any_type_is_permissive() {
+        // A field with `any` annotation accepts any value type.
+        typecheck_str("struct Bag { item: any } var b = Bag { item = 42 };").unwrap();
+        typecheck_str("struct Bag { item: any } var b = Bag { item = \"hello\" };").unwrap();
+    }
+
     // ---------- block types ----------
 
     #[test]

@@ -340,3 +340,82 @@ impl Environment {
         s
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{cell::RefCell, rc::Rc};
+
+    fn make_env() -> Environment {
+        Environment::new(Rc::new(RefCell::new(std::io::sink())))
+    }
+
+    #[test]
+    fn push_and_pop_scope_ok() {
+        let mut env = make_env();
+        env.push_scope(false).unwrap();
+        env.pop_scope().unwrap();
+    }
+
+    #[test]
+    fn pop_beyond_empty_returns_underflow() {
+        let mut env = make_env();
+        // ScopeStack starts with one scope; first pop succeeds, second triggers underflow.
+        env.pop_scope().unwrap();
+        let err = env.pop_scope().unwrap_err();
+        assert!(
+            matches!(err, InterpretError::ScopeUnderflow),
+            "expected ScopeUnderflow, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn scope_overflow_returns_error() {
+        let mut env = make_env();
+        // Push past SCOPE_SIZE_LIMIT (100) to trigger overflow.
+        for _ in 0..SCOPE_SIZE_LIMIT {
+            env.push_scope(false).unwrap();
+        }
+        let err = env.push_scope(false).unwrap_err();
+        assert!(
+            matches!(err, InterpretError::ScopeOverflow(_)),
+            "expected ScopeOverflow, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn variable_visible_in_inner_scope() {
+        use crate::id::Id;
+        use crate::interpret::values::Scalar;
+
+        let mut env = make_env();
+        let id = Id::new("x");
+        env.insert_variable_current_scope(id, Value::Scalar(Scalar::Bool(true)));
+        env.push_scope(false).unwrap();
+
+        // Variable is not in the inner scope's own slot.
+        assert!(env.get_variable_current_scope(id).is_none());
+
+        env.pop_scope().unwrap();
+        assert!(env.get_variable_current_scope(id).is_some());
+    }
+
+    #[test]
+    fn readonly_scope_skipped_on_replace() {
+        use crate::id::Id;
+        use crate::interpret::values::Scalar;
+
+        let mut env = make_env();
+        let id = Id::new("x");
+        env.insert_variable_current_scope(id, Value::Scalar(Scalar::Bool(false)));
+
+        // Push a readonly scope on top — replace must skip it and update the outer scope.
+        env.push_scope(true).unwrap();
+        let found = env.replace_variable_function_scope(id, Value::Scalar(Scalar::Bool(true)));
+        assert!(found);
+
+        env.pop_scope().unwrap();
+        let val = env.get_variable_current_scope(id).unwrap();
+        assert!(matches!(val, Value::Scalar(Scalar::Bool(true))));
+    }
+}

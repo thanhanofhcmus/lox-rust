@@ -1246,4 +1246,137 @@ mod tests {
         assert_eq!(ast.imports.len(), 1);
         assert_eq!(ast.global_stmts.len(), 0);
     }
+
+    // ---------- struct declarations ----------
+
+    #[test]
+    fn parse_struct_decl_no_fields() {
+        let ast = parse_str("struct Foo {}");
+        match first_stmt(&ast) {
+            Statement::StructDecl(node) => assert_eq!(node.fields.len(), 0),
+            other => panic!("expected StructDecl, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_struct_decl_with_typed_fields() {
+        let ast = parse_str("struct Point { x: number, y: number }");
+        match first_stmt(&ast) {
+            Statement::StructDecl(node) => assert_eq!(node.fields.len(), 2),
+            other => panic!("expected StructDecl, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_struct_decl_untyped_field() {
+        let ast = parse_str("struct Bag { item }");
+        match first_stmt(&ast) {
+            Statement::StructDecl(node) => assert_eq!(node.fields.len(), 1),
+            other => panic!("expected StructDecl, got {other:?}"),
+        }
+    }
+
+    // ---------- struct literals ----------
+
+    #[test]
+    fn parse_struct_literal_with_fields() {
+        let ast = parse_str("Point { x = 1, y = 2 };");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::StructLiteral(node)) => {
+                assert_eq!(node.fields.len(), 2);
+            }
+            other => panic!("expected StructLiteral, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_empty_struct_literal() {
+        let ast = parse_str("Foo {};");
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::StructLiteral(node)) => {
+                assert_eq!(node.fields.len(), 0);
+            }
+            other => panic!("expected StructLiteral, got {other:?}"),
+        }
+    }
+
+    // ---------- struct literal disambiguation ----------
+
+    #[test]
+    fn if_condition_identifier_not_parsed_as_struct() {
+        // `p` in `if p { ... }` must be parsed as an identifier, not a struct literal.
+        let ast = parse_str("if p { 1 }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::IfChain(chain),
+                ..
+            }) => match &chain.if_node.cond.case {
+                ClauseCase::Identifier(_) => {}
+                other => panic!("expected Identifier in if cond, got {other:?}"),
+            },
+            other => panic!("expected IfChain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn while_condition_identifier_not_parsed_as_struct() {
+        let ast = parse_str("while p { 1 }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::While(w),
+                ..
+            }) => match &w.cond.case {
+                ClauseCase::Identifier(_) => {}
+                other => panic!("expected Identifier in while cond, got {other:?}"),
+            },
+            other => panic!("expected While, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn for_collection_identifier_not_parsed_as_struct() {
+        let ast = parse_str("for x in items { 1 }");
+        match first_stmt(&ast) {
+            Statement::Expr(Expression {
+                case: ExprCase::For(f),
+                ..
+            }) => match &f.collection.case {
+                ClauseCase::Identifier(_) => {}
+                other => panic!("expected Identifier in for collection, got {other:?}"),
+            },
+            other => panic!("expected For, got {other:?}"),
+        }
+    }
+
+    // ---------- return / fn_depth ----------
+
+    #[test]
+    fn return_outside_function_errors() {
+        let err = parse_err("return 5;");
+        assert!(
+            matches!(err, ParseError::UnexpectedReturn(_)),
+            "expected UnexpectedReturn, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn return_inside_function_ok() {
+        parse_str("var f = fn() { return 1; };");
+    }
+
+    #[test]
+    fn return_inside_nested_function_ok() {
+        // Return in an inner function must succeed even though the outer scope is a function.
+        parse_str("var f = fn() { var g = fn() { return 1; }; };");
+    }
+
+    #[test]
+    fn return_after_exiting_function_errors() {
+        // After the function closes, fn_depth drops back to 0 — `return` is illegal again.
+        let err = parse_err("var f = fn() { 1 }; return 5;");
+        assert!(
+            matches!(err, ParseError::UnexpectedReturn(_)),
+            "expected UnexpectedReturn, got {err:?}"
+        );
+    }
 }
