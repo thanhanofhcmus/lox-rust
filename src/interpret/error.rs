@@ -111,3 +111,128 @@ pub enum InterpretError {
     #[error("Scope underflow: attempted to pop the last scope")]
     ScopeUnderflow,
 }
+
+impl InterpretError {
+    pub fn generate_user_facing_error(&self, source_name: Option<&str>, input: &str) -> String {
+        let description = self.resolve_description();
+        let source_name = source_name.unwrap_or("");
+
+        // Interpret errors don't carry source spans, so show just the message
+        // unless a future variant adds span support
+        let _ = input;
+        format!("Runtime Error: {description}\n  --> {source_name}\n")
+    }
+
+    fn resolve_description(&self) -> String {
+        match self {
+            Self::ReDeclareVariable(name) => {
+                format!("Variable '{name}' has already been declared in this scope.")
+            }
+            Self::NotFoundVariable(name) => {
+                format!("Variable '{name}' is not defined in the current scope.")
+            }
+            Self::VariableReadOnly(name) => {
+                format!("Cannot reassign '{name}': variable is read-only in this scope.")
+            }
+            Self::UnknownOperation(op) => {
+                format!("The operator `{op:?}` is not recognized.")
+            }
+            Self::InvalidOperationOnType(op, val) => {
+                format!("The operator `{op:?}` cannot be applied to value `{val:?}`.")
+            }
+            Self::MismatchType(op, left, right) => {
+                format!(
+                    "The operator `{op:?}` cannot be applied to `{left:?}` and `{right:?}`: type mismatch."
+                )
+            }
+            Self::ConditionNotBool(val) => {
+                format!(
+                    "Expected a boolean condition, but got `{val:?}`."
+                )
+            }
+            Self::DivideByZero => "Division by zero is not allowed.".to_string(),
+            Self::ValueNotCallable(val) => {
+                format!("`{val:?}` is not a function and cannot be called.")
+            }
+            Self::WrongNumberOfArgument(val, expected, actual) => {
+                format!(
+                    "`{val:?}` expects {expected} argument(s) but received {actual}."
+                )
+            }
+            Self::WrongNumberOfArgumentAtLeast(val, min, actual) => {
+                format!(
+                    "`{val:?}` requires at least {min} argument(s) but received {actual}."
+                )
+            }
+            Self::WrongArgumentType(callable, arg, expected_type) => {
+                format!(
+                    "`{callable:?}` received argument `{arg:?}` but expected type `{expected_type}`."
+                )
+            }
+            Self::ValueUnIndexable(val) => {
+                format!("`{val:?}` is not an array or map and cannot be indexed.")
+            }
+            Self::ValueCannotBeUsedAsKey(val) => {
+                format!("`{val:?}` cannot be used as a key for an array or map.")
+            }
+            Self::ValueMustBeUsize(val) => {
+                format!("`{val:?}` is not a non-negative integer; array indices must be non-negative integers.")
+            }
+            Self::ArrayOutOfBound(len, index) => {
+                format!("Index {index} is out of bounds: the array has length {len}.")
+            }
+            Self::ModuleNotFoundInPath(module, path) => {
+                format!("Module '{module}' could not be found at path '{path}'.")
+            }
+            Self::ReadModuleFailed(module, path, err) => {
+                format!("Failed to read module '{module}' at '{path}': {err}.")
+            }
+            Self::ParseModuleFailed(module, path, err) => {
+                format!("Failed to parse module '{module}' at '{path}': {err}.")
+            }
+            Self::TypeCheckModuleFailed(module, path, err) => {
+                format!("Type error in module '{module}' at '{path}': {err}.")
+            }
+            Self::InterpretModuleFailed(module, path, err) => {
+                format!("Runtime error in module '{module}' at '{path}': {err}.")
+            }
+            Self::TypeIsNotSerializable(val) => {
+                format!("`{val:?}` cannot be serialized.")
+            }
+            Self::SerializeFailed(val, err) => {
+                format!("Serialization of `{val:?}` failed: {err}.")
+            }
+            Self::DeserializeFailed(val, err) => {
+                format!("Deserialization of `{val:?}` failed: {err}.")
+            }
+            Self::WriteValueFailed(val, err) => {
+                format!("Writing `{val:?}` failed: {err}.")
+            }
+            Self::UseUnitValue => {
+                "A unit value `()` was used where a real value was expected.".to_string()
+            }
+            Self::GcObjectNotFound(handle) => {
+                format!("Internal error: GC object `{handle:?}` no longer exists in the heap.")
+            }
+            Self::GcObjectWrongType(handle, actual, expected) => {
+                format!(
+                    "Internal error: GC object `{handle:?}` has type `{}` but expected `{}`.",
+                    actual.type_name(),
+                    expected.type_name()
+                )
+            }
+            Self::GcObjectUnIndexable(kind) => {
+                format!("Internal error: GC object of type `{}` is not indexable.", kind.type_name())
+            }
+            Self::StringNotFoundOnHeap(id) => {
+                format!("Internal error: string with id `{id}` does not exist in the string interner.")
+            }
+            Self::ScopeOverflow(limit) => {
+                format!("Stack overflow: call depth exceeded the limit of {limit}.")
+            }
+            Self::ScopeUnderflow => {
+                "Internal error: attempted to pop the root scope.".to_string()
+            }
+        }
+    }
+}

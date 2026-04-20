@@ -198,7 +198,10 @@ fn run_stmt(
     match interpret::Interpreter::new(interpret_env, input).interpret(&ast) {
         Ok(_) => {}
         Err(err) => {
-            error!("Interpreter error: {}", err);
+            error!(
+                "Interpreter error:\n{}",
+                err.generate_user_facing_error(source_name, input)
+            );
             return Err(Box::new(err));
         }
     }
