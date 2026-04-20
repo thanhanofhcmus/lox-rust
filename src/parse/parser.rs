@@ -215,7 +215,7 @@ fn parse_expr(state: &mut Context) -> Result<Expression<()>, ParseError> {
 
 fn parse_return(state: &mut Context) -> Result<Expression<()>, ParseError> {
     let li = state.consume_token(Token::Return)?;
-    if !state.is_in_fn {
+    if state.fn_depth == 0 {
         return Err(ParseError::UnexpectedReturn(li.span));
     }
     let return_expr = if !state.peek(&[Token::Semicolon]) {
@@ -367,7 +367,7 @@ fn parse_pratt_infix(
 ) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
-        // TODO: Fix this when supporting member/module call
+        // TODO: support member/module access via dot notation; requires a dot-access AST node
         Token::Dot => unimplemented!(),
 
         Token::LSquareParen => {
@@ -636,9 +636,9 @@ fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError
     let body;
 
     if state.peek(&[Token::LPointParen]) {
-        state.is_in_fn = true;
+        state.fn_depth += 1;
         body = parse_block_node(state)?;
-        state.is_in_fn = false;
+        state.fn_depth -= 1;
     } else {
         let expr = parse_expr(state)?;
         body = BlockNode::new(vec![], Some(Box::new(expr)));

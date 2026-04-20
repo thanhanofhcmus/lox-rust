@@ -102,9 +102,7 @@ impl Value {
     pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, InterpretError> {
         use Value::*;
         match (self, other) {
-            // TODO: Unit should not be comparable, make this a "friendly" error
-            (Unit, _) => panic!("compare where lhs is unit"),
-            (_, Unit) => panic!("compare where rhs is unit"),
+            (Unit, _) | (_, Unit) => return Err(InterpretError::UseUnitValue),
 
             (Scalar(l), Scalar(r)) => Ok(l == r),
 

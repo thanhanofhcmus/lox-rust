@@ -53,15 +53,16 @@ impl ScopeStack {
         self.0.len()
     }
 
-    fn push(&mut self, is_readonly: bool) {
+    fn push(&mut self, is_readonly: bool) -> Result<(), InterpretError> {
         if self.0.len() > SCOPE_SIZE_LIMIT {
-            panic!("Scope overflow");
+            return Err(InterpretError::ScopeOverflow(SCOPE_SIZE_LIMIT));
         }
         self.0.push(Scope::new(is_readonly));
+        Ok(())
     }
 
-    fn pop(&mut self) -> Scope {
-        self.0.pop().expect("Scope underflow")
+    fn pop(&mut self) -> Result<Scope, InterpretError> {
+        self.0.pop().ok_or(InterpretError::ScopeUnderflow)
     }
 
     fn get_current(&self) -> &Scope {
@@ -202,7 +203,7 @@ impl Environment {
         assert!(self.scope_stack.len() == 1);
         // Transfer variables to the module instead of disposing them —
         // do NOT call pop_scope() here, which would shallow_dispose every value.
-        let last_scope = self.scope_stack.pop();
+        let last_scope = self.scope_stack.pop().expect("scope underflow in deinit_module");
         module.variables = last_scope.variables;
 
         // TODO: handle heap
@@ -212,15 +213,16 @@ impl Environment {
 
     // Scope functions
 
-    pub fn push_scope(&mut self, is_readonly: bool) {
-        self.scope_stack.push(is_readonly);
+    pub fn push_scope(&mut self, is_readonly: bool) -> Result<(), InterpretError> {
+        self.scope_stack.push(is_readonly)
     }
 
-    pub fn pop_scope(&mut self) {
-        let last_scope = self.scope_stack.pop();
+    pub fn pop_scope(&mut self) -> Result<(), InterpretError> {
+        let last_scope = self.scope_stack.pop()?;
         for (_, value) in last_scope.variables {
             self.heap.shallow_dispose_value(value);
         }
+        Ok(())
     }
 
     // Variable functions

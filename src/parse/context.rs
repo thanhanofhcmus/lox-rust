@@ -13,8 +13,7 @@ pub struct Context<'a> {
     /// when the source might got already deleted when the actual string is needed
     should_eval_string: bool,
 
-    // Consider making setter getter for this
-    pub is_in_fn: bool,
+    pub fn_depth: usize,
 }
 
 impl<'a> Context<'a> {
@@ -24,7 +23,7 @@ impl<'a> Context<'a> {
             items,
             curr_pos: 0,
             should_eval_string,
-            is_in_fn: false,
+            fn_depth: 0,
         }
     }
 

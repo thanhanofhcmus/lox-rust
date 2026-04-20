@@ -101,7 +101,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // read the file
         // TODO: move file loader to an interface
         let file_path = Path::new(&path);
-        if !file_path.exists() && !file_path.is_file() {
+        if !file_path.exists() || !file_path.is_file() {
             return Err(InterpretError::ModuleNotFoundInPath(name, path));
         }
 
@@ -244,9 +244,9 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         &mut self,
         node: &BlockNode<TypeId>,
     ) -> Result<ValueReturn, InterpretError> {
-        self.environment.push_scope(false);
+        self.environment.push_scope(false)?;
         let result = self.interpret_block_node_inner(node);
-        self.environment.pop_scope();
+        self.environment.pop_scope()?;
         result
     }
 
@@ -278,11 +278,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let arr = self.interpret_and_get_array(collection)?.clone();
         for collection_value in arr {
             // collection_value should not be reassignable from the lesser scope
-            self.environment.push_scope(true);
+            self.environment.push_scope(true)?;
             self.environment
                 .insert_variable_current_scope(iden, collection_value);
             let result = self.interpret_block_node(body);
-            self.environment.pop_scope();
+            self.environment.pop_scope()?;
 
             let value_return = result?;
             if value_return.should_bubble_up {
@@ -340,11 +340,15 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             ClauseCase::Group(node) => self.interpret_clause_expr(node),
             ClauseCase::FnCall(node) => self.interpret_fn_call(node),
             ClauseCase::Subscription(node) => self.interpret_subscription(node),
-            ClauseCase::Identifier(node) => Ok(self
+            ClauseCase::Identifier(node) => self
                 .environment
                 .get_variable_all_scope(node)
-                .map(|v| v.0)
-                .unwrap_or(Value::make_nil())),
+                .map(|v| Ok(v.0))
+                .unwrap_or_else(|| {
+                    Err(InterpretError::NotFoundVariable(
+                        node.span.string_from_source(self.input),
+                    ))
+                }),
         }
     }
 
@@ -357,7 +361,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             RawValueNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
             RawValueNode::MapLiteral(node) => self.interpret_map_literal(node)?,
             RawValueNode::StructLiteral(_node) => {
-                // TODO: implement
+                // TODO: implement struct literal evaluation (heap allocation, field storage)
                 unimplemented!()
             }
             RawValueNode::FnDecl(node) => self.interpret_fn_decl(node)?,
@@ -406,11 +410,11 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
                 let mut arr = Vec::with_capacity(collection_arr.len());
                 for collection_value in collection_arr {
                     // collection_value should not be reassignable from the lesser scope
-                    self.environment.push_scope(true);
+                    self.environment.push_scope(true)?;
                     self.environment
                         .insert_variable_current_scope(&node.iden, collection_value);
                     let result = self.interpret_array_literal_comprehension_inner(node);
-                    self.environment.pop_scope();
+                    self.environment.pop_scope()?;
                     let value = result?;
                     if let Some(value) = value {
                         arr.push(value);
@@ -500,7 +504,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // create a new stack for the function call
         // currently, later args can reference sooner args
         // TODO: make this go away
-        self.environment.push_scope(true);
+        self.environment.push_scope(true)?;
         for (param, arg_expr) in params.iter().zip(args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
             self.environment
@@ -508,7 +512,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         }
 
         let result = self.interpret_block_node(&body);
-        self.environment.pop_scope();
+        self.environment.pop_scope()?;
 
         // Convert the ValueReturn back to a raw Value.
         // If it was bubbling, it stops bubbling here because the function has returned.

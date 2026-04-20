@@ -104,4 +104,10 @@ pub enum InterpretError {
 
     #[error("String with Id `{}` is does not exists in the heap interner", .0)]
     StringNotFoundOnHeap(StrId),
+
+    #[error("Scope depth limit ({0}) exceeded")]
+    ScopeOverflow(usize),
+
+    #[error("Scope underflow: attempted to pop the last scope")]
+    ScopeUnderflow,
 }

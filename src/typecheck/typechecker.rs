@@ -1,7 +1,7 @@
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
-use crate::types::{StructField, StructType, Type};
+use crate::types::{StructField, StructType, SymbolId, Type};
 use crate::{token::Token, types::TypeId};
 
 pub struct TypeChecker<'cl, 'sl> {
@@ -484,12 +484,10 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             })
         }
 
-        // TODO: fix unwrap
-
         let struct_type_id = self
             .environment
             .lookup_type_id_from_id(iden.get_id())
-            .unwrap();
+            .ok_or(TypecheckError::UndefinedIdentifier(iden))?;
         let type_ = self
             .environment
             .lookup_type(struct_type_id)
@@ -497,9 +495,34 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
 
         match type_ {
             Type::Struct(struct_type) => {
-                // check struct field is of the same type
-                for field in &struct_type.fields {
-                    _ = field;
+                if fields.len() != struct_type.fields.len() {
+                    return Err(TypecheckError::StructFieldCountMismatch(
+                        struct_type_id,
+                        struct_type.fields.len(),
+                        fields.len(),
+                    ));
+                }
+                for provided in &fields {
+                    let provided_symbol_id = SymbolId::from(provided.iden.get_id());
+                    let declared = struct_type
+                        .fields
+                        .iter()
+                        .find(|f| f.symbol_id == provided_symbol_id)
+                        .ok_or(TypecheckError::StructFieldNameMismatch(
+                            struct_type_id,
+                            provided.iden,
+                        ))?;
+                    let provided_type = provided.value.extra;
+                    if provided_type != TypeId::ANY
+                        && declared.type_ != TypeId::ANY
+                        && provided_type != declared.type_
+                    {
+                        return Err(TypecheckError::StructFieldTypeMismatch(
+                            struct_type_id,
+                            declared.type_,
+                            provided_type,
+                        ));
+                    }
                 }
             }
             Type::Any => {} // ignore, runtime check
@@ -528,6 +551,8 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 .collect::<Vec<_>>();
 
             if let Some(iden) = &this.current_declaration_id {
+                // TODO: this unwrap panics on duplicate function declaration;
+                // should return TypecheckError::DuplicateDeclaration like line below does
                 this.environment
                     .declare_id(iden.id, TypeId::ANY_FUNCTION)
                     .unwrap();
@@ -550,8 +575,8 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 // error case
                 Some(node) => {
                     return Err(TypecheckError::ExplicitFnReturnTypeMismatch(
-                        body.extra,
-                        extract_type_node_id(*node),
+                        extract_type_node_id(*node), // expected
+                        body.extra,                  // actual
                     ));
                 }
             };
@@ -660,9 +685,9 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             _ => return Err(TypecheckError::TypeIsNoCallable(caller_type_id)),
         };
 
-        // TODO: check variadict
-        // check for aleast number of args
-        // check for type variadict type is match with actual type
+        // TODO: variadic arg checking is broken — outer and inner both check
+        // variadict_type_id.is_none(), making the inner check always true within this branch.
+        // Needs separate non-variadic and variadic validation paths.
 
         if variadict_type_id.is_none() {
             if variadict_type_id.is_none() && param_type_ids.len() != args.len() {
