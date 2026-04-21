@@ -1,8 +1,6 @@
 ## Todos:
 - Struct runtime — `RawValueNode::StructLiteral` is `unimplemented!()` at `interpret/interpreter.rs:365`; `Statement::StructDecl` is a no-op at `interpret/interpreter.rs:83`. Typechecker accepts them but the interpreter panics.
 - Dot member access — `Token::Dot` is `unimplemented!()` at `parse/parser.rs:379`; needed for both struct field access (`p.x`) and module member access (`module.name`)
-- Validate struct field types at construction (typechecker checks struct name exists but not field value types)
-- Reject duplicate field names in struct literals — `convert_struct_literal` (`typecheck/typechecker.rs:478-533`) accepts `Point { x = 1, x = 2 }` as long as the arity matches
 - Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier` before runtime
 - Implement more string stuff, formatted string
 - Map comprehension (`%{ k => v for k, v in map }`)
@@ -22,17 +20,12 @@
 - `interpret/heap.rs` `update_ref_count`: `ref_count.sub_assign(1)` can underflow (panic in debug, wrap in release) — use saturating subtraction or a checked decrement
 - `interpret/heap.rs` `deep_copy_reassign_object()`: old intermediate values replaced during deep copy are returned and dropped without decrementing ref count (chained assignment `a[0][1] = x` leaks each copied sub-object)
 - `interpret/environment.rs` `deinit_module()`: heap not handled — GC objects owned by module-scope variables are never disposed
-- `interpret/environment.rs` `deinit_module()`: `assert!(scope_stack.len() == 1)` panics instead of returning an error when a module evaluation leaves extra scopes
 - `interpret/environment.rs` `get_variable_all_scope()`: accessing an un-imported module silently returns nil instead of a runtime error
 - `interpret/environment.rs` `ScopeStack::push()`: scope overflow returns `ScopeOverflow` (good) but the limit is hard-coded at `SCOPE_SIZE_LIMIT = 100` with no adaptive behavior; recursion beyond that aborts rather than tail-calling
-- `typecheck/typechecker.rs:688-724` variadic argument check is dead code — the inner `if variadict_type_id.is_none()` is nested inside the same outer check, so arg count/type validation is skipped entirely for any variadic function (affects `print`, `to_json`, `array_push`, `array_insert`, etc.)
-- `typecheck/typechecker.rs:558` `.declare_id(iden.id, ANY_FUNCTION).unwrap()` has no `TypecheckError::DuplicateDeclaration` branch; `with_scope` currently masks the panic but the path is unsafe
-- `typecheck/typechecker.rs:528` `Type::Any` arm inside `convert_struct_literal` is unreachable — `lookup_type_id_from_id` only populates for struct decls, so the prior `ok_or(UndefinedIdentifier)` fires first
-- `parse/parser.rs` has no recursion depth limit on `parse_pratt`; deeply nested input (e.g. `((((...))))`) can stack-overflow before reaching the interpreter
-- `span.rs` `to_start_row_col()` is off-by-one after newlines (documented in tests `row_col_right_after_newline_has_col_zero`); columns are byte indices, so multi-byte UTF-8 reports wrong columns
+- `typecheck/typechecker.rs` `convert_fn_call` variadic argument check is dead code — the inner `if variadic_type_id.is_none()` is nested inside the same outer check, so arg count/type validation is skipped entirely for any variadic function (affects `print`, `to_json`, `array_push`, `array_insert`, etc.)
+- `typecheck/typechecker.rs` `convert_struct_literal` `Type::Any` arm is unreachable — `lookup_type_id_from_id` only populates for struct decls, so the prior `ok_or(UndefinedIdentifier)` fires first
 - `id.rs` `Id` uses a 64-bit `DefaultHasher` output only — two names that collide compare equal silently; consider pairing the hash with a string id
-- `parse/lex.rs` `lex_string` unclosed-string check after `\\` uses `*offset > input.len()` where `>=` would be more obviously correct; current behavior still reports `UnclosedString` by fallthrough but is subtle
-- `string_utils.rs::unescape` panics on a trailing `\` and relies on the lexer to have rejected it — tighten the lexer or return an error here
+- `string_utils.rs::unescape` panics on a trailing `\` and relies on the lexer to have rejected it — tighten the lexer or return an error here (currently accepted as-is; lexer invariant holds)
 
 ## Design Issues:
 - GC trigger removed (was naive: fired on every assignment once live objects exceeded 100); the only way to reclaim heap memory today is the `_dbg_gc_mark_sweep()` builtin. Implement adaptive trigger (e.g. double threshold after each collection)
@@ -44,8 +37,7 @@
 - Function values are cloned per call and per evaluation — `interpret_fn_decl` clones `params` and `body` on every fn-literal evaluation, and `interpret_normal_fn_call_expr` clones the whole `Function` on every call. Wrap in `Rc<Function>` to share.
 - `ValueReturn` (`interpret/interpreter.rs:14-50`) is a hand-rolled exception mechanism duplicating what `Result<_, ReturnOrError>` / `ControlFlow` already express
 - AST has both `Expression` and `ClauseNode`, both carry `extra: T`; the distinction is not surfaced in names, and the parser/interpreter duplicate "consume semicolon for Clause/Return" logic in multiple places
-- Token names: `LPointParen` / `RPointParen` for `{}`, `Percentage` for `%`, `PercentLPointParent` for `%{`, `RFArrtow` for `=>` — worth renaming before external consumers (tree-sitter) pin on them
-- Typo cleanup — `predule` → `prelude`, `variadict` → `variadic` (throughout `types.rs`, `typecheck/environment.rs`, `typechecker.rs`), `LAST_RESVERED_COUNTER`, `Unclosesed`, `intepret_builtin_fn_call_expr`, `ArrayForComprehention`, `promt`, and several error-message typos (`canot`, `hance`, `is is does not exists`)
+- Token names: `LPointParen` / `RPointParen` for `{}`, `Percentage` for `%`, `PercentLPointParent` for `%{` — worth renaming before external consumers (tree-sitter) pin on them
 
 - [X] Maybe implement node-id
 - [X] Make last expression in a block return the value of the block (like rust)
@@ -62,3 +54,12 @@
 - [X] Add type annotation, type checker — gradual typing with `Any` as top type; two-phase AST (`AST<()>` → `AST<TypeId>`); see ADR 008
 - [X] Struct declaration parsing and typecheck — `struct Name { field: Type }` syntax, nominal typing, field count / field name / field type validation. **Runtime NOT done** — see top of Todos.
 - [X] String interner GC — `StringInterner` now participates in mark-and-sweep via `reset_marks()` / `mark_to_keep()` / `sweep()`; memory leak resolved
+- [X] Validate struct literal field types at construction — `convert_struct_literal` enforces `StructFieldTypeMismatch` against declared field types (covered by `struct_field_type_mismatch_errors`)
+- [X] Reject duplicate field names in struct literals — `convert_struct_literal` now errors with `TypecheckError::DuplicateStructLiteralField` (test: `struct_literal_duplicate_field_errors`)
+- [X] `typecheck/typechecker.rs` duplicate-fn-name unwrap — the pre-bind of the current declaration id now returns `DuplicateDeclaration` via `.map_err`
+- [X] `interpret/environment.rs` `deinit_module()` no longer panics with `assert!` — returns `InterpretError::ModuleScopeStackUnbalanced(depth)` and the caller in `interpret_import_stmt` runs deinit even after an interpret failure, preferring the interpret error
+- [X] Parser recursion depth limit — `Context::enter_recursion` / `leave_recursion` with `MAX_RECURSION_DEPTH = 256`; `ParseError::RecursionLimitExceeded` covers deeply nested input (test: `deeply_nested_parens_hit_recursion_limit`)
+- [X] `span.rs` `to_start_row_col()` — counts Unicode scalar values instead of bytes and resets column to 1 after a newline; multibyte tests added
+- [X] `parse/lex.rs` `lex_string` escape-end check — now uses `*offset >= input.len()`, matching the invariant
+- [X] Typo cleanup — `predule` → `prelude` (file renamed), `variadict` → `variadic`, `LAST_RESVERED_COUNTER` → `LAST_RESERVED_COUNTER`, `promt` → `prompt`, `RFArrtow` → `RFatArrow`, `RTArrow` → `RThinArrow`, `ArrayForComprehention` → `ArrayForComprehension`, `intepret_builtin_fn_call_expr` → `interpret_builtin_fn_call_expr`, `Unclosesed` → `Unclosed`, plus error-message typos (`canot`, `hance`, `is is does not exists`, `did not evaluated`, `defered`, `horable horable`, `varidict`/`varidiact`)
+- [X] Clippy clean — removed needless `return` in `Value::deep_eq`
