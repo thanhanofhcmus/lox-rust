@@ -12,7 +12,7 @@ use crate::{
         debug_string::DebugString,
         error::InterpretError,
         heap::{GcHandle, GcKind, GcObject, Heap},
-        predule,
+        prelude,
         string_interner::StrId,
         values::{Array, Function, Map},
     },
@@ -164,7 +164,7 @@ impl Environment {
             heap: Heap::new(),
             scope_stack: ScopeStack::new(),
             modules,
-            preludes: predule::create(),
+            preludes: prelude::create(),
             current_module_id,
 
             print_writer,

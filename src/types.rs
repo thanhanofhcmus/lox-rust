@@ -23,7 +23,7 @@ impl TypeId {
     pub const NIL: Self = Self(5);
     pub const ANY_FUNCTION: Self = Self(6);
 
-    pub const LAST_RESVERED_COUNTER: usize = 10;
+    pub const LAST_RESERVED_COUNTER: usize = 10;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -61,8 +61,9 @@ pub enum Type {
     // TODO: support generic types
     Function {
         params: Vec<TypeId>,
-        /// If the function is variadict, this type will be the type of the varidiact args
-        variadict: Option<TypeId>,
+        /// If the function is variadic, this is the element type shared by
+        /// every variadic argument (plain `...` of values beyond `params`).
+        variadic: Option<TypeId>,
         return_: TypeId,
     },
 }
@@ -70,7 +71,7 @@ pub enum Type {
 impl Type {
     pub const ANY_FUNCTION: Self = Self::Function {
         params: vec![],
-        variadict: Some(TypeId::ANY),
+        variadic: Some(TypeId::ANY),
         return_: TypeId::ANY,
     };
 }
@@ -111,7 +112,7 @@ impl TypeInterner {
             id_to_type,
             symbol_to_name: HashMap::new(),
             symbol_to_id: HashMap::new(),
-            next_id: TypeId::LAST_RESVERED_COUNTER + 1,
+            next_id: TypeId::LAST_RESERVED_COUNTER + 1,
         }
     }
 
@@ -183,17 +184,17 @@ impl TypeInterner {
             }
             Some(Type::Function {
                 params,
-                variadict: varidict,
+                variadic,
                 return_,
             }) => {
                 let mut p: Vec<String> = params
                     .iter()
                     .map(|&i| self.generate_readable_name(i))
                     .collect();
-                if let Some(variadict_type) = varidict {
+                if let Some(variadic_type) = variadic {
                     p.push(format!(
                         "{} ...",
-                        self.generate_readable_name(*variadict_type)
+                        self.generate_readable_name(*variadic_type)
                     ))
                 }
                 format!(

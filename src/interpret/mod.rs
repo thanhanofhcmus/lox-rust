@@ -3,7 +3,7 @@ mod environment;
 mod error;
 mod heap;
 mod interpreter;
-mod predule;
+mod prelude;
 mod string_interner;
 mod values;
 

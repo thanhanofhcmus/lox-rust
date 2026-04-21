@@ -39,7 +39,7 @@ fn main() -> DynResult {
 
     match input.as_str() {
         "-i" => repl(args, strict_assert),
-        "-p" => promt(args, strict_assert),
+        "-p" => prompt(args, strict_assert),
         "-f" => read_from_file(
             args.get(2).expect("must provide file name"),
             strict_assert,
@@ -48,7 +48,7 @@ fn main() -> DynResult {
     }
 }
 
-fn promt(args: Vec<String>, strict_assert: bool) -> DynResult {
+fn prompt(args: Vec<String>, strict_assert: bool) -> DynResult {
     info!("Running in Prompt mode");
 
     let line = args.get(2).expect("must provide prompt");

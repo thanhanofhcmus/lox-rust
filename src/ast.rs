@@ -217,7 +217,7 @@ pub struct MapLiteralElementNode<T> {
 pub enum ArrayLiteralNode<T> {
     List(Vec<ClauseNode<T>>),
     Repeat(Box<ArrayRepeatNode<T>>),
-    ForComprehension(Box<ArrayForComprehentionNode<T>>),
+    ForComprehension(Box<ArrayForComprehensionNode<T>>),
 }
 
 #[derive(Debug, Clone)]
@@ -227,7 +227,7 @@ pub struct ArrayRepeatNode<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ArrayForComprehentionNode<T> {
+pub struct ArrayForComprehensionNode<T> {
     pub iden: IdentifierNode,
     pub collection: ClauseNode<T>,
     pub transformer: ClauseNode<T>,

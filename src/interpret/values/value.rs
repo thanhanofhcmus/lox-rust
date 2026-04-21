@@ -102,7 +102,7 @@ impl Value {
     pub fn deep_eq(&self, other: &Self, env: &Environment) -> Result<bool, InterpretError> {
         use Value::*;
         match (self, other) {
-            (Unit, _) | (_, Unit) => return Err(InterpretError::UseUnitValue),
+            (Unit, _) | (_, Unit) => Err(InterpretError::UseUnitValue),
 
             (Scalar(l), Scalar(r)) => Ok(l == r),
 

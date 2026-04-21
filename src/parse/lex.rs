@@ -108,7 +108,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
 
             b'-' => {
                 if is_next_char(utf8_bytes, curr_offset, b'>') {
-                    result.push(LexItem::new(Token::RTArrow, Span::two(curr_offset)));
+                    result.push(LexItem::new(Token::RThinArrow, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else {
                     result.push(tok_one(Token::Minus));
@@ -120,7 +120,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                     result.push(LexItem::new(Token::EqualEqual, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else if is_next_char(utf8_bytes, curr_offset, b'>') {
-                    result.push(LexItem::new(Token::RFArrtow, Span::two(curr_offset)));
+                    result.push(LexItem::new(Token::RFatArrow, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else {
                     result.push(tok_one(Token::Equal));
@@ -214,7 +214,9 @@ fn lex_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
                 // Skip the current char '\'
                 *offset += 1;
 
-                if *offset > input.len() {
+                // After advancing past '\', the next byte must be the escaped
+                // character. If we're at or past input end, the string is unclosed.
+                if *offset >= input.len() {
                     return Err(ParseError::UnclosedString(start_offset));
                 }
 
@@ -352,7 +354,7 @@ mod tests {
     fn equal_vs_equal_equal_vs_fat_arrow() {
         assert_eq!(tokens("="), vec![Token::Equal]);
         assert_eq!(tokens("=="), vec![Token::EqualEqual]);
-        assert_eq!(tokens("=>"), vec![Token::RFArrtow]);
+        assert_eq!(tokens("=>"), vec![Token::RFatArrow]);
     }
 
     #[test]
@@ -384,7 +386,7 @@ mod tests {
     #[test]
     fn minus_vs_arrow() {
         assert_eq!(tokens("-"), vec![Token::Minus]);
-        assert_eq!(tokens("->"), vec![Token::RTArrow]);
+        assert_eq!(tokens("->"), vec![Token::RThinArrow]);
     }
 
     #[test]

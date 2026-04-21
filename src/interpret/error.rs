@@ -30,7 +30,7 @@ pub enum InterpretError {
     #[error("Value `{1:?}` does not accept operator `{0}`")]
     InvalidOperationOnType(Token, Value),
 
-    #[error("Type `{1:?}` and type `{2:?} canot perform operation `{0}` ")]
+    #[error("Type `{1:?}` and type `{2:?}` cannot perform operation `{0}`")]
     MismatchType(Token, Value, Value),
 
     #[error("Condition evaluated to `{0:?}` which is not a boolean value")]
@@ -51,7 +51,7 @@ pub enum InterpretError {
     #[error("Callable `{0:?}` received argument `{1:?}` but expected type {2}")]
     WrongArgumentType(Value, Value, &'static str),
 
-    #[error("Value `{0:?}` is not of the type array or map, hance not indexable")]
+    #[error("Value `{0:?}` is not of the type array or map, hence not indexable")]
     ValueUnIndexable(Value),
 
     #[error("Value `{0:?}` is can not be used as key for array or map")]
@@ -102,7 +102,7 @@ pub enum InterpretError {
     #[error("GcObject with type `{}` is not indexable", .0.type_name())]
     GcObjectUnIndexable(GcKind),
 
-    #[error("String with Id `{}` is does not exists in the heap interner", .0)]
+    #[error("String with Id `{}` does not exist in the heap interner", .0)]
     StringNotFoundOnHeap(StrId),
 
     #[error("Scope depth limit ({0}) exceeded")]

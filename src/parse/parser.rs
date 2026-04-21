@@ -304,7 +304,7 @@ fn parse_when(state: &mut Context) -> Result<Expression<()>, ParseError> {
 
 fn parse_when_arm(state: &mut Context) -> Result<WhenArmNode<()>, ParseError> {
     let cond = parse_clause_node(state)?;
-    state.consume_token(Token::RTArrow)?;
+    state.consume_token(Token::RThinArrow)?;
     let expr = parse_clause_node(state)?;
     Ok(WhenArmNode { cond, expr })
 }
@@ -463,8 +463,8 @@ fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
         // Struct literal: `Name { field = value }`.
         // Only attempted when the context allows it (disabled in if/while/for conditions
         // to avoid ambiguity with block expressions — same restriction as Rust).
-        let is_struct_literal = state.allow_struct_literal
-            && state.peek_2_token(&[Token::LPointParen]);
+        let is_struct_literal =
+            state.allow_struct_literal && state.peek_2_token(&[Token::LPointParen]);
         if is_struct_literal {
             let node = parse_struct_literal_node(state)?;
             ClauseCase::RawValue(RawValueNode::StructLiteral(node))
@@ -592,7 +592,7 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
         state.consume_token(Token::RSquareParen)?;
 
         Ok(ArrayLiteralNode::ForComprehension(Box::new(
-            ArrayForComprehentionNode {
+            ArrayForComprehensionNode {
                 iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
                 collection,
                 transformer,
@@ -624,7 +624,7 @@ fn parse_map_literal_element_node(
     state: &mut Context,
 ) -> Result<MapLiteralElementNode<()>, ParseError> {
     let key = parse_scalar_node(state)?;
-    state.consume_token(Token::RFArrtow)?;
+    state.consume_token(Token::RFatArrow)?;
     let value = parse_clause_node(state)?;
     Ok(MapLiteralElementNode { key, value })
 }
@@ -638,9 +638,9 @@ fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError
         parse_fn_param,
     )?;
 
-    let return_type = if state.peek(&[Token::RTArrow]) {
+    let return_type = if state.peek(&[Token::RThinArrow]) {
         // TODO: consider if we have type annotation, do not allow  single expr form
-        state.consume_token(Token::RTArrow)?;
+        state.consume_token(Token::RThinArrow)?;
         Some(parse_type_node(state)?)
     } else {
         None

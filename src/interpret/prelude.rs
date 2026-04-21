@@ -168,7 +168,7 @@ fn assert_fn(
                 )))
             } else {
                 let warn_msg = itp.environment.insert_string_variable(
-                    "Assertion check value did not evaluated to boolean".into(),
+                    "Assertion check value did not evaluate to a boolean".into(),
                 );
                 print_fn(itp, vec![warn_msg])?;
                 print_fn(itp, vec![message_val])

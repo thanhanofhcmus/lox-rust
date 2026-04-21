@@ -31,8 +31,8 @@ pub enum Token {
     Or,  // or
     Not, // not
 
-    RTArrow,  // ->
-    RFArrtow, // =>
+    RThinArrow, // ->
+    RFatArrow,  // =>
 
     True,  // true
     False, // false

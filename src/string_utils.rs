@@ -9,7 +9,7 @@ pub fn unescape(input: &str) -> String {
         }
         // go past '\'
         let Some(nc) = iter.next() else {
-            panic!("Unclosesed escape \\\" chars should already be catch at the lexing state");
+            panic!("Unclosed escape \\\" chars should already be caught at the lexing stage");
         };
         match nc {
             'r' => result.push('\r'),
@@ -86,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Unclosesed escape")]
+    #[should_panic(expected = "Unclosed escape")]
     fn trailing_backslash_panics() {
         // Documented behavior: a dangling '\\' with no following char panics.
         // The lexer is responsible for rejecting this earlier.

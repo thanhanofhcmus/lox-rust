@@ -427,7 +427,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
 
     fn interpret_array_literal_comprehension_inner(
         &mut self,
-        node: &ArrayForComprehentionNode<TypeId>,
+        node: &ArrayForComprehensionNode<TypeId>,
     ) -> Result<Option<Value>, InterpretError> {
         // filter
         if let Some(filter) = &node.filter
@@ -474,7 +474,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         match value {
             Value::Function(handle) => self.interpret_normal_fn_call_expr(handle, &node.args),
             Value::BuiltinFunction(function) => {
-                self.intepret_builtin_fn_call_expr(function, &node.args)
+                self.interpret_builtin_fn_call_expr(function, &node.args)
             }
             _ => Err(InterpretError::ValueNotCallable(value)),
         }
@@ -519,7 +519,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         result.map(|vr| vr.get_or_unit())
     }
 
-    fn intepret_builtin_fn_call_expr(
+    fn interpret_builtin_fn_call_expr(
         &mut self,
         function: BuiltinFn,
         args: &[Expression<TypeId>],

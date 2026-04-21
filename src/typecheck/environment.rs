@@ -6,7 +6,7 @@ use crate::{
     types::{SymbolId, Type, TypeId, TypeInterner},
 };
 
-/// Keep in sync with `src/interpret/predule.rs::create()`. Registered as
+/// Keep in sync with `src/interpret/prelude.rs::create()`. Registered as
 /// `Type::Any` — we don't model their signatures yet.
 const BUILTIN_NAMES: &[&str] = &[
     "print",
@@ -42,81 +42,81 @@ fn get_builtin_fn_type(name: &str) -> Type {
     match name {
         "print" => Type::Function {
             params: vec![],
-            variadict: Some(TypeId::STR),
+            variadic: Some(TypeId::STR),
             return_: TypeId::STR,
         },
 
         "assert" => Type::Function {
             params: vec![TypeId::BOOL, TypeId::STR],
-            variadict: None,
+            variadic: None,
             return_: TypeId::STR,
         },
 
         "from_json" => Type::Function {
             params: vec![TypeId::STR],
-            variadict: None,
+            variadic: None,
             return_: TypeId::STR,
         },
         "to_json" => Type::Function {
             params: vec![TypeId::STR],
-            variadict: Some(TypeId::BOOL),
+            variadic: Some(TypeId::BOOL),
             return_: TypeId::STR,
         },
 
         "array_length" => Type::Function {
             params: vec![TypeId::ANY],
-            variadict: None,
+            variadic: None,
             return_: TypeId::NUMBER,
         },
         "array_push" => Type::Function {
             params: vec![TypeId::ANY],
-            variadict: Some(TypeId::ANY),
+            variadic: Some(TypeId::ANY),
             return_: TypeId::UNIT,
         },
         "array_pop" => Type::Function {
             params: vec![TypeId::ANY],
-            variadict: None,
+            variadic: None,
             // Nill  or T
             return_: TypeId::ANY,
         },
         "array_insert" => Type::Function {
             params: vec![TypeId::ANY],
-            variadict: Some(TypeId::ANY),
+            variadic: Some(TypeId::ANY),
             return_: TypeId::UNIT,
         },
 
         "map_length" => Type::Function {
             params: vec![TypeId::ANY],
-            variadict: None,
+            variadic: None,
             return_: TypeId::NUMBER,
         },
         "map_keys" => Type::Function {
             params: vec![TypeId::ANY],
-            variadict: None,
+            variadic: None,
             // array of strings
             return_: TypeId::ANY,
         },
         "map_values" => Type::Function {
             params: vec![TypeId::ANY],
-            variadict: None,
+            variadic: None,
             // array of value type
             return_: TypeId::ANY,
         },
         "map_insert" => Type::Function {
             params: vec![TypeId::ANY, TypeId::ANY, TypeId::ANY],
-            variadict: None,
+            variadic: None,
             return_: TypeId::NIL,
         },
         "map_remove" => Type::Function {
             params: vec![TypeId::ANY, TypeId::ANY],
-            variadict: None,
+            variadic: None,
             return_: TypeId::ANY,
         },
 
         "_dbg_print" | "_dbg_state" | "_dbg_gc_mark" | "_dbg_gc_sweep" | "_dbg_gc_mark_sweep"
         | "_dbg_heap_stats" => Type::Function {
             params: vec![],
-            variadict: None,
+            variadic: None,
             return_: TypeId::UNIT,
         },
 

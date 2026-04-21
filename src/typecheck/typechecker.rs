@@ -1,3 +1,4 @@
+
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
@@ -8,8 +9,9 @@ pub struct TypeChecker<'cl, 'sl> {
     pub(super) environment: &'cl mut Environment,
     pub(super) input: &'sl str,
 
-    // This is a horable horable cheat to get what we are trying to assing to
-    // to avoid recursiving function does not resole id
+    // Tracks the identifier of the declaration currently being converted so a
+    // fn literal on the rhs can pre-bind its own name (needed for recursion)
+    // before its body is type-checked. Set/cleared around `convert_declare_stmt`.
     current_declaration_id: Option<IdentifierNode>,
 }
 
@@ -407,7 +409,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 ))
             }
             ArrayLiteralNode::ForComprehension(comp) => {
-                let ArrayForComprehentionNode {
+                let ArrayForComprehensionNode {
                     iden,
                     collection,
                     transformer,
@@ -428,7 +430,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                     });
                     Ok((
                         type_id,
-                        ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehentionNode {
+                        ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehensionNode {
                             iden,
                             collection,
                             transformer,
@@ -583,8 +585,8 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
 
             let type_id = this.environment.declare_type(&Type::Function {
                 params: params_type_ids,
-                // Normal function does not have a way to declare variadict function yet
-                variadict: None,
+                // Normal function does not have a way to declare variadic function yet
+                variadic: None,
                 return_: return_type,
             });
 
@@ -628,7 +630,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             {
                 *value
             }
-            // defered to runtime
+            // deferred to runtime
             Type::Any => TypeId::ANY,
             _ => {
                 return Err(TypecheckError::IndexOpTypeMismatch(
@@ -661,7 +663,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
 
         let caller_type_id = caller.extra;
 
-        // Runtime defered
+        // Runtime deferred
         if caller_type_id == TypeId::ANY {
             return Ok((
                 TypeId::ANY,
@@ -676,21 +678,21 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             .environment
             .lookup_type(caller_type_id)
             .ok_or(TypecheckError::TypeIsNotDeclared(caller_type_id))?;
-        let (param_type_ids, variadict_type_id, return_type_id) = match caller_type {
+        let (param_type_ids, variadic_type_id, return_type_id) = match caller_type {
             Type::Function {
                 params,
                 return_,
-                variadict: varidict,
-            } => (params, *varidict, *return_),
+                variadic,
+            } => (params, *variadic, *return_),
             _ => return Err(TypecheckError::TypeIsNoCallable(caller_type_id)),
         };
 
         // TODO: variadic arg checking is broken — outer and inner both check
-        // variadict_type_id.is_none(), making the inner check always true within this branch.
+        // variadic_type_id.is_none(), making the inner check always true within this branch.
         // Needs separate non-variadic and variadic validation paths.
 
-        if variadict_type_id.is_none() {
-            if variadict_type_id.is_none() && param_type_ids.len() != args.len() {
+        if variadic_type_id.is_none() {
+            if variadic_type_id.is_none() && param_type_ids.len() != args.len() {
                 return Err(TypecheckError::WrongNumberOfArgument(
                     caller_type_id,
                     param_type_ids.len(),
@@ -1180,9 +1182,8 @@ mod tests {
 
     #[test]
     fn struct_field_count_mismatch_errors() {
-        let err =
-            typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1 };")
-                .unwrap_err();
+        let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1 };")
+            .unwrap_err();
         assert!(
             matches!(err, TypecheckError::StructFieldCountMismatch(_, 2, 1)),
             "expected StructFieldCountMismatch(_, 2, 1), got {err:?}"
@@ -1191,8 +1192,7 @@ mod tests {
 
     #[test]
     fn struct_field_name_mismatch_errors() {
-        let err =
-            typecheck_str("struct Point { x: number } var p = Point { z = 1 };").unwrap_err();
+        let err = typecheck_str("struct Point { x: number } var p = Point { z = 1 };").unwrap_err();
         assert!(
             matches!(err, TypecheckError::StructFieldNameMismatch(_, _)),
             "expected StructFieldNameMismatch, got {err:?}"
@@ -1201,9 +1201,8 @@ mod tests {
 
     #[test]
     fn struct_field_type_mismatch_errors() {
-        let err =
-            typecheck_str("struct Point { x: number } var p = Point { x = \"hello\" };")
-                .unwrap_err();
+        let err = typecheck_str("struct Point { x: number } var p = Point { x = \"hello\" };")
+            .unwrap_err();
         assert!(
             matches!(err, TypecheckError::StructFieldTypeMismatch(_, _, _)),
             "expected StructFieldTypeMismatch, got {err:?}"
