@@ -82,6 +82,10 @@ impl SerialValue {
                 Self::Map(vsm)
             }
 
+            Value::Struct(_) => {
+                unimplemented!()
+            }
+
             Value::Unit | Value::Function(_) | Value::BuiltinFunction(_) => {
                 return Err(InterpretError::TypeIsNotSerializable(value));
             }

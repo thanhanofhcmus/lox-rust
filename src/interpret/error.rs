@@ -2,10 +2,7 @@ use super::values::Value;
 use thiserror::Error;
 
 use crate::{
-    interpret::{
-        heap::{GcHandle, GcKind},
-        string_interner::StrId,
-    },
+    interpret::heap::{GcHandle, GcKind, StrId},
     parse::ParseError,
     token::Token,
     typecheck,
@@ -102,7 +99,7 @@ pub enum InterpretError {
     #[error("GcObject with type `{}` is not indexable", .0.type_name())]
     GcObjectUnIndexable(GcKind),
 
-    #[error("String with Id `{}` does not exist in the heap interner", .0)]
+    #[error("String with Id `{:?}` does not exist in the heap interner", .0)]
     StringNotFoundOnHeap(StrId),
 
     #[error("Scope depth limit ({0}) exceeded")]
@@ -111,9 +108,7 @@ pub enum InterpretError {
     #[error("Scope underflow: attempted to pop the last scope")]
     ScopeUnderflow,
 
-    #[error(
-        "Internal: module evaluation left the scope stack unbalanced (expected 1, got {0})"
-    )]
+    #[error("Internal: module evaluation left the scope stack unbalanced (expected 1, got {0})")]
     ModuleScopeStackUnbalanced(usize),
 
     #[error("Assertion failed: {0}")]
@@ -154,23 +149,17 @@ impl InterpretError {
                 )
             }
             Self::ConditionNotBool(val) => {
-                format!(
-                    "Expected a boolean condition, but got `{val:?}`."
-                )
+                format!("Expected a boolean condition, but got `{val:?}`.")
             }
             Self::DivideByZero => "Division by zero is not allowed.".to_string(),
             Self::ValueNotCallable(val) => {
                 format!("`{val:?}` is not a function and cannot be called.")
             }
             Self::WrongNumberOfArgument(val, expected, actual) => {
-                format!(
-                    "`{val:?}` expects {expected} argument(s) but received {actual}."
-                )
+                format!("`{val:?}` expects {expected} argument(s) but received {actual}.")
             }
             Self::WrongNumberOfArgumentAtLeast(val, min, actual) => {
-                format!(
-                    "`{val:?}` requires at least {min} argument(s) but received {actual}."
-                )
+                format!("`{val:?}` requires at least {min} argument(s) but received {actual}.")
             }
             Self::WrongArgumentType(callable, arg, expected_type) => {
                 format!(
@@ -184,7 +173,9 @@ impl InterpretError {
                 format!("`{val:?}` cannot be used as a key for an array or map.")
             }
             Self::ValueMustBeUsize(val) => {
-                format!("`{val:?}` is not a non-negative integer; array indices must be non-negative integers.")
+                format!(
+                    "`{val:?}` is not a non-negative integer; array indices must be non-negative integers."
+                )
             }
             Self::ArrayOutOfBound(len, index) => {
                 format!("Index {index} is out of bounds: the array has length {len}.")
@@ -230,17 +221,21 @@ impl InterpretError {
                 )
             }
             Self::GcObjectUnIndexable(kind) => {
-                format!("Internal error: GC object of type `{}` is not indexable.", kind.type_name())
+                format!(
+                    "Internal error: GC object of type `{}` is not indexable.",
+                    kind.type_name()
+                )
             }
             Self::StringNotFoundOnHeap(id) => {
-                format!("Internal error: string with id `{id}` does not exist in the string interner.")
+                // TODO: call to the interner to get the actual string back
+                format!(
+                    "Internal error: string with id `{id:?}` does not exist in the string interner."
+                )
             }
             Self::ScopeOverflow(limit) => {
                 format!("Stack overflow: call depth exceeded the limit of {limit}.")
             }
-            Self::ScopeUnderflow => {
-                "Internal error: attempted to pop the root scope.".to_string()
-            }
+            Self::ScopeUnderflow => "Internal error: attempted to pop the root scope.".to_string(),
             Self::ModuleScopeStackUnbalanced(depth) => {
                 format!(
                     "Internal error: module evaluation left {depth} scope(s) on the stack; \

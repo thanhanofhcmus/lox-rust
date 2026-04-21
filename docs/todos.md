@@ -13,6 +13,7 @@
 - Experimenting the byte code VM
 - Add tree-sitter
 - Add LSP
+- Add typecheck on when arm, if all arm return value, unitfy, it not, none should return value
 - Implement better error messages — `InterpretError` carries no source spans (`interpret/error.rs:116-124`), so runtime errors can't point at the offending token
 - CLI: replace `.expect("must have one argument")` / `panic!("expect a mode")` in `main.rs` with proper error output
 
@@ -33,7 +34,6 @@
 - Module resolution only handles 2-part chains (`module.var`); deeper chains silently misbehave — needs spec and enforcement
 - No circular-import detection in `interpret_import_stmt`
 - `Any` type is infectious: once a value is typed `Any` all downstream expressions lose static checking. For-loop iteration variables are always `Any` — element type is not propagated from the collection type (see `convert_for`, TODO in-code)
-- `when` with no matching arm returns `Value::Unit` at runtime, but `convert_when` unifies only the arm expression types — the claimed type and the actual yielded type diverge on fall-through
 - Function values are cloned per call and per evaluation — `interpret_fn_decl` clones `params` and `body` on every fn-literal evaluation, and `interpret_normal_fn_call_expr` clones the whole `Function` on every call. Wrap in `Rc<Function>` to share.
 - `ValueReturn` (`interpret/interpreter.rs:14-50`) is a hand-rolled exception mechanism duplicating what `Result<_, ReturnOrError>` / `ControlFlow` already express
 - AST has both `Expression` and `ClauseNode`, both carry `extra: T`; the distinction is not surfaced in names, and the parser/interpreter duplicate "consume semicolon for Clause/Return" logic in multiple places

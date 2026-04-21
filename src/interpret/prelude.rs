@@ -1,4 +1,4 @@
-use crate::interpret::{string_interner::StrId, values::DisplayWriter};
+use crate::interpret::values::DisplayWriter;
 use std::collections::HashMap;
 
 use crate::{
@@ -6,7 +6,7 @@ use crate::{
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
-        heap::{GcHandle, GcObject},
+        heap::{GcHandle, GcObject, StrId},
         interpreter,
         values::{BuiltinFn, MapKey, Number, SerialValue, Value},
     },

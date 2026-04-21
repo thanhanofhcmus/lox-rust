@@ -3,12 +3,19 @@ use std::{
     ops::{AddAssign, SubAssign},
 };
 
-use crate::interpret::{
-    debug_string::DebugString,
-    error::InterpretError,
-    string_interner::{StrId, StringInterner},
-    values::{Array, Function, Map, MapKey, Value},
+use crate::{
+    interpret::{
+        debug_string::DebugString,
+        error::InterpretError,
+        values::{Array, Function, Map, MapKey, Struct, Value},
+    },
+    string_interner::{StringInterner, SymbolId},
 };
+
+pub struct HeapStringMarker;
+
+pub type StrId = SymbolId<HeapStringMarker>;
+pub type HeapStringInterner = StringInterner<HeapStringMarker>;
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[debug("GcHandle({_0})")]
@@ -18,6 +25,7 @@ pub struct GcHandle(usize);
 pub enum GcKind {
     Array,
     Map,
+    Struct,
     Function,
 }
 
@@ -26,6 +34,7 @@ impl GcKind {
         match self {
             GcKind::Array => "Array",
             GcKind::Map => "Map",
+            GcKind::Struct => "Struct",
             GcKind::Function => "Function",
         }
     }
@@ -35,6 +44,7 @@ impl GcKind {
 pub enum GcObject {
     Array(Array),
     Map(Map),
+    Struct(Struct),
     Function(Function),
 }
 
@@ -43,6 +53,7 @@ impl GcObject {
         match self {
             GcObject::Array(_) => GcKind::Array,
             GcObject::Map(_) => GcKind::Map,
+            GcObject::Struct(_) => GcKind::Struct,
             GcObject::Function(_) => GcKind::Function,
         }
     }
@@ -119,7 +130,7 @@ pub struct HeapStats {
 pub struct Heap {
     slots: Vec<Option<HeapEntry>>,
     free_list: Vec<usize>,
-    string_interner: StringInterner,
+    string_interner: HeapStringInterner,
 }
 
 impl Heap {
@@ -203,6 +214,9 @@ impl Heap {
                         .for_each(|id| self.string_interner.mark_to_keep(id));
                     trace_list.extend(arr.iter().filter_map(|v| v.get_handle()));
                 }
+                GcObject::Struct(struct_) => {
+                    // TODO: handle field cleanup
+                }
                 GcObject::Map(map) => {
                     map.keys()
                         .filter_map(|k| k.get_str_id())
@@ -256,6 +270,9 @@ impl Heap {
                 for value in arr.clone() {
                     self.shallow_dispose_value(value);
                 }
+            }
+            GcObject::Struct(_) => {
+                unimplemented!()
             }
             GcObject::Map(map) => {
                 // have to use clone here since we are modifying the backing GC object
@@ -462,6 +479,9 @@ impl DebugString for Heap {
                         writeln!(s, "    {k:?} => {v:?}").unwrap();
                     }
                 }
+                GcObject::Struct(st) => {
+                    writeln!(s, "    struct{:?}", st).unwrap();
+                }
                 GcObject::Function(f) => {
                     writeln!(s, "    params: {:?}", f.params).unwrap();
                 }
@@ -470,7 +490,7 @@ impl DebugString for Heap {
         }
 
         writeln!(s).unwrap();
-        s += &self.string_interner.debug_string();
+        // s += &self.string_interner.debug_string();
         s
     }
 }

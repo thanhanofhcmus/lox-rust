@@ -1,23 +1,64 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    cmp,
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+};
 
-use derive_more::Display;
+use derive_more::Debug;
 
-use super::debug_string::DebugString;
+#[derive(Debug)]
+#[debug("{}({})", std::any::type_name::<T>(), _0)]
+pub struct SymbolId<T>(usize, PhantomData<T>);
 
-/// The Ordering in this type does not mean anything, just to be used as map key
-#[derive(Display, derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[debug("StrId({_0})")]
-pub struct StrId(usize);
-
-#[derive(Debug, Clone)]
-pub struct StringInterner {
-    string_to_id: HashMap<String, StrId>,
-    id_to_string: HashMap<StrId, String>,
-    next_id: usize,
-    mark_to_keep: HashSet<StrId>,
+impl<T> Clone for SymbolId<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
-impl StringInterner {
+impl<T> Copy for SymbolId<T> {}
+
+impl<T> PartialOrd for SymbolId<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for SymbolId<T> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<T> PartialEq for SymbolId<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T> Eq for SymbolId<T> {}
+
+impl<T> std::hash::Hash for SymbolId<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<T> SymbolId<T> {
+    pub fn new(value: usize) -> Self {
+        Self(value, PhantomData)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StringInterner<T> {
+    string_to_id: HashMap<String, SymbolId<T>>,
+    id_to_string: HashMap<SymbolId<T>, String>,
+    next_id: usize,
+    mark_to_keep: HashSet<SymbolId<T>>,
+}
+
+impl<T> StringInterner<T> {
     pub fn new() -> Self {
         Self {
             string_to_id: HashMap::new(),
@@ -27,18 +68,18 @@ impl StringInterner {
         }
     }
 
-    pub fn intern(&mut self, s: &str) -> StrId {
+    pub fn intern(&mut self, s: &str) -> SymbolId<T> {
         if let Some(id) = self.string_to_id.get(s) {
             return *id;
         }
-        let id = StrId(self.next_id);
+        let id = SymbolId::new(self.next_id);
         self.next_id += 1;
         self.string_to_id.insert(s.into(), id);
         self.id_to_string.insert(id, s.into());
         id
     }
 
-    pub fn get(&self, id: StrId) -> Option<&str> {
+    pub fn get(&self, id: SymbolId<T>) -> Option<&str> {
         self.id_to_string.get(&id).map(|s| s.as_str())
     }
 
@@ -46,7 +87,7 @@ impl StringInterner {
         self.mark_to_keep.clear();
     }
 
-    pub fn mark_to_keep(&mut self, id: StrId) {
+    pub fn mark_to_keep(&mut self, id: SymbolId<T>) {
         self.mark_to_keep.insert(id);
     }
 
@@ -64,38 +105,16 @@ impl StringInterner {
     }
 }
 
-impl DebugString for StringInterner {
-    fn debug_string(&self) -> String {
-        use std::fmt::Write as FmtWrite;
-        let mut s = String::new();
-        writeln!(
-            s,
-            "  String Interner (count={}, next_id={}):",
-            self.id_to_string.len(),
-            self.next_id
-        )
-        .unwrap();
-        if self.id_to_string.is_empty() {
-            writeln!(s, "    (empty)").unwrap();
-        } else {
-            let mut entries: Vec<_> = self.id_to_string.iter().collect();
-            entries.sort_by_key(|(id, _)| id.0);
-            for (id, string) in entries {
-                writeln!(s, "    {id:?} = {string:?}").unwrap();
-            }
-        }
-        s
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    type SI = StringInterner<()>;
+
     #[test]
     fn interning_same_string_returns_same_id() {
-        let mut interner = StringInterner::new();
+        let mut interner = SI::new();
         let a = interner.intern("hello");
         let b = interner.intern("hello");
         assert_eq!(a, b);
@@ -103,7 +122,7 @@ mod tests {
 
     #[test]
     fn interning_different_strings_returns_different_ids() {
-        let mut interner = StringInterner::new();
+        let mut interner = SI::new();
         let a = interner.intern("hello");
         let b = interner.intern("world");
         assert_ne!(a, b);
@@ -111,14 +130,14 @@ mod tests {
 
     #[test]
     fn get_returns_interned_string() {
-        let mut interner = StringInterner::new();
+        let mut interner = SI::new();
         let id = interner.intern("foo");
         assert_eq!(interner.get(id), Some("foo"));
     }
 
     #[test]
     fn get_unknown_id_returns_none() {
-        let interner = StringInterner::new();
+        let interner = SI::new();
         // Construct an id that was never interned by fabricating via next_id behavior:
         // since StrId is not publicly constructible outside this module, we instead
         // intern once and then sweep it away, then try to get it.
@@ -130,7 +149,7 @@ mod tests {
 
     #[test]
     fn sweep_without_marks_clears_all() {
-        let mut interner = StringInterner::new();
+        let mut interner = SI::new();
         let a = interner.intern("a");
         let b = interner.intern("b");
         interner.sweep();
@@ -140,7 +159,7 @@ mod tests {
 
     #[test]
     fn sweep_preserves_marked_removes_unmarked() {
-        let mut interner = StringInterner::new();
+        let mut interner = SI::new();
         let keep = interner.intern("keep");
         let drop = interner.intern("drop");
         interner.mark_to_keep(keep);
@@ -151,7 +170,7 @@ mod tests {
 
     #[test]
     fn reset_marks_then_sweep_clears_everything() {
-        let mut interner = StringInterner::new();
+        let mut interner = SI::new();
         let id = interner.intern("x");
         interner.mark_to_keep(id);
         interner.reset_marks();
@@ -163,7 +182,7 @@ mod tests {
     fn re_intern_after_sweep_can_reuse_or_get_new_id() {
         // The interner uses monotonic next_id — after sweep, re-interning the same
         // string produces a *new* id (not reuse of the old one).
-        let mut interner = StringInterner::new();
+        let mut interner = SI::new();
         let first = interner.intern("foo");
         interner.sweep();
         let second = interner.intern("foo");

@@ -1,12 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     ast::{BlockNode, FnParamNode},
+    id::Id,
     interpret::{
         Environment, Interpreter,
         error::InterpretError,
-        heap::GcHandle,
-        string_interner::StrId,
+        heap::{GcHandle, StrId},
         values::{display_writer::DisplayWriter, number::Number, scalar::Scalar},
     },
     types::TypeId,
@@ -23,6 +23,19 @@ pub struct Function {
 pub type Array = Vec<Value>;
 
 pub type Map = BTreeMap<MapKey, Value>;
+
+#[derive(Debug, Clone)]
+pub struct StructField {
+    // pub type_id: TypeId,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub id: Id,
+    pub type_id: TypeId,
+    pub fields: HashMap<Id, StructField>,
+}
 
 #[derive(derive_more::Debug, Clone, Copy)]
 pub enum Value {
@@ -41,6 +54,9 @@ pub enum Value {
 
     #[debug("Map({:?})", _0)]
     Map(GcHandle),
+
+    #[debug("Struct({:?})", _0)]
+    Struct(GcHandle),
 
     #[debug("Function({:?})", _0)]
     Function(GcHandle),
@@ -85,16 +101,20 @@ impl Value {
 
     pub fn get_handle(self) -> Option<GcHandle> {
         match self {
-            Value::Array(handle) | Value::Map(handle) | Value::Function(handle) => Some(handle),
+            Value::Array(handle)
+            | Value::Map(handle)
+            | Value::Function(handle)
+            | Value::Struct(handle) => Some(handle),
             _ => None,
         }
     }
 
     pub fn replace_handle(&mut self, new_handle: GcHandle) -> Option<GcHandle> {
         match self {
-            Value::Array(handle) | Value::Map(handle) | Value::Function(handle) => {
-                Some(std::mem::replace(handle, new_handle))
-            }
+            Value::Array(handle)
+            | Value::Map(handle)
+            | Value::Function(handle)
+            | Value::Struct(handle) => Some(std::mem::replace(handle, new_handle)),
             _ => None,
         }
     }
@@ -146,6 +166,8 @@ impl Value {
                 }
                 Ok(true)
             }
+
+            // TODO: Handle structs comparision
             _ => Ok(false),
         }
     }
@@ -241,6 +263,11 @@ impl DisplayWriter for Value {
 
                 Ok(())
             }
+            Value::Struct(handle) => {
+                let struct_ = env.get_struct(handle)?;
+                // TODO: get name and fields, print struct
+                Ok(())
+            }
             Value::Function(_) => write!(w, "function").map_err(convert),
             Value::BuiltinFunction(_) => write!(w, "builtin_function").map_err(convert),
         }
@@ -290,7 +317,6 @@ impl DisplayWriter for MapKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interpret::string_interner::StrId;
     use crate::interpret::values::{number::Number, scalar::Scalar};
     use pretty_assertions::assert_eq;
 
@@ -433,8 +459,8 @@ mod tests {
         // default value that `mem::zeroed`-style construction would give via
         // serde/Copy semantics is not safe. Instead, construct through our own
         // interner — intentionally inlined to avoid a heap dependency.
-        use crate::interpret::string_interner::StringInterner;
-        let mut interner = StringInterner::new();
+        use crate::interpret::heap::HeapStringInterner;
+        let mut interner = HeapStringInterner::new();
         let id: StrId = interner.intern("hello");
         let k = MapKey::convert_from_value(Value::Str(id)).unwrap();
         assert_eq!(k.get_str_id(), Some(id));

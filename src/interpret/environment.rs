@@ -11,10 +11,9 @@ use crate::{
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
-        heap::{GcHandle, GcKind, GcObject, Heap},
+        heap::{GcHandle, GcKind, GcObject, Heap, StrId},
         prelude,
-        string_interner::StrId,
-        values::{Array, Function, Map},
+        values::{Array, Function, Map, Struct},
     },
 };
 
@@ -152,10 +151,7 @@ macro_rules! decl_gc_type_methods {
 }
 
 impl Environment {
-    pub fn new(
-        print_writer: Rc<RefCell<dyn std::io::Write>>,
-        strict_assert: bool,
-    ) -> Self {
+    pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>, strict_assert: bool) -> Self {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
         let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
@@ -313,6 +309,7 @@ impl Environment {
 
     decl_gc_type_methods!(array, Array, Array, GcKind::Array, Array);
     decl_gc_type_methods!(map, Map, Map, GcKind::Map, Map);
+    decl_gc_type_methods!(struct, Struct, Struct, GcKind::Struct, Struct);
     decl_gc_type_methods!(function, Function, Function, GcKind::Function, Function);
 
     pub fn debug_state_string(&self) -> String {

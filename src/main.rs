@@ -3,6 +3,7 @@ mod id;
 mod interpret;
 mod parse;
 mod span;
+mod string_interner;
 mod string_utils;
 mod token;
 mod typecheck;
@@ -40,10 +41,7 @@ fn main() -> DynResult {
     match input.as_str() {
         "-i" => repl(args, strict_assert),
         "-p" => prompt(args, strict_assert),
-        "-f" => read_from_file(
-            args.get(2).expect("must provide file name"),
-            strict_assert,
-        ),
+        "-f" => read_from_file(args.get(2).expect("must provide file name"), strict_assert),
         _ => panic!("expect a mode"),
     }
 }
@@ -206,7 +204,9 @@ fn run_stmt(
 
     debug!("interpreting start");
 
-    match interpret::Interpreter::new(interpret_env, input).interpret(&ast) {
+    match interpret::Interpreter::new(interpret_env, typecheck_env.get_type_interner(), input)
+        .interpret(&ast)
+    {
         Ok(_) => {}
         Err(err) => {
             error!(

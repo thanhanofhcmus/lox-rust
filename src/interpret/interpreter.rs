@@ -4,11 +4,14 @@ use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
 
-use crate::interpret::values::{Array, BuiltinFn, Function, Map, MapKey, Number, Scalar};
+use crate::interpret::values::{
+    Array, BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField,
+};
 use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
-use crate::types::TypeId;
+use crate::types::{SymbolId, TypeId, TypeInterner};
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -49,17 +52,26 @@ impl ValueReturn {
     }
 }
 
-pub struct Interpreter<'cl, 'sl> {
-    pub(super) environment: &'cl mut Environment,
-    pub(super) input: &'sl str,
+pub struct Interpreter<'e, 't, 's> {
+    pub(super) environment: &'e mut Environment,
+    type_interner: &'t TypeInterner,
+    pub(super) input: &'s str,
 }
 
-impl<'cl, 'sl> Interpreter<'cl, 'sl> {
-    pub fn new(environment: &'cl mut Environment, input: &'sl str) -> Self {
-        Self { environment, input }
+impl<'e, 't, 's> Interpreter<'e, 't, 's> {
+    pub fn new(
+        environment: &'e mut Environment,
+        type_interner: &'t TypeInterner,
+        input: &'s str,
+    ) -> Self {
+        Self {
+            environment,
+            type_interner,
+            input,
+        }
     }
 
-    pub fn interpret(&mut self, ast: &'sl AST<TypeId>) -> Result<Value, InterpretError> {
+    pub fn interpret(&mut self, ast: &'s AST<TypeId>) -> Result<Value, InterpretError> {
         for import in &ast.imports {
             self.interpret_import_stmt(import)?;
         }
@@ -80,7 +92,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         match stmt {
             Statement::Declare(node) => self.interpret_declare_stmt(node),
             Statement::StructDecl(_node) => {
-                // TODO: implement struct decl
+                // TODO: noop for now, will need to insert more data when implement methods
                 Ok(ValueReturn::none())
             }
             Statement::ReassignIden(node, expr) => self.interpret_reassign_id_stmt(node, expr),
@@ -127,7 +139,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         // and the current scope stack
         // everything starts from a module
         self.environment.init_module(module_id);
-        let mut itp = Interpreter::new(self.environment, &content);
+        let mut itp = Interpreter::new(self.environment, self.type_interner, &content);
 
         // We treat the module evaluation as a top-level interpret call
         let interpret_result = itp
@@ -364,10 +376,7 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             RawValueNode::Scalar(node) => self.interpret_scalar_expr(node),
             RawValueNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
             RawValueNode::MapLiteral(node) => self.interpret_map_literal(node)?,
-            RawValueNode::StructLiteral(_node) => {
-                // TODO: implement struct literal evaluation (heap allocation, field storage)
-                unimplemented!()
-            }
+            RawValueNode::StructLiteral(node) => self.interpret_struct_literal(node)?,
             RawValueNode::FnDecl(node) => self.interpret_fn_decl(node)?,
         };
         Ok(val)
@@ -455,6 +464,39 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
             map.insert(key, value);
         }
         Ok(self.environment.insert_map_variable(map))
+    }
+
+    fn interpret_struct_literal(
+        &mut self,
+        node: &StructLiteralNode<TypeId>,
+    ) -> Result<Value, InterpretError> {
+        // TODO: fix unwrap
+
+        let id = node.iden.get_id();
+
+        let type_id = self
+            .type_interner
+            .get_type_id_by_symbol_id(SymbolId::from(id))
+            .unwrap();
+
+        // compare field type with actual value
+        let mut fields = HashMap::new();
+        for field_literal in &node.fields {
+            let field_value = self.interpret_clause_expr(&field_literal.value)?;
+            let field = StructField {
+                // TODO: add type id
+                value: field_value,
+            };
+            fields.insert(field_literal.iden.get_id(), field);
+        }
+
+        let struct_val = Struct {
+            id,
+            type_id,
+            fields,
+        };
+
+        Ok(self.environment.insert_struct_variable(struct_val))
     }
 
     fn interpret_fn_decl(&mut self, node: &FnDeclNode<TypeId>) -> Result<Value, InterpretError> {
