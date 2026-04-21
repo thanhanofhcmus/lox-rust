@@ -57,6 +57,9 @@ pub enum TypecheckError {
 
     #[error("Field of struct `{0:?}` expects type `{1:?}` but got `{2:?}`")]
     StructFieldTypeMismatch(TypeId, TypeId, TypeId),
+
+    #[error("Duplicate field '{:?}' in struct literal", _0.id)]
+    DuplicateStructLiteralField(IdentifierNode),
 }
 
 impl TypecheckError {
@@ -201,6 +204,11 @@ impl TypecheckError {
                 interner.generate_readable_name(*expected),
                 interner.generate_readable_name(*actual),
             ),
+
+            Self::DuplicateStructLiteralField(node) => format!(
+                "Field '{:?}' is set more than once in this struct literal.",
+                node.id
+            ),
         }
     }
 
@@ -210,6 +218,7 @@ impl TypecheckError {
             Self::UndefinedIdentifier(node) => node.span.to_start_row_col(input),
             Self::DuplicateDeclaration(node) => node.span.to_start_row_col(input),
             Self::StructFieldNameMismatch(_, node) => node.span.to_start_row_col(input),
+            Self::DuplicateStructLiteralField(node) => node.span.to_start_row_col(input),
             // Default to start of file if the variant doesn't carry a specific span
             _ => (1, 1),
         }

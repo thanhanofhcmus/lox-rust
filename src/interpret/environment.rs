@@ -204,21 +204,25 @@ impl Environment {
         // of the current module and restore it later
     }
 
-    pub fn deinit_module(&mut self) {
+    pub fn deinit_module(&mut self) -> Result<(), InterpretError> {
         let mut module = Module::new(self.current_module_id);
-        // after a module is parsed, there should only be the "global" scope
-        assert!(self.scope_stack.len() == 1);
+        // After a module is evaluated there should be exactly one scope
+        // remaining (the module's global scope). Anything else indicates
+        // an unbalanced push/pop somewhere in evaluation — surface it as a
+        // recoverable error instead of panicking.
+        let depth = self.scope_stack.len();
+        if depth != 1 {
+            return Err(InterpretError::ModuleScopeStackUnbalanced(depth));
+        }
         // Transfer variables to the module instead of disposing them —
         // do NOT call pop_scope() here, which would shallow_dispose every value.
-        let last_scope = self
-            .scope_stack
-            .pop()
-            .expect("scope underflow in deinit_module");
+        let last_scope = self.scope_stack.pop()?;
         module.variables = last_scope.variables;
 
         // TODO: handle heap
 
         self.modules.insert(self.current_module_id, module);
+        Ok(())
     }
 
     // Scope functions

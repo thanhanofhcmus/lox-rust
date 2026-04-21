@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 
 use super::{Environment, TypecheckError};
 
@@ -478,7 +479,14 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
         } = node;
 
         let mut fields = vec![];
+        let mut seen_field_ids = HashSet::with_capacity(ut_fields.len());
         for field in ut_fields {
+            // Reject `Point { x = 1, x = 2 }` — each field name must appear
+            // at most once per literal. Catching this here keeps the runtime
+            // contract simple and gives a precise source location.
+            if !seen_field_ids.insert(field.iden.get_id()) {
+                return Err(TypecheckError::DuplicateStructLiteralField(field.iden));
+            }
             let value = self.convert_clause(field.value)?;
             fields.push(StructLiteralFieldNode {
                 iden: field.iden,
@@ -553,11 +561,14 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 .collect::<Vec<_>>();
 
             if let Some(iden) = &this.current_declaration_id {
-                // TODO: this unwrap panics on duplicate function declaration;
-                // should return TypecheckError::DuplicateDeclaration like line below does
+                // Pre-declare the enclosing name as a function in the body's scope
+                // so recursive self-references type-check. `with_scope` has just
+                // pushed a fresh scope, so a collision here means the param loop
+                // below picked the same name — treat that as a duplicate.
+                let iden = *iden;
                 this.environment
                     .declare_id(iden.id, TypeId::ANY_FUNCTION)
-                    .unwrap();
+                    .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
             }
 
             for (param, type_id) in node.params.iter().zip(&params_type_ids) {
@@ -1206,6 +1217,17 @@ mod tests {
         assert!(
             matches!(err, TypecheckError::StructFieldTypeMismatch(_, _, _)),
             "expected StructFieldTypeMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn struct_literal_duplicate_field_errors() {
+        let err =
+            typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, x = 2 };")
+                .unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::DuplicateStructLiteralField(_)),
+            "expected DuplicateStructLiteralField, got {err:?}"
         );
     }
 

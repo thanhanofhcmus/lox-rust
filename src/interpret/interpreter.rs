@@ -130,15 +130,19 @@ impl<'cl, 'sl> Interpreter<'cl, 'sl> {
         let mut itp = Interpreter::new(self.environment, &content);
 
         // We treat the module evaluation as a top-level interpret call
-        let result = itp
+        let interpret_result = itp
             .interpret(&statement)
             .map_err(|err| InterpretError::InterpretModuleFailed(name, path, Box::new(err)));
 
-        self.environment.deinit_module();
+        // Always attempt to deinit, even if interpretation failed. Prefer the
+        // interpret error (root cause); only surface a scope imbalance if the
+        // module body actually completed.
+        let deinit_result = self.environment.deinit_module();
 
         // TODO: Maybe do something with the return value of a module
         // if that actually make sense
-        _ = result?;
+        _ = interpret_result?;
+        deinit_result?;
 
         // TODO: detect circular dependency
 

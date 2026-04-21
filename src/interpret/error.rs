@@ -111,6 +111,11 @@ pub enum InterpretError {
     #[error("Scope underflow: attempted to pop the last scope")]
     ScopeUnderflow,
 
+    #[error(
+        "Internal: module evaluation left the scope stack unbalanced (expected 1, got {0})"
+    )]
+    ModuleScopeStackUnbalanced(usize),
+
     #[error("Assertion failed: {0}")]
     AssertionFailed(String),
 }
@@ -235,6 +240,12 @@ impl InterpretError {
             }
             Self::ScopeUnderflow => {
                 "Internal error: attempted to pop the root scope.".to_string()
+            }
+            Self::ModuleScopeStackUnbalanced(depth) => {
+                format!(
+                    "Internal error: module evaluation left {depth} scope(s) on the stack; \
+                     expected exactly 1 (the module's global scope)."
+                )
             }
             Self::AssertionFailed(msg) => {
                 format!("Assertion failed: {msg}")

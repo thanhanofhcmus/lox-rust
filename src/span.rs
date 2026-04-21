@@ -32,21 +32,22 @@ impl Span {
         self.str_from_source(input).to_string()
     }
 
+    /// Translate the byte offset `self.start` into a 1-indexed (row, col).
+    /// Counts Unicode scalar values (chars), not bytes, so multi-byte UTF-8
+    /// characters contribute a single column. After a newline the next char
+    /// is reported as column 1.
     pub fn to_start_row_col(self, input: &str) -> (usize, usize) {
         let mut row = 1;
         let mut col = 1;
-        let utf8_bytes = input.as_bytes();
-        for i in 0..self.start {
-            if let Some(c) = utf8_bytes.get(i) {
-                match c {
-                    b'\n' => {
-                        row += 1;
-                        col = 0;
-                    }
-                    _ => {
-                        col += 1;
-                    }
-                }
+        for (i, c) in input.char_indices() {
+            if i >= self.start {
+                break;
+            }
+            if c == '\n' {
+                row += 1;
+                col = 1;
+            } else {
+                col += 1;
             }
         }
         (row, col)
@@ -116,25 +117,34 @@ mod tests {
         assert_eq!(Span::one(2).to_start_row_col("abcdef"), (1, 3));
     }
 
-    // NOTE: to_start_row_col has a known off-by-one after a newline — the first char
-    // of a new line is reported as col 0 rather than col 1. These tests pin the
-    // *current* behavior; the off-by-one should be fixed in a separate change.
     #[test]
-    fn row_col_right_after_newline_has_col_zero() {
-        // "a\nb" — 'b' at index 2, current behavior reports col 0
-        assert_eq!(Span::one(2).to_start_row_col("a\nb"), (2, 0));
+    fn row_col_right_after_newline_is_col_one() {
+        // "a\nb" — 'b' at index 2 is the first char on row 2 → col 1.
+        assert_eq!(Span::one(2).to_start_row_col("a\nb"), (2, 1));
     }
 
     #[test]
     fn row_col_across_multiple_newlines() {
-        // "a\nb\nc" — 'c' at index 4, col 0 on row 3 (same off-by-one)
-        assert_eq!(Span::one(4).to_start_row_col("a\nb\nc"), (3, 0));
+        // "a\nb\nc" — 'c' is the first char on row 3 → col 1.
+        assert_eq!(Span::one(4).to_start_row_col("a\nb\nc"), (3, 1));
     }
 
     #[test]
     fn row_col_mid_line_on_later_row() {
-        // "abc\ndef" — 'e' at index 5; 'd' reports col 0 so 'e' reports col 1
-        assert_eq!(Span::one(5).to_start_row_col("abc\ndef"), (2, 1));
+        // "abc\ndef" — 'e' at byte 5 is the 2nd char on row 2 → col 2.
+        assert_eq!(Span::one(5).to_start_row_col("abc\ndef"), (2, 2));
+    }
+
+    #[test]
+    fn row_col_counts_chars_not_bytes_for_multibyte() {
+        // "Öx" — 'Ö' is 2 bytes, 'x' is at byte 2. It's the 2nd char on row 1 → col 2.
+        assert_eq!(Span::one(2).to_start_row_col("Öx"), (1, 2));
+    }
+
+    #[test]
+    fn row_col_multibyte_after_newline() {
+        // "a\nÖx" — 'x' at byte 4 is the 2nd char on row 2 → col 2.
+        assert_eq!(Span::one(4).to_start_row_col("a\nÖx"), (2, 2));
     }
 
     #[test]

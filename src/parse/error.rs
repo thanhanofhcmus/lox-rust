@@ -32,6 +32,11 @@ pub enum ParseError {
 
     #[error("Assignment error: The left-hand side of a reassignment must be a valid identifier.")]
     ReassignRootIsNotAnIdentifier,
+
+    #[error(
+        "Parser recursion limit ({0}) exceeded — expression is nested too deeply to parse safely."
+    )]
+    RecursionLimitExceeded(usize),
 }
 
 impl ParseError {
@@ -47,6 +52,7 @@ impl ParseError {
             Eof(_) => (0, 0),
             Unfinished(_, s) => s.to_start_row_col(input),
             ReassignRootIsNotAnIdentifier => (0, 0),
+            RecursionLimitExceeded(_) => (0, 0),
         }
     }
 

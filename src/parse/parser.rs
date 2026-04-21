@@ -349,6 +349,16 @@ fn get_binding_power(token: Token) -> Option<(BindingPower, BindingPower)> {
 }
 
 fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode<()>, ParseError> {
+    state.enter_recursion()?;
+    let result = parse_pratt_inner(state, min_bp);
+    state.leave_recursion();
+    result
+}
+
+fn parse_pratt_inner(
+    state: &mut Context,
+    min_bp: BindingPower,
+) -> Result<ClauseNode<()>, ParseError> {
     let mut lhs = parse_pratt_prefix(state)?;
 
     loop {
@@ -1378,5 +1388,28 @@ mod tests {
             matches!(err, ParseError::UnexpectedReturn(_)),
             "expected UnexpectedReturn, got {err:?}"
         );
+    }
+
+    // ---------- recursion depth limit ----------
+
+    #[test]
+    fn deeply_nested_parens_hit_recursion_limit() {
+        // Build 10k open/close parens around a value. Without the limit this
+        // overflows the native stack; with the limit it should error cleanly.
+        let depth = 10_000;
+        let input = format!("{}1{};", "(".repeat(depth), ")".repeat(depth));
+        let err = parse_err(&input);
+        assert!(
+            matches!(err, ParseError::RecursionLimitExceeded(_)),
+            "expected RecursionLimitExceeded, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn moderate_nesting_still_parses() {
+        // Well under the 256 cap — must still succeed.
+        let depth = 50;
+        let input = format!("{}1{};", "(".repeat(depth), ")".repeat(depth));
+        let _ast = parse_str(&input);
     }
 }

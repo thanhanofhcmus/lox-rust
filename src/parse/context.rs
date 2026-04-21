@@ -3,6 +3,12 @@ use crate::token::Token;
 use super::error::ParseError;
 use super::lex::LexItem;
 
+/// Hard cap on structural recursion depth in the parser. Keeps pathological
+/// input (e.g. thousands of nested parentheses) from blowing the native stack
+/// before reaching the interpreter. 256 is generous for handwritten code while
+/// well below the default thread stack size.
+pub const MAX_RECURSION_DEPTH: usize = 256;
+
 pub struct Context<'a> {
     input: &'a str,
     items: &'a [LexItem],
@@ -14,6 +20,10 @@ pub struct Context<'a> {
     should_eval_string: bool,
 
     pub fn_depth: usize,
+
+    /// Current parser recursion depth. Incremented/decremented by
+    /// `enter_recursion` / `leave_recursion` around recursive entry points.
+    recursion_depth: usize,
 
     /// When false, `Identifier {` is NOT parsed as a struct literal.
     /// Set to false while parsing if/while/for conditions to avoid ambiguity
@@ -29,8 +39,25 @@ impl<'a> Context<'a> {
             curr_pos: 0,
             should_eval_string,
             fn_depth: 0,
+            recursion_depth: 0,
             allow_struct_literal: true,
         }
+    }
+
+    /// Bump the recursion counter; return an error if it exceeds the cap.
+    /// Every call must be paired with `leave_recursion` (see `with_recursion`).
+    pub fn enter_recursion(&mut self) -> Result<(), ParseError> {
+        self.recursion_depth += 1;
+        if self.recursion_depth > MAX_RECURSION_DEPTH {
+            return Err(ParseError::RecursionLimitExceeded(MAX_RECURSION_DEPTH));
+        }
+        Ok(())
+    }
+
+    /// Pair with `enter_recursion` when a recursive call returns. Saturating so
+    /// a stray extra call doesn't underflow on buggy code paths.
+    pub fn leave_recursion(&mut self) {
+        self.recursion_depth = self.recursion_depth.saturating_sub(1);
     }
 
     pub fn get_should_eval_string(&self) -> bool {
