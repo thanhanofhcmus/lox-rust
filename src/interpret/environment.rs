@@ -119,6 +119,8 @@ pub struct Environment {
 
     #[debug("<writer>")]
     print_writer: Rc<RefCell<dyn std::io::Write>>,
+
+    pub(super) strict_assert: bool,
 }
 
 macro_rules! decl_gc_type_methods {
@@ -150,7 +152,10 @@ macro_rules! decl_gc_type_methods {
 }
 
 impl Environment {
-    pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>) -> Self {
+    pub fn new(
+        print_writer: Rc<RefCell<dyn std::io::Write>>,
+        strict_assert: bool,
+    ) -> Self {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
         let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
@@ -163,6 +168,8 @@ impl Environment {
             current_module_id,
 
             print_writer,
+
+            strict_assert,
         }
     }
 
@@ -203,7 +210,10 @@ impl Environment {
         assert!(self.scope_stack.len() == 1);
         // Transfer variables to the module instead of disposing them —
         // do NOT call pop_scope() here, which would shallow_dispose every value.
-        let last_scope = self.scope_stack.pop().expect("scope underflow in deinit_module");
+        let last_scope = self
+            .scope_stack
+            .pop()
+            .expect("scope underflow in deinit_module");
         module.variables = last_scope.variables;
 
         // TODO: handle heap
@@ -347,7 +357,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     fn make_env() -> Environment {
-        Environment::new(Rc::new(RefCell::new(std::io::sink())))
+        Environment::new(Rc::new(RefCell::new(std::io::sink())), false)
     }
 
     #[test]

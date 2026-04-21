@@ -110,6 +110,9 @@ pub enum InterpretError {
 
     #[error("Scope underflow: attempted to pop the last scope")]
     ScopeUnderflow,
+
+    #[error("Assertion failed: {0}")]
+    AssertionFailed(String),
 }
 
 impl InterpretError {
@@ -232,6 +235,9 @@ impl InterpretError {
             }
             Self::ScopeUnderflow => {
                 "Internal error: attempted to pop the root scope.".to_string()
+            }
+            Self::AssertionFailed(msg) => {
+                format!("Assertion failed: {msg}")
             }
         }
     }

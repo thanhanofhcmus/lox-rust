@@ -23,21 +23,32 @@ fn main() -> DynResult {
     }
     env_logger::init();
 
-    let args = std::env::args().collect::<Vec<String>>();
+    let mut args = std::env::args().collect::<Vec<String>>();
+
+    // Position-independent flag: consume it before mode dispatch.
+    let strict_assert = {
+        let before = args.len();
+        args.retain(|a| a != "--strict-assert");
+        args.len() != before
+    };
+
     let input = args.get(1).expect("must have one argument");
     debug!("{:?}", input);
 
     // TODO: add flags to ignore typecheck
 
     match input.as_str() {
-        "-i" => repl(args),
-        "-p" => promt(args),
-        "-f" => read_from_file(args.get(2).expect("must provide file name")),
+        "-i" => repl(args, strict_assert),
+        "-p" => promt(args, strict_assert),
+        "-f" => read_from_file(
+            args.get(2).expect("must provide file name"),
+            strict_assert,
+        ),
         _ => panic!("expect a mode"),
     }
 }
 
-fn promt(args: Vec<String>) -> DynResult {
+fn promt(args: Vec<String>, strict_assert: bool) -> DynResult {
     info!("Running in Prompt mode");
 
     let line = args.get(2).expect("must provide prompt");
@@ -45,18 +56,18 @@ fn promt(args: Vec<String>) -> DynResult {
     let mut typecheck_env = typecheck::Environment::new();
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut interpreter_env = interpret::Environment::new(rc);
+    let mut interpreter_env = interpret::Environment::new(rc, strict_assert);
 
     run_stmt(line, None, &mut typecheck_env, &mut interpreter_env, false)
 }
 
-fn repl(args: Vec<String>) -> DynResult {
+fn repl(args: Vec<String>, strict_assert: bool) -> DynResult {
     info!("Running in REPL mode");
 
     let mut typecheck_env = typecheck::Environment::new();
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut interpreter_env = interpret::Environment::new(rc);
+    let mut interpreter_env = interpret::Environment::new(rc, strict_assert);
 
     let mut rl = DefaultEditor::new()?;
     rl.add_history_entry("_dbg_heap_stats();")?;
@@ -99,12 +110,12 @@ fn repl(args: Vec<String>) -> DynResult {
     Ok(())
 }
 
-fn read_from_file(file_path: &str) -> DynResult {
+fn read_from_file(file_path: &str, strict_assert: bool) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
     let mut typecheck_env = typecheck::Environment::new();
     let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp = interpret::Environment::new(rc);
+    let mut itp = interpret::Environment::new(rc, strict_assert);
     run_stmt(
         &contents,
         Some(file_path),

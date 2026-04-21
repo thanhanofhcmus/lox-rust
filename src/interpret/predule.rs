@@ -151,21 +151,42 @@ fn assert_fn(
     let message_val = args[1];
 
     match condition.get_bool() {
-        Some(v) => {
-            if v {
-                Ok(Value::make_nil())
+        Some(true) => Ok(Value::make_nil()),
+        Some(false) => {
+            if itp.environment.strict_assert {
+                let msg = stringify_assert_message(itp.environment, message_val)?;
+                Err(InterpretError::AssertionFailed(msg))
             } else {
                 print_fn(itp, vec![message_val])
             }
         }
-        _ => {
-            let warn_msg = itp.environment.insert_string_variable(
-                "Assertion check value did not evaluated to boolean".into(),
-            );
-            print_fn(itp, vec![warn_msg])?;
-            print_fn(itp, vec![message_val])
+        None => {
+            if itp.environment.strict_assert {
+                let msg = stringify_assert_message(itp.environment, message_val)?;
+                Err(InterpretError::AssertionFailed(format!(
+                    "condition did not evaluate to a boolean: {msg}"
+                )))
+            } else {
+                let warn_msg = itp.environment.insert_string_variable(
+                    "Assertion check value did not evaluated to boolean".into(),
+                );
+                print_fn(itp, vec![warn_msg])?;
+                print_fn(itp, vec![message_val])
+            }
         }
     }
+}
+
+fn stringify_assert_message(
+    env: &crate::interpret::Environment,
+    value: Value,
+) -> Result<String, InterpretError> {
+    if let Value::Str(str_id) = value {
+        return Ok(env.get_string(str_id)?.to_string());
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    value.write_display(env, &mut buf)?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 fn from_json_fn(
