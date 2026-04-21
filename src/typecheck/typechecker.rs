@@ -267,11 +267,10 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
 
     fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<TypeId>, TypecheckError> {
         let collection = self.convert_clause(node.collection)?;
-        // TODO: derive iden type from the collection's element type once array/map
-        // element types are used during lookup. Permissive `Any` for now.
+        let elem_type_id = self.iterable_element_type(collection.extra);
         self.with_scope(|this| {
             this.environment
-                .declare_id(node.iden.id, TypeId::ANY)
+                .declare_id(node.iden.id, elem_type_id)
                 .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
             let body = this.convert_block(node.body)?;
             Ok(ForNode {
@@ -280,6 +279,17 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 body,
             })
         })
+    }
+
+    /// Element type for iteration. Maps array/map types to their element
+    /// types; `Any` stays `Any`; anything else defers to runtime as `Any`
+    /// (gradual typing — the runtime will error if the value isn't iterable).
+    fn iterable_element_type(&self, collection_type_id: TypeId) -> TypeId {
+        match self.environment.lookup_type(collection_type_id) {
+            Some(Type::Array { elem }) => *elem,
+            Some(Type::Map { value, .. }) => *value,
+            _ => TypeId::ANY,
+        }
     }
 
     fn convert_when(&mut self, node: WhenNode<()>) -> Result<WhenNode<TypeId>, TypecheckError> {
@@ -417,9 +427,10 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                     filter,
                 } = *comp;
                 let collection = self.convert_clause(collection)?;
+                let elem_type_id = self.iterable_element_type(collection.extra);
                 self.with_scope(|this| {
                     this.environment
-                        .declare_id(iden.id, collection.extra)
+                        .declare_id(iden.id, elem_type_id)
                         .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
                     let transformer = this.convert_clause(transformer)?;
                     let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
