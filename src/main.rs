@@ -5,6 +5,7 @@ mod parse;
 mod span;
 mod string_interner;
 mod string_utils;
+mod symbol_names;
 mod token;
 mod typecheck;
 mod types;
@@ -14,7 +15,7 @@ use std::{cell::RefCell, rc::Rc};
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
-use crate::ast::AST;
+use crate::{ast::AST, symbol_names::SymbolNames};
 
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -51,16 +52,27 @@ fn prompt(args: Vec<String>, strict_assert: bool) -> DynResult {
 
     let line = args.get(2).expect("must provide prompt");
 
+    let mut symbol_names = SymbolNames::new();
+
     let mut typecheck_env = typecheck::Environment::new();
 
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut interpreter_env = interpret::Environment::new(rc, strict_assert);
 
-    run_stmt(line, None, &mut typecheck_env, &mut interpreter_env, false)
+    run_stmt(
+        line,
+        None,
+        &mut symbol_names,
+        &mut typecheck_env,
+        &mut interpreter_env,
+        false,
+    )
 }
 
 fn repl(args: Vec<String>, strict_assert: bool) -> DynResult {
     info!("Running in REPL mode");
+
+    let mut symbol_names = SymbolNames::new();
 
     let mut typecheck_env = typecheck::Environment::new();
 
@@ -76,6 +88,7 @@ fn repl(args: Vec<String>, strict_assert: bool) -> DynResult {
         _ = run_stmt(
             line.trim_end(),
             None,
+            &mut symbol_names,
             &mut typecheck_env,
             &mut interpreter_env,
             true,
@@ -92,6 +105,7 @@ fn repl(args: Vec<String>, strict_assert: bool) -> DynResult {
                 _ = run_stmt(
                     line.trim_end(),
                     None,
+                    &mut symbol_names,
                     &mut typecheck_env,
                     &mut interpreter_env,
                     true,
@@ -111,12 +125,14 @@ fn repl(args: Vec<String>, strict_assert: bool) -> DynResult {
 fn read_from_file(file_path: &str, strict_assert: bool) -> DynResult {
     info!("Read from file");
     let contents = std::fs::read_to_string(file_path)?;
+    let mut symbol_names = SymbolNames::new();
     let mut typecheck_env = typecheck::Environment::new();
     let rc = Rc::new(RefCell::new(std::io::stdout()));
     let mut itp = interpret::Environment::new(rc, strict_assert);
     run_stmt(
         &contents,
         Some(file_path),
+        &mut symbol_names,
         &mut typecheck_env,
         &mut itp,
         false,
@@ -126,6 +142,7 @@ fn read_from_file(file_path: &str, strict_assert: bool) -> DynResult {
 fn lex_and_parse(
     input: &str,
     source_name: Option<&str>,
+    symbol_names: &mut SymbolNames,
     is_in_repl: bool,
 ) -> Result<AST<()>, Box<dyn std::error::Error>> {
     trace!("Lexing start");
@@ -154,7 +171,7 @@ fn lex_and_parse(
 
     debug!("Parsing start");
 
-    let ast = match parse::parse(input, &tokens, is_in_repl) {
+    let ast = match parse::parse(input, &tokens, symbol_names, is_in_repl) {
         Ok(list) => list,
         Err(err) => {
             error!(
@@ -175,15 +192,16 @@ fn lex_and_parse(
 fn run_stmt(
     input: &str,
     source_name: Option<&str>,
+    symbol_names: &mut SymbolNames,
     typecheck_env: &mut typecheck::Environment,
     interpret_env: &mut interpret::Environment,
     is_in_repl: bool,
 ) -> DynResult {
-    let ast = lex_and_parse(input, source_name, is_in_repl)?;
+    let ast = lex_and_parse(input, source_name, symbol_names, is_in_repl)?;
 
     debug!("type checking start");
 
-    let mut typechecker = typecheck::TypeChecker::new(typecheck_env, input);
+    let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
 
     let ast = match typechecker.convert(ast) {
         Ok(v) => v,
@@ -193,6 +211,7 @@ fn run_stmt(
                 err.generate_user_facing_error(
                     source_name,
                     input,
+                    symbol_names,
                     typecheck_env.get_type_interner()
                 )
             );
@@ -204,14 +223,19 @@ fn run_stmt(
 
     debug!("interpreting start");
 
-    match interpret::Interpreter::new(interpret_env, typecheck_env.get_type_interner(), input)
-        .interpret(&ast)
+    match interpret::Interpreter::new(
+        interpret_env,
+        typecheck_env.get_type_interner(),
+        symbol_names,
+        input,
+    )
+    .interpret(&ast)
     {
         Ok(_) => {}
         Err(err) => {
             error!(
                 "Interpreter error:\n{}",
-                err.generate_user_facing_error(source_name, input)
+                err.generate_user_facing_error(source_name, input, symbol_names)
             );
             return Err(Box::new(err));
         }

@@ -6,7 +6,6 @@ use std::{
 
 use super::values::Value;
 use crate::{
-    ast::IdentifierNode,
     id::Id,
     interpret::{
         debug_string::DebugString,
@@ -15,6 +14,7 @@ use crate::{
         prelude,
         values::{Array, Function, Map, Struct},
     },
+    symbol_names::Identifier,
 };
 
 #[derive(Debug)]
@@ -237,15 +237,15 @@ impl Environment {
 
     // Variable functions
 
-    pub fn get_variable_current_scope(&self, id: impl Into<Id>) -> Option<Value> {
-        self.scope_stack.get_current().get_variable(id.into())
+    pub fn get_variable_current_scope(&self, id: Id) -> Option<Value> {
+        self.scope_stack.get_current().get_variable(id)
     }
 
     pub fn get_variable_all_scope(
         &self,
-        node: &IdentifierNode,
+        node: &Identifier,
     ) -> Option<(Value, bool /* is_readonly */)> {
-        let id = node.get_id();
+        let id = node.id;
         // check scopes/stacks
         for scope in self.scope_stack.iter_outward() {
             if let Some(value) = scope.get_variable(id) {
@@ -263,15 +263,11 @@ impl Environment {
         None
     }
 
-    pub fn insert_variable_current_scope(
-        &mut self,
-        id: impl Into<Id>,
-        value: Value,
-    ) -> Option<Value> {
+    pub fn insert_variable_current_scope(&mut self, id: Id, value: Value) -> Option<Value> {
         let old_value = self
             .scope_stack
             .get_current_mut()
-            .insert_variable(id.into(), value);
+            .insert_variable(id, value);
         self.heap.shallow_copy_value(value);
         old_value
     }

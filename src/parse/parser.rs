@@ -1,3 +1,5 @@
+use crate::symbol_names::Identifier;
+use crate::symbol_names::SymbolNames;
 use crate::types::TypeId;
 use crate::{ast::*, string_utils};
 
@@ -11,9 +13,10 @@ use crate::token::Token;
 pub fn parse(
     input: &str,
     items: &[LexItem],
+    symbol_names: &mut SymbolNames,
     should_eval_string: bool,
 ) -> Result<AST<()>, ParseError> {
-    let mut state = Context::new(input, items, should_eval_string);
+    let mut state = Context::new(input, items, symbol_names, should_eval_string);
     let mut imports = vec![];
     let mut global_stmts = vec![];
     let mut is_parsing_import = true;
@@ -60,7 +63,7 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
     state.consume_token(Token::Semicolon)?;
     Ok(ImportNode {
         path: Span::new(path_li.span.start + 1, path_li.span.end - 1),
-        iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
+        iden: state.create_identifier(iden_li),
     })
 }
 
@@ -96,7 +99,7 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
 }
 
 fn parse_struct_field_node(state: &mut Context) -> Result<StructFieldNode, ParseError> {
-    let li = get_identifier(state)?;
+    let li = state.consume_token(Token::Identifier)?;
     let explicit_type = if state.peek(&[Token::Colon]) {
         state.consume_token(Token::Colon)?;
         Some(parse_type_node(state)?)
@@ -104,14 +107,14 @@ fn parse_struct_field_node(state: &mut Context) -> Result<StructFieldNode, Parse
         None
     };
     Ok(StructFieldNode {
-        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        iden: state.create_identifier(li),
         explicit_type,
     })
 }
 
 fn parse_struct_decl(state: &mut Context) -> Result<StructDeclNode, ParseError> {
     state.consume_token(Token::Struct)?;
-    let li = get_identifier(state)?;
+    let li = state.consume_token(Token::Identifier)?;
     let fields = parse_comma_list(
         state,
         Token::LPointParen,
@@ -119,7 +122,7 @@ fn parse_struct_decl(state: &mut Context) -> Result<StructDeclNode, ParseError> 
         parse_struct_field_node,
     )?;
     Ok(StructDeclNode {
-        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        iden: state.create_identifier(li),
         fields,
     })
 }
@@ -179,7 +182,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
     let expr = parse_expr(state)?;
     state.consume_token(Token::Semicolon)?;
     Ok(Statement::Declare(DeclareStatementNode {
-        iden: IdentifierNode::new_from_name(id_item.span, state.get_input()),
+        iden: state.create_identifier(id_item),
         explicit_type,
         expr,
     }))
@@ -246,7 +249,7 @@ fn parse_for(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.allow_struct_literal = true;
     let body = parse_block_node(state)?;
     Ok(Expression::new(ExprCase::For(ForNode {
-        iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
+        iden: state.create_identifier(iden_li),
         collection,
         body,
     })))
@@ -528,17 +531,17 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
 fn parse_struct_field_literal_node(
     state: &mut Context,
 ) -> Result<StructLiteralFieldNode<()>, ParseError> {
-    let li = get_identifier(state)?;
+    let li = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let value = parse_clause_node(state)?;
     Ok(StructLiteralFieldNode {
-        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        iden: state.create_identifier(li),
         value,
     })
 }
 
 fn parse_struct_literal_node(state: &mut Context) -> Result<StructLiteralNode<()>, ParseError> {
-    let li = get_identifier(state)?;
+    let li = state.consume_token(Token::Identifier)?;
     let fields = parse_comma_list(
         state,
         Token::LPointParen,
@@ -546,17 +549,14 @@ fn parse_struct_literal_node(state: &mut Context) -> Result<StructLiteralNode<()
         parse_struct_field_literal_node,
     )?;
     Ok(StructLiteralNode {
-        iden: IdentifierNode::new_from_name(li.span, state.get_input()),
+        iden: state.create_identifier(li),
         fields,
     })
 }
 
-fn parse_identifier_node(state: &mut Context) -> Result<IdentifierNode, ParseError> {
-    let li_item = state.consume_token(Token::Identifier)?;
-    Ok(IdentifierNode::new_from_name(
-        li_item.span,
-        state.get_input(),
-    ))
+fn parse_identifier_node(state: &mut Context) -> Result<Identifier, ParseError> {
+    let li = state.consume_token(Token::Identifier)?;
+    Ok(state.create_identifier(li))
 }
 
 fn parse_group(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
@@ -603,7 +603,7 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
 
         Ok(ArrayLiteralNode::ForComprehension(Box::new(
             ArrayForComprehensionNode {
-                iden: IdentifierNode::new_from_name(iden_li.span, state.get_input()),
+                iden: state.create_identifier(iden_li),
                 collection,
                 transformer,
                 filter,
@@ -675,7 +675,7 @@ fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError
 }
 
 fn parse_fn_param(state: &mut Context) -> Result<FnParamNode, ParseError> {
-    let li = get_identifier(state)?;
+    let li = state.consume_token(Token::Identifier)?;
     let explicit_type = if state.peek(&[Token::Colon]) {
         state.consume_token(Token::Colon)?;
         Some(parse_type_node(state)?)
@@ -683,7 +683,7 @@ fn parse_fn_param(state: &mut Context) -> Result<FnParamNode, ParseError> {
         None
     };
     Ok(FnParamNode {
-        id: IdentifierNode::new_from_name(li.span, state.get_input()),
+        iden: state.create_identifier(li),
         explicit_type,
     })
 }
@@ -781,11 +781,6 @@ where
     Ok(result)
 }
 
-fn get_identifier(state: &mut Context) -> Result<LexItem, ParseError> {
-    let li = state.consume_token(Token::Identifier)?;
-    Ok(li)
-}
-
 fn convert_chaining(
     Expression { extra: _, case }: Expression<()>,
 ) -> Result<ChainingReassignTargetNode<()>, ParseError> {
@@ -836,13 +831,15 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn parse_str(input: &str) -> AST<()> {
+        let mut symbol_names = SymbolNames::new();
         let items = lex(input).expect("lex failed");
-        parse(input, &items, false).expect("parse failed")
+        parse(input, &items, &mut symbol_names, false).expect("parse failed")
     }
 
     fn parse_err(input: &str) -> ParseError {
+        let mut symbol_names = SymbolNames::new();
         let items = lex(input).expect("lex failed");
-        parse(input, &items, false).expect_err("expected parse error")
+        parse(input, &items, &mut symbol_names, false).expect_err("expected parse error")
     }
 
     /// Extract the first top-level expression statement's inner clause.

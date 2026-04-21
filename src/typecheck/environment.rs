@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::IdentifierNode,
     id::Id,
-    types::{SymbolId, Type, TypeId, TypeInterner},
+    types::{Type, TypeId, TypeInterner},
 };
 
 /// Keep in sync with `src/interpret/prelude.rs::create()`. Registered as
@@ -164,7 +163,7 @@ impl Environment {
     /// Declare `id` in the current (innermost) scope. Returns `Err` with the
     /// existing type if `id` is already bound *in the same scope*. Shadowing
     /// a binding from an outer scope is allowed and is not an error.
-    pub fn declare_id(&mut self, id: Id, type_id: TypeId) -> Result<(), TypeId> {
+    pub fn declare_variable_id(&mut self, id: Id, type_id: TypeId) -> Result<(), TypeId> {
         let scope = self.scopes.last_mut().expect("at least one scope");
         use std::collections::hash_map::Entry;
         match scope.entry(id) {
@@ -188,18 +187,11 @@ impl Environment {
         self.type_interner.get_type(type_id)
     }
 
-    pub fn declare_type_symbol(&mut self, node: IdentifierNode, input: &str) -> SymbolId {
-        self.type_interner
-            .insert_symbol(node.get_id(), node.create_name(input))
-    }
-
     pub fn associate_id_with_type(&mut self, id: Id, type_id: TypeId) {
-        self.type_interner
-            .associate_symbol_with_type(SymbolId::from(id), type_id);
+        self.type_interner.associate_id_with_type(id, type_id);
     }
 
     pub fn lookup_type_id_from_id(&self, id: Id) -> Option<TypeId> {
-        self.type_interner
-            .get_type_id_by_symbol_id(SymbolId::from(id))
+        self.type_interner.get_type_id_by_id(id)
     }
 }

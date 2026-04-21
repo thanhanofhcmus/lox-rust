@@ -9,8 +9,9 @@ use crate::interpret::values::{
 };
 use crate::parse;
 use crate::string_utils;
+use crate::symbol_names::SymbolNames;
 use crate::token::Token;
-use crate::types::{SymbolId, TypeId, TypeInterner};
+use crate::types::{TypeId, TypeInterner};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -55,18 +56,21 @@ impl ValueReturn {
 pub struct Interpreter<'e, 't, 's> {
     pub(super) environment: &'e mut Environment,
     type_interner: &'t TypeInterner,
-    pub(super) input: &'s str,
+    symbol_names: &'s mut SymbolNames,
+    input: &'s str,
 }
 
 impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     pub fn new(
         environment: &'e mut Environment,
         type_interner: &'t TypeInterner,
+        symbol_names: &'s mut SymbolNames,
         input: &'s str,
     ) -> Self {
         Self {
             environment,
             type_interner,
+            symbol_names,
             input,
         }
     }
@@ -102,7 +106,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
     fn interpret_import_stmt(&mut self, node: &ImportNode) -> Result<(), InterpretError> {
         // check if we import this yet
-        let module_id = node.iden.get_id();
+        let module_id = node.iden.id;
         if self.environment.contains_module(module_id) {
             return Ok(());
         }
@@ -124,11 +128,11 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         // TODO: fix should_eval_string
-        let untyped = parse::parse(&content, &tokens, true)
+        let untyped = parse::parse(&content, &tokens, self.symbol_names, true)
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         let mut tc_env = crate::typecheck::Environment::new();
-        let statement = crate::typecheck::TypeChecker::new(&mut tc_env, &content)
+        let statement = crate::typecheck::TypeChecker::new(&mut tc_env)
             .convert(untyped)
             .map_err(|err| {
                 InterpretError::TypeCheckModuleFailed(name.clone(), path.clone(), err)
@@ -139,7 +143,12 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         // and the current scope stack
         // everything starts from a module
         self.environment.init_module(module_id);
-        let mut itp = Interpreter::new(self.environment, self.type_interner, &content);
+        let mut itp = Interpreter::new(
+            self.environment,
+            self.type_interner,
+            self.symbol_names,
+            &content,
+        );
 
         // We treat the module evaluation as a top-level interpret call
         let interpret_result = itp
@@ -166,10 +175,12 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         node: &DeclareStatementNode<TypeId>,
     ) -> Result<ValueReturn, InterpretError> {
         let iden = &node.iden;
-        if self.environment.get_variable_current_scope(iden).is_some() {
-            return Err(InterpretError::ReDeclareVariable(
-                iden.create_name(self.input),
-            ));
+        if self
+            .environment
+            .get_variable_current_scope(iden.id)
+            .is_some()
+        {
+            return Err(InterpretError::ReDeclareVariable(node.iden));
         }
         let res = self.interpret_expr(&node.expr)?;
         if res.should_bubble_up {
@@ -177,7 +188,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
 
         let val = res.get_or_error()?;
-        self.environment.insert_variable_current_scope(iden, val);
+        self.environment.insert_variable_current_scope(iden.id, val);
         Ok(ValueReturn::none())
     }
 
@@ -204,14 +215,10 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
         let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden)
         else {
-            return Err(InterpretError::NotFoundVariable(
-                iden.create_name(self.input),
-            ));
+            return Err(InterpretError::NotFoundVariable(*iden));
         };
         if is_readonly {
-            return Err(InterpretError::VariableReadOnly(
-                iden.create_name(self.input),
-            ));
+            return Err(InterpretError::VariableReadOnly(*iden));
         }
 
         match index_chain.split_last() {
@@ -223,11 +230,11 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                     reassigning_value,
                 )?;
                 self.environment
-                    .replace_variable_function_scope(iden, new_root_value)
+                    .replace_variable_function_scope(iden.id, new_root_value)
             }
             None => self
                 .environment
-                .replace_variable_function_scope(iden, reassigning_value),
+                .replace_variable_function_scope(iden.id, reassigning_value),
         };
 
         Ok(ValueReturn::none())
@@ -296,7 +303,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             // collection_value should not be reassignable from the lesser scope
             self.environment.push_scope(true)?;
             self.environment
-                .insert_variable_current_scope(iden, collection_value);
+                .insert_variable_current_scope(iden.id, collection_value);
             let result = self.interpret_block_node(body);
             self.environment.pop_scope()?;
 
@@ -360,11 +367,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 .environment
                 .get_variable_all_scope(node)
                 .map(|v| Ok(v.0))
-                .unwrap_or_else(|| {
-                    Err(InterpretError::NotFoundVariable(
-                        node.span.string_from_source(self.input),
-                    ))
-                }),
+                .unwrap_or_else(|| Err(InterpretError::NotFoundVariable(*node))),
         }
     }
 
@@ -425,7 +428,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                     // collection_value should not be reassignable from the lesser scope
                     self.environment.push_scope(true)?;
                     self.environment
-                        .insert_variable_current_scope(&node.iden, collection_value);
+                        .insert_variable_current_scope(node.iden.id, collection_value);
                     let result = self.interpret_array_literal_comprehension_inner(node);
                     self.environment.pop_scope()?;
                     let value = result?;
@@ -472,12 +475,9 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     ) -> Result<Value, InterpretError> {
         // TODO: fix unwrap
 
-        let id = node.iden.get_id();
+        let id = node.iden.id;
 
-        let type_id = self
-            .type_interner
-            .get_type_id_by_symbol_id(SymbolId::from(id))
-            .unwrap();
+        let type_id = self.type_interner.get_type_id_by_id(id).unwrap();
 
         // compare field type with actual value
         let mut fields = HashMap::new();
@@ -487,7 +487,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 // TODO: add type id
                 value: field_value,
             };
-            fields.insert(field_literal.iden.get_id(), field);
+            fields.insert(field_literal.iden.id, field);
         }
 
         let struct_val = Struct {
@@ -554,7 +554,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         for (param, arg_expr) in params.iter().zip(args.iter()) {
             let res = self.interpret_expr(arg_expr)?.get_or_error()?;
             self.environment
-                .insert_variable_current_scope(&param.id, res);
+                .insert_variable_current_scope(param.iden.id, res);
         }
 
         let result = self.interpret_block_node(&body);

@@ -1,9 +1,11 @@
 use super::values::Value;
+use serde::de::IntoDeserializer;
 use thiserror::Error;
 
 use crate::{
     interpret::heap::{GcHandle, GcKind, StrId},
     parse::ParseError,
+    symbol_names::{Identifier, SymbolNames},
     token::Token,
     typecheck,
 };
@@ -12,14 +14,14 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum InterpretError {
-    #[error("Variable of name `{0}` has been declared before")]
-    ReDeclareVariable(String),
+    #[error("Variable of name `{0:?}` has been declared before")]
+    ReDeclareVariable(Identifier),
 
-    #[error("Variable of name `{0}` has not been declared but get re-assigned")]
-    NotFoundVariable(String),
+    #[error("Variable of name `{0:?}` has not been declared but get re-assigned")]
+    NotFoundVariable(Identifier),
 
-    #[error("Variable of name `{0}` is readonly in this scope")]
-    VariableReadOnly(String),
+    #[error("Variable of name `{0:?}` is readonly in this scope")]
+    VariableReadOnly(Identifier),
 
     #[error("Unknown operator `{0}`")]
     UnknownOperation(Token),
@@ -116,8 +118,13 @@ pub enum InterpretError {
 }
 
 impl InterpretError {
-    pub fn generate_user_facing_error(&self, source_name: Option<&str>, input: &str) -> String {
-        let description = self.resolve_description();
+    pub fn generate_user_facing_error(
+        &self,
+        source_name: Option<&str>,
+        input: &str,
+        sb: &SymbolNames,
+    ) -> String {
+        let description = self.resolve_description(sb);
         let source_name = source_name.unwrap_or("");
 
         // Interpret errors don't carry source spans, so show just the message
@@ -126,16 +133,25 @@ impl InterpretError {
         format!("Runtime Error: {description}\n  --> {source_name}\n")
     }
 
-    fn resolve_description(&self) -> String {
+    fn resolve_description(&self, sb: &SymbolNames) -> String {
         match self {
-            Self::ReDeclareVariable(name) => {
-                format!("Variable '{name}' has already been declared in this scope.")
+            Self::ReDeclareVariable(node) => {
+                format!(
+                    "Variable '{}' has already been declared in this scope.",
+                    sb.get_or_unknown(node.id),
+                )
             }
-            Self::NotFoundVariable(name) => {
-                format!("Variable '{name}' is not defined in the current scope.")
+            Self::NotFoundVariable(node) => {
+                format!(
+                    "Variable '{}' is not defined in the current scope.",
+                    sb.get_or_unknown(node.id)
+                )
             }
-            Self::VariableReadOnly(name) => {
-                format!("Cannot reassign '{name}': variable is read-only in this scope.")
+            Self::VariableReadOnly(node) => {
+                format!(
+                    "Cannot reassign '{}': variable is read-only in this scope.",
+                    sb.get_or_unknown(node.id)
+                )
             }
             Self::UnknownOperation(op) => {
                 format!("The operator `{op:?}` is not recognized.")

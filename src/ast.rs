@@ -1,4 +1,4 @@
-use crate::{id::Id, span::Span, token::Token, types::TypeId};
+use crate::{span::Span, symbol_names::Identifier, token::Token, types::TypeId};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
@@ -23,19 +23,19 @@ pub enum Statement<T> {
 
 #[derive(Debug, Clone)]
 pub struct StructFieldNode {
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
     pub explicit_type: Option<TypeNode>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructDeclNode {
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
     pub fields: Vec<StructFieldNode>,
 }
 
 #[derive(Debug, Clone)]
 pub struct DeclareStatementNode<T> {
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
     /// User-declared type annotation. `None` means no annotation was written.
     pub explicit_type: Option<TypeNode>,
     pub expr: Expression<T>,
@@ -45,7 +45,7 @@ pub type StatementList<T> = Vec<Statement<T>>;
 
 #[derive(Debug, Clone)]
 pub struct ChainingReassignTargetNode<T> {
-    pub base: IdentifierNode,
+    pub base: Identifier,
     pub follows: Vec<ClauseNode<T>>,
 }
 
@@ -69,7 +69,7 @@ impl BlockNode<()> {
 #[derive(Debug, Clone)]
 pub struct ImportNode {
     pub path: Span,
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
 }
 
 #[derive(Debug, Clone)]
@@ -110,7 +110,7 @@ pub struct ElseIfNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct ForNode<T> {
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
     pub collection: ClauseNode<T>,
     pub body: BlockNode<T>,
 }
@@ -150,7 +150,7 @@ pub enum ClauseCase<T> {
     Binary(BinaryOpNode<T>),
     RawValue(RawValueNode<T>),
     Group(Box<ClauseNode<T>>),
-    Identifier(IdentifierNode),
+    Identifier(Identifier),
     Subscription(SubscriptionNode<T>),
     FnCall(FnCallNode<T>),
 }
@@ -192,13 +192,13 @@ pub enum ScalarNode {
 
 #[derive(Debug, Clone)]
 pub struct StructLiteralFieldNode<T> {
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
     pub value: ClauseNode<T>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructLiteralNode<T> {
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
     pub fields: Vec<StructLiteralFieldNode<T>>,
 }
 
@@ -228,7 +228,7 @@ pub struct ArrayRepeatNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct ArrayForComprehensionNode<T> {
-    pub iden: IdentifierNode,
+    pub iden: Identifier,
     pub collection: ClauseNode<T>,
     pub transformer: ClauseNode<T>,
     pub filter: Option<ClauseNode<T>>,
@@ -236,7 +236,7 @@ pub struct ArrayForComprehensionNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct FnParamNode {
-    pub id: IdentifierNode,
+    pub iden: Identifier,
     pub explicit_type: Option<TypeNode>,
 }
 
@@ -252,33 +252,4 @@ pub struct BinaryOpNode<T> {
     pub lhs: Box<ClauseNode<T>>,
     pub op: Token,
     pub rhs: Box<ClauseNode<T>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct IdentifierNode {
-    pub span: Span,
-    pub id: Id,
-}
-
-impl IdentifierNode {
-    pub fn new_from_name(name: Span, input: &str) -> Self {
-        Self {
-            span: name,
-            id: Id::new(name.str_from_source(input)),
-        }
-    }
-
-    pub fn create_name(&self, input: &str) -> String {
-        self.span.string_from_source(input)
-    }
-
-    pub fn get_id(&self) -> Id {
-        self.id
-    }
-}
-
-impl From<&IdentifierNode> for Id {
-    fn from(val: &IdentifierNode) -> Self {
-        val.get_id()
-    }
 }

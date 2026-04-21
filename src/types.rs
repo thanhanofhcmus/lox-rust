@@ -1,15 +1,6 @@
 use std::collections::HashMap;
 
-use crate::id::Id;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SymbolId(Id);
-
-impl From<Id> for SymbolId {
-    fn from(value: Id) -> Self {
-        Self(value)
-    }
-}
+use crate::{id::Id, symbol_names::SymbolNames};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(usize);
@@ -28,13 +19,13 @@ impl TypeId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructField {
-    pub symbol_id: SymbolId,
+    pub id: Id,
     pub type_: TypeId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructType {
-    pub symbol_id: SymbolId,
+    pub id: Id,
     pub fields: Vec<StructField>,
 }
 
@@ -81,8 +72,7 @@ pub struct TypeInterner {
     type_to_id: HashMap<Type, TypeId>,
     id_to_type: HashMap<TypeId, Type>,
     /// Store the name of the structs and their assoicated fields, maybe method later
-    symbol_to_name: HashMap<SymbolId, String>,
-    symbol_to_id: HashMap<SymbolId, TypeId>,
+    id_to_type_id: HashMap<Id, TypeId>,
     next_id: usize,
 }
 
@@ -110,8 +100,7 @@ impl TypeInterner {
         Self {
             type_to_id,
             id_to_type,
-            symbol_to_name: HashMap::new(),
-            symbol_to_id: HashMap::new(),
+            id_to_type_id: HashMap::new(),
             next_id: TypeId::LAST_RESERVED_COUNTER + 1,
         }
     }
@@ -131,25 +120,15 @@ impl TypeInterner {
         self.id_to_type.get(&type_id)
     }
 
-    pub fn insert_symbol(&mut self, id: Id, name: String) -> SymbolId {
-        let id = SymbolId::from(id);
-        self.symbol_to_name.insert(id, name);
-        id
+    pub fn associate_id_with_type(&mut self, id: Id, type_id: TypeId) {
+        _ = self.id_to_type_id.insert(id, type_id);
     }
 
-    pub fn get_symbol(&self, id: SymbolId) -> Option<&str> {
-        self.symbol_to_name.get(&id).map(|v| v.as_str())
+    pub fn get_type_id_by_id(&self, id: Id) -> Option<TypeId> {
+        self.id_to_type_id.get(&id).copied()
     }
 
-    pub fn associate_symbol_with_type(&mut self, symbol_id: SymbolId, type_id: TypeId) {
-        _ = self.symbol_to_id.insert(symbol_id, type_id);
-    }
-
-    pub fn get_type_id_by_symbol_id(&self, symbol_id: SymbolId) -> Option<TypeId> {
-        self.symbol_to_id.get(&symbol_id).copied()
-    }
-
-    pub fn generate_readable_name(&self, id: TypeId) -> String {
+    pub fn generate_readable_name(&self, sb: &SymbolNames, id: TypeId) -> String {
         match self.get_type(id) {
             Some(Type::Any) => "any".into(),
             Some(Type::Bool) => "bool".into(),
@@ -157,26 +136,23 @@ impl TypeInterner {
             Some(Type::Str) => "string".into(),
             Some(Type::Unit) => "unit".into(),
             Some(Type::Nil) => "nil".into(),
-            Some(Type::Array { elem }) => format!("[{}]", self.generate_readable_name(*elem)),
+            Some(Type::Array { elem }) => format!("[{}]", self.generate_readable_name(sb, *elem)),
             Some(Type::Map { key, value }) => {
                 format!(
                     "%{{{}, {}}}",
-                    self.generate_readable_name(*key),
-                    self.generate_readable_name(*value)
+                    self.generate_readable_name(sb, *key),
+                    self.generate_readable_name(sb, *value)
                 )
             }
-            Some(Type::Struct(StructType {
-                symbol_id: id,
-                fields,
-            })) => {
-                let name = self.get_symbol(*id).unwrap_or("#Unknown");
+            Some(Type::Struct(StructType { id, fields })) => {
+                let name = sb.get_or_unknown(*id);
                 let fields: Vec<String> = fields
                     .iter()
                     .map(|field| {
                         format!(
                             "{}: {}",
-                            self.get_symbol(field.symbol_id).unwrap_or("#Unknown"),
-                            self.generate_readable_name(field.type_)
+                            sb.get_or_unknown(field.id),
+                            self.generate_readable_name(sb, field.type_)
                         )
                     })
                     .collect();
@@ -189,18 +165,18 @@ impl TypeInterner {
             }) => {
                 let mut p: Vec<String> = params
                     .iter()
-                    .map(|&i| self.generate_readable_name(i))
+                    .map(|&i| self.generate_readable_name(sb, i))
                     .collect();
                 if let Some(variadic_type) = variadic {
                     p.push(format!(
                         "{} ...",
-                        self.generate_readable_name(*variadic_type)
+                        self.generate_readable_name(sb, *variadic_type)
                     ))
                 }
                 format!(
                     "fn({}) -> {}",
                     p.join(", "),
-                    self.generate_readable_name(*return_)
+                    self.generate_readable_name(sb, *return_)
                 )
             }
             None => format!("Unknown(#{})", id.0),

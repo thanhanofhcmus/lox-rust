@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    ast::IdentifierNode,
+    symbol_names::{Identifier, SymbolNames},
     token::Token,
     types::{TypeId, TypeInterner},
 };
@@ -11,7 +11,7 @@ pub enum TypecheckError {
     #[error(
         "Type mismatch in declaration of '{:?}': assigned value does not match specified type."
         , _0.id)]
-    ExplicitTypeMismatch(IdentifierNode, TypeId, TypeId),
+    ExplicitTypeMismatch(Identifier, TypeId, TypeId),
 
     #[error("Function return type mismatch.")]
     ExplicitFnReturnTypeMismatch(TypeId, TypeId),
@@ -41,10 +41,10 @@ pub enum TypecheckError {
     TypeIdNotStructInLiteral(TypeId),
 
     #[error("Undefined name: '{:?}' is not defined in this scope.", _0.id)]
-    UndefinedIdentifier(IdentifierNode),
+    UndefinedIdentifier(Identifier),
 
     #[error("Name collision: '{:?}' is already declared in this scope.", _0.id)]
-    DuplicateDeclaration(IdentifierNode),
+    DuplicateDeclaration(Identifier),
 
     #[error("Internal: Type with id {0:?} should have been declared but not found")]
     TypeIsNotDeclared(TypeId),
@@ -53,13 +53,13 @@ pub enum TypecheckError {
     StructFieldCountMismatch(TypeId, usize, usize),
 
     #[error("Struct `{0:?}` has no field '{:?}'", _1.id)]
-    StructFieldNameMismatch(TypeId, IdentifierNode),
+    StructFieldNameMismatch(TypeId, Identifier),
 
     #[error("Field of struct `{0:?}` expects type `{1:?}` but got `{2:?}`")]
     StructFieldTypeMismatch(TypeId, TypeId, TypeId),
 
     #[error("Duplicate field '{:?}' in struct literal", _0.id)]
-    DuplicateStructLiteralField(IdentifierNode),
+    DuplicateStructLiteralField(Identifier),
 }
 
 impl TypecheckError {
@@ -67,12 +67,13 @@ impl TypecheckError {
         &self,
         source_name: Option<&str>,
         input: &str,
+        sb: &SymbolNames,
         interner: &TypeInterner,
     ) -> String {
         let (line, col) = self.get_source_start(input);
 
         // Resolve the technical error into a readable description
-        let description = self.resolve_description(interner);
+        let description = self.resolve_description(sb, interner);
 
         let source_name = source_name.map(|v| v.to_string()).unwrap_or_default();
         let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
@@ -90,45 +91,45 @@ impl TypecheckError {
     }
 
     /// Internal helper to turn TypeIds into names like "Array<Number>"
-    fn resolve_description(&self, interner: &TypeInterner) -> String {
+    fn resolve_description(&self, sb: &SymbolNames, interner: &TypeInterner) -> String {
         match self {
             Self::ExplicitTypeMismatch(node, declared, actual) => {
                 format!(
-                    "The value assigned to '{:?}' is declared as type `{}` but got assigned value of type `{}`.",
-                    node.id,
-                    interner.generate_readable_name(*declared),
-                    interner.generate_readable_name(*actual)
+                    "The value assigned to '{}' is declared as type `{}` but got assigned value of type `{}`.",
+                    sb.get_or_unknown(node.id),
+                    interner.generate_readable_name(sb, *declared),
+                    interner.generate_readable_name(sb, *actual)
                 )
             }
 
             Self::ExplicitFnReturnTypeMismatch(expected, actual) => format!(
                 "The function was expected to return `{}`, but it returns `{}`.",
-                interner.generate_readable_name(*expected),
-                interner.generate_readable_name(*actual)
+                interner.generate_readable_name(sb, *expected),
+                interner.generate_readable_name(sb, *actual)
             ),
 
             Self::BinaryOpTypeMismatch(op, left, right) => format!(
                 "The operator `{:?}` is not defined for `{}` and `{}`.",
                 op,
-                interner.generate_readable_name(*left),
-                interner.generate_readable_name(*right)
+                interner.generate_readable_name(sb, *left),
+                interner.generate_readable_name(sb, *right)
             ),
 
             Self::IndexOpTypeMismatch(indexer_type_id, indexee_type_id) => format!(
                 "The type `{}` cannot be indexed by the type `{}`.",
-                interner.generate_readable_name(*indexer_type_id),
-                interner.generate_readable_name(*indexee_type_id)
+                interner.generate_readable_name(sb, *indexer_type_id),
+                interner.generate_readable_name(sb, *indexee_type_id)
             ),
 
             Self::TypeIsNoCallable(caller_type_id) => format!(
                 "The type `{}` is not a function or built-in function.",
-                interner.generate_readable_name(*caller_type_id)
+                interner.generate_readable_name(sb, *caller_type_id)
             ),
 
             Self::WrongNumberOfArgument(caller_type_id, expected_size, actual_size) => {
                 format!(
                     "The function of type `{}` is expected to received {} of arguments received {} instead.",
-                    interner.generate_readable_name(*caller_type_id),
+                    interner.generate_readable_name(sb, *caller_type_id),
                     *expected_size,
                     *actual_size,
                 )
@@ -141,8 +142,8 @@ impl TypecheckError {
                         format!(
                             "argument at position {} expect type `{}` but got type `{}`",
                             *index,
-                            interner.generate_readable_name(*expected),
-                            interner.generate_readable_name(*actual)
+                            interner.generate_readable_name(sb, *expected),
+                            interner.generate_readable_name(sb, *actual)
                         )
                     })
                     .collect::<Vec<_>>()
@@ -150,64 +151,67 @@ impl TypecheckError {
 
                 format!(
                     "The function of type `{}` received wrong argument type(s):\n{}",
-                    interner.generate_readable_name(*caller_type_id),
+                    interner.generate_readable_name(sb, *caller_type_id),
                     wrong_type_str
                 )
             }
 
             Self::TypeIdNotStructInLiteral(type_id) => format!(
                 "The type `{}` used in a struct literal is not a struct type.",
-                interner.generate_readable_name(*type_id),
+                interner.generate_readable_name(sb, *type_id),
             ),
 
             Self::UnaryOpTypeMismatch(op, type_id) => format!(
                 "The operator `{:?}` cannot be applied to type `{}`.",
                 op,
-                interner.generate_readable_name(*type_id)
+                interner.generate_readable_name(sb, *type_id)
             ),
 
             Self::ExpectedType(expected, actual) => format!(
                 "Expected type `{}`, but found `{}`.",
-                interner.generate_readable_name(*expected),
-                interner.generate_readable_name(*actual)
+                interner.generate_readable_name(sb, *expected),
+                interner.generate_readable_name(sb, *actual)
             ),
 
             Self::UndefinedIdentifier(node) => {
                 format!(
-                    "The identifier '{:?}' is not defined in the current scope.",
-                    node.id
+                    "The identifier '{}' is not defined in the current scope.",
+                    sb.get_or_unknown(node.id),
                 )
             }
 
             Self::DuplicateDeclaration(node) => {
-                format!("The identifier '{:?}' has already been declared.", node.id)
+                format!(
+                    "The identifier '{}' has already been declared.",
+                    sb.get_or_unknown(node.id),
+                )
             }
 
             Self::TypeIsNotDeclared(_) => self.to_string(),
 
             Self::StructFieldCountMismatch(struct_type_id, expected, actual) => format!(
                 "Struct `{}` expects {} field(s) but {} were provided.",
-                interner.generate_readable_name(*struct_type_id),
+                interner.generate_readable_name(sb, *struct_type_id),
                 expected,
                 actual,
             ),
 
             Self::StructFieldNameMismatch(struct_type_id, node) => format!(
                 "Struct `{}` has no field '{:?}'.",
-                interner.generate_readable_name(*struct_type_id),
-                node.id,
+                interner.generate_readable_name(sb, *struct_type_id),
+                sb.get_or_unknown(node.id),
             ),
 
             Self::StructFieldTypeMismatch(struct_type_id, expected, actual) => format!(
                 "Field of struct `{}` expects type `{}` but got `{}`.",
-                interner.generate_readable_name(*struct_type_id),
-                interner.generate_readable_name(*expected),
-                interner.generate_readable_name(*actual),
+                interner.generate_readable_name(sb, *struct_type_id),
+                interner.generate_readable_name(sb, *expected),
+                interner.generate_readable_name(sb, *actual),
             ),
 
             Self::DuplicateStructLiteralField(node) => format!(
                 "Field '{:?}' is set more than once in this struct literal.",
-                node.id
+                sb.get_or_unknown(node.id),
             ),
         }
     }

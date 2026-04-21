@@ -215,7 +215,7 @@ impl Heap {
                     trace_list.extend(arr.iter().filter_map(|v| v.get_handle()));
                 }
                 GcObject::Struct(struct_) => {
-                    // TODO: handle field cleanup
+                    trace_list.extend(struct_.fields.values().filter_map(|f| f.value.get_handle()));
                 }
                 GcObject::Map(map) => {
                     map.keys()

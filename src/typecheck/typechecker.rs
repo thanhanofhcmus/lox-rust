@@ -3,24 +3,23 @@ use std::collections::HashSet;
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
-use crate::types::{StructField, StructType, SymbolId, Type};
+use crate::symbol_names::Identifier;
+use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
-pub struct TypeChecker<'cl, 'sl> {
-    pub(super) environment: &'cl mut Environment,
-    pub(super) input: &'sl str,
+pub struct TypeChecker<'e> {
+    environment: &'e mut Environment,
 
     // Tracks the identifier of the declaration currently being converted so a
     // fn literal on the rhs can pre-bind its own name (needed for recursion)
     // before its body is type-checked. Set/cleared around `convert_declare_stmt`.
-    current_declaration_id: Option<IdentifierNode>,
+    current_declaration_id: Option<Identifier>,
 }
 
-impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
-    pub fn new(environment: &'cl mut Environment, input: &'sl str) -> Self {
+impl<'cl> TypeChecker<'cl> {
+    pub fn new(environment: &'cl mut Environment) -> Self {
         Self {
             environment,
-            input,
             current_declaration_id: None,
         }
     }
@@ -104,7 +103,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
         // Annotation wins when written (including `Any`); otherwise infer from expr.
         let var_type = type_node.map(extract_type_node_id).unwrap_or(expr.extra);
         self.environment
-            .declare_id(iden.id, var_type)
+            .declare_variable_id(iden.id, var_type)
             .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
         Ok(DeclareStatementNode {
             expr,
@@ -125,22 +124,23 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                     .explicit_type
                     .map(extract_type_node_id)
                     .unwrap_or(TypeId::ANY);
-                let symbol_id = self.environment.declare_type_symbol(field.iden, self.input);
+                self.environment
+                    .associate_id_with_type(field.iden.id, type_id);
                 StructField {
-                    symbol_id,
+                    id: field.iden.id,
                     type_: type_id,
                 }
             })
             .collect::<Vec<_>>();
 
-        let symbol_id = self.environment.declare_type_symbol(node.iden, self.input);
-        let type_id = self
-            .environment
-            .declare_type(&Type::Struct(StructType { symbol_id, fields }));
+        let type_id = self.environment.declare_type(&Type::Struct(StructType {
+            id: node.iden.id,
+            fields,
+        }));
         self.environment
-            .associate_id_with_type(node.iden.get_id(), type_id);
+            .associate_id_with_type(node.iden.id, type_id);
         self.environment
-            .declare_id(node.iden.id, type_id)
+            .declare_variable_id(node.iden.id, type_id)
             .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
         Ok(node)
     }
@@ -270,7 +270,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
         let elem_type_id = self.iterable_element_type(collection.extra);
         self.with_scope(|this| {
             this.environment
-                .declare_id(node.iden.id, elem_type_id)
+                .declare_variable_id(node.iden.id, elem_type_id)
                 .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
             let body = this.convert_block(node.body)?;
             Ok(ForNode {
@@ -430,7 +430,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 let elem_type_id = self.iterable_element_type(collection.extra);
                 self.with_scope(|this| {
                     this.environment
-                        .declare_id(iden.id, elem_type_id)
+                        .declare_variable_id(iden.id, elem_type_id)
                         .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
                     let transformer = this.convert_clause(transformer)?;
                     let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
@@ -495,7 +495,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
             // Reject `Point { x = 1, x = 2 }` — each field name must appear
             // at most once per literal. Catching this here keeps the runtime
             // contract simple and gives a precise source location.
-            if !seen_field_ids.insert(field.iden.get_id()) {
+            if !seen_field_ids.insert(field.iden.id) {
                 return Err(TypecheckError::DuplicateStructLiteralField(field.iden));
             }
             let value = self.convert_clause(field.value)?;
@@ -507,7 +507,7 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
 
         let struct_type_id = self
             .environment
-            .lookup_type_id_from_id(iden.get_id())
+            .lookup_type_id_from_id(iden.id)
             .ok_or(TypecheckError::UndefinedIdentifier(iden))?;
         let type_ = self
             .environment
@@ -524,11 +524,10 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                     ));
                 }
                 for provided in &fields {
-                    let provided_symbol_id = SymbolId::from(provided.iden.get_id());
                     let declared = struct_type
                         .fields
                         .iter()
-                        .find(|f| f.symbol_id == provided_symbol_id)
+                        .find(|f| f.id == provided.iden.id)
                         .ok_or(TypecheckError::StructFieldNameMismatch(
                             struct_type_id,
                             provided.iden,
@@ -578,14 +577,14 @@ impl<'cl, 'sl> TypeChecker<'cl, 'sl> {
                 // below picked the same name — treat that as a duplicate.
                 let iden = *iden;
                 this.environment
-                    .declare_id(iden.id, TypeId::ANY_FUNCTION)
+                    .declare_variable_id(iden.id, TypeId::ANY_FUNCTION)
                     .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
             }
 
             for (param, type_id) in node.params.iter().zip(&params_type_ids) {
                 this.environment
-                    .declare_id(param.id.id, *type_id)
-                    .map_err(|_| TypecheckError::DuplicateDeclaration(param.id))?;
+                    .declare_variable_id(param.iden.id, *type_id)
+                    .map_err(|_| TypecheckError::DuplicateDeclaration(param.iden))?;
             }
             let body = this.convert_block(node.body)?;
 
@@ -880,14 +879,16 @@ fn extract_type_node_id(node: TypeNode) -> TypeId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{id::Id, parse::lex};
+    use crate::{id::Id, parse::lex, symbol_names::SymbolNames};
     use pretty_assertions::assert_eq;
 
     fn typecheck_str(input: &str) -> Result<AST<TypeId>, TypecheckError> {
         let items = lex(input).expect("lex failed");
-        let ast = crate::parse::parse(input, &items, false).expect("parse failed");
+        let mut symbol_names = SymbolNames::new();
+        let ast =
+            crate::parse::parse(input, &items, &mut symbol_names, false).expect("parse failed");
         let mut env = Environment::new();
-        TypeChecker::new(&mut env, input).convert(ast)
+        TypeChecker::new(&mut env).convert(ast)
     }
 
     /// Type of the expression inside the first top-level Expr statement's Clause.
@@ -961,7 +962,7 @@ mod tests {
     fn env_declare_and_lookup() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare_id(id, TypeId::NUMBER).unwrap();
+        env.declare_variable_id(id, TypeId::NUMBER).unwrap();
         assert_eq!(env.lookup_id(id), Some(TypeId::NUMBER));
     }
 
@@ -975,17 +976,17 @@ mod tests {
     fn env_redeclare_in_same_scope_errors() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare_id(id, TypeId::NUMBER).unwrap();
-        assert!(env.declare_id(id, TypeId::STR).is_err());
+        env.declare_variable_id(id, TypeId::NUMBER).unwrap();
+        assert!(env.declare_variable_id(id, TypeId::STR).is_err());
     }
 
     #[test]
     fn env_shadow_across_scopes_ok() {
         let mut env = Environment::new();
         let id = Id::new("x");
-        env.declare_id(id, TypeId::NUMBER).unwrap();
+        env.declare_variable_id(id, TypeId::NUMBER).unwrap();
         env.push_scope();
-        assert!(env.declare_id(id, TypeId::STR).is_ok());
+        assert!(env.declare_variable_id(id, TypeId::STR).is_ok());
         assert_eq!(env.lookup_id(id), Some(TypeId::STR));
         env.pop_scope();
         assert_eq!(env.lookup_id(id), Some(TypeId::NUMBER));
@@ -1002,7 +1003,10 @@ mod tests {
     fn env_user_global_can_shadow_builtin() {
         // User-global scope is scope 1, above builtins at scope 0.
         let mut env = Environment::new();
-        assert!(env.declare_id(Id::new("print"), TypeId::NUMBER).is_ok());
+        assert!(
+            env.declare_variable_id(Id::new("print"), TypeId::NUMBER)
+                .is_ok()
+        );
     }
 
     #[test]

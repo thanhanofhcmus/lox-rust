@@ -1,3 +1,6 @@
+use crate::id::Id;
+use crate::symbol_names::Identifier;
+use crate::symbol_names::SymbolNames;
 use crate::token::Token;
 
 use super::error::ParseError;
@@ -12,6 +15,9 @@ pub const MAX_RECURSION_DEPTH: usize = 256;
 pub struct Context<'a> {
     input: &'a str,
     items: &'a [LexItem],
+
+    symbol_names: &'a mut SymbolNames,
+
     curr_pos: usize,
 
     /// Tell the parser to copy the string content to the AST node
@@ -32,10 +38,16 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub fn new(input: &'a str, items: &'a [LexItem], should_eval_string: bool) -> Self {
+    pub fn new(
+        input: &'a str,
+        items: &'a [LexItem],
+        symbol_names: &'a mut SymbolNames,
+        should_eval_string: bool,
+    ) -> Self {
         Self {
             input,
             items,
+            symbol_names,
             curr_pos: 0,
             should_eval_string,
             fn_depth: 0,
@@ -70,6 +82,13 @@ impl<'a> Context<'a> {
 
     pub fn is_at_end(&self) -> bool {
         self.curr_pos >= self.items.len()
+    }
+
+    pub fn create_identifier(&mut self, li: LexItem) -> Identifier {
+        let name = li.span.string_from_source(self.input);
+        let id = Id::new(&name);
+        self.symbol_names.insert(id, name);
+        Identifier { span: li.span, id }
     }
 
     pub fn consume_token(&mut self, token: Token) -> Result<LexItem, ParseError> {
