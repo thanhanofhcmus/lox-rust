@@ -53,12 +53,18 @@ fn get_builtin_fn_type(name: &str) -> Type {
         },
 
         "from_json" => Type::Function {
+            // Takes a JSON string and decodes it to whatever the JSON encodes
+            // (nil / bool / number / string / array / map). Caller gets `any`
+            // and narrows at use sites (or leaves the check to runtime).
             params: vec![TypeId::STR],
             variadic: None,
-            return_: TypeId::STR,
+            return_: TypeId::ANY,
         },
         "to_json" => Type::Function {
-            params: vec![TypeId::STR],
+            // Takes any serialisable value (scalar / string / array / map)
+            // plus an optional trailing `bool` for pretty-printing. Returns a
+            // JSON string.
+            params: vec![TypeId::ANY],
             variadic: Some(TypeId::BOOL),
             return_: TypeId::STR,
         },
