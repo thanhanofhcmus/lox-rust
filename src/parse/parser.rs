@@ -78,6 +78,13 @@ fn parse_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
 }
 
 fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
+    if state.peek(&[Token::LSquareParen]) {
+        state.consume_token(Token::LSquareParen)?;
+        let inner_type_node = parse_type_node(state)?;
+        state.consume_token(Token::RSquareParen)?;
+        return Ok(TypeNode::Array(Box::new(inner_type_node)));
+    }
+
     let type_item = *state.get_curr()?;
     state.advance();
     // for a simple case we we can work out the type right a way

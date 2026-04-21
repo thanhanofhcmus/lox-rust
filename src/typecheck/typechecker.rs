@@ -88,28 +88,42 @@ impl<'cl> TypeChecker<'cl> {
             expr,
         }: DeclareStatementNode<()>,
     ) -> Result<DeclareStatementNode<TypeId>, TypecheckError> {
+        let explicit_type_id = type_node.as_ref().map(|n| self.extract_type_node_id(n));
+
         let expr = self.convert_expr(expr)?;
-        match &type_node {
-            None | Some(TypeNode::BuiltIn(TypeId::ANY)) => {}
-            Some(TypeNode::BuiltIn(type_annot)) if *type_annot == expr.extra => {}
-            Some(TypeNode::BuiltIn(type_annot)) => {
-                return Err(TypecheckError::ExplicitTypeMismatch(
-                    iden,
-                    *type_annot,
-                    expr.extra,
-                ));
+
+        let type_id = match explicit_type_id {
+            None => {
+                // handle map any as well
+                if expr.extra == TypeId::ARRAY_UNTYPED { TypeId::ARRAY_ANY } else { TypeId::ANY }
             }
-        }
-        // Annotation wins when written (including `Any`); otherwise infer from expr.
-        let var_type = type_node.map(extract_type_node_id).unwrap_or(expr.extra);
+            Some(TypeId::ANY) => TypeId::ANY,
+            Some(v) if v == expr.extra => v,
+            Some(v) if v.is_array() && expr.extra == TypeId::ARRAY_UNTYPED => v,
+            Some(v) => {
+                return Err(TypecheckError::ExplicitTypeMismatch(iden, v, expr.extra));
+            }
+        };
+
         self.environment
-            .declare_variable_id(iden.id, var_type)
+            // Annotation wins when written (including `Any`); otherwise infer from expr.
+            .declare_variable_id(iden.id, type_id)
             .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
         Ok(DeclareStatementNode {
             expr,
             iden,
             explicit_type: type_node,
         })
+    }
+
+    fn extract_type_node_id(&mut self, node: &TypeNode) -> TypeId {
+        match node {
+            TypeNode::BuiltIn(type_id) => *type_id,
+            TypeNode::Array(inner_type_node) => {
+                let elem = self.extract_type_node_id(inner_type_node);
+                self.environment.declare_type(&Type::Array { elem })
+            }
+        }
     }
 
     fn convert_struct_decl(
@@ -122,7 +136,8 @@ impl<'cl> TypeChecker<'cl> {
             .map(|field| {
                 let type_id = field
                     .explicit_type
-                    .map(extract_type_node_id)
+                    .as_ref()
+                    .map(|n| self.extract_type_node_id(n))
                     .unwrap_or(TypeId::ANY);
                 self.environment
                     .associate_id_with_type(field.iden.id, type_id);
@@ -401,10 +416,12 @@ impl<'cl> TypeChecker<'cl> {
                     .into_iter()
                     .map(|c| self.convert_clause(c))
                     .collect::<Result<Vec<_>, _>>()?;
-                let elem_type_id = unify_types(items.iter().map(|c| &c.extra));
-                let type_id = self
-                    .environment
-                    .declare_type(&Type::Array { elem: elem_type_id });
+                let type_id = if items.is_empty() {
+                    TypeId::ARRAY_UNTYPED
+                } else {
+                    let elem = unify_types(items.iter().map(|c| &c.extra));
+                    self.environment.declare_type(&Type::Array { elem })
+                };
                 Ok((type_id, ArrayLiteralNode::List(items)))
             }
             ArrayLiteralNode::Repeat(rep) => {
@@ -565,7 +582,8 @@ impl<'cl> TypeChecker<'cl> {
                 .iter()
                 .map(|p| {
                     p.explicit_type
-                        .map(extract_type_node_id)
+                        .as_ref()
+                        .map(|n| this.extract_type_node_id(n))
                         .unwrap_or(TypeId::ANY)
                 })
                 .collect::<Vec<_>>();
@@ -577,7 +595,7 @@ impl<'cl> TypeChecker<'cl> {
                 // below picked the same name — treat that as a duplicate.
                 let iden = *iden;
                 this.environment
-                    .declare_variable_id(iden.id, TypeId::ANY_FUNCTION)
+                    .declare_variable_id(iden.id, TypeId::FUNCTION_ANY)
                     .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
             }
 
@@ -588,18 +606,22 @@ impl<'cl> TypeChecker<'cl> {
             }
             let body = this.convert_block(node.body)?;
 
-            let return_type = match &node.return_type {
+            let explicit_return_type = node
+                .return_type
+                .as_ref()
+                .map(|n| this.extract_type_node_id(n));
+
+            let return_type = match explicit_return_type {
                 // inferred type got from the computed body
                 None => body.extra,
                 // explicit any type "swallow" the body type
-                Some(TypeNode::BuiltIn(TypeId::ANY)) => TypeId::ANY,
+                Some(TypeId::ANY) => TypeId::ANY,
                 // same type
-                Some(TypeNode::BuiltIn(type_annot)) if *type_annot == body.extra => *type_annot,
+                Some(type_annot) if type_annot == body.extra => type_annot,
                 // error case
-                Some(node) => {
+                Some(type_annot) => {
                     return Err(TypecheckError::ExplicitFnReturnTypeMismatch(
-                        extract_type_node_id(*node), // expected
-                        body.extra,                  // actual
+                        type_annot, body.extra,
                     ));
                 }
             };
@@ -867,12 +889,6 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), TypecheckError> 
         Ok(())
     } else {
         Err(TypecheckError::ExpectedType(expected, actual))
-    }
-}
-
-fn extract_type_node_id(node: TypeNode) -> TypeId {
-    match node {
-        TypeNode::BuiltIn(type_id) => type_id,
     }
 }
 

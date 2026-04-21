@@ -6,15 +6,39 @@ use crate::{id::Id, symbol_names::SymbolNames};
 pub struct TypeId(usize);
 
 impl TypeId {
-    pub const ANY: Self = Self(0);
-    pub const BOOL: Self = Self(1);
-    pub const NUMBER: Self = Self(2);
-    pub const STR: Self = Self(3);
-    pub const UNIT: Self = Self(4);
-    pub const NIL: Self = Self(5);
-    pub const ANY_FUNCTION: Self = Self(6);
+    // Using the top 4 bits for the category (allows 16 categories)
+    const CATEGORY_SHIFT: usize = (std::mem::size_of::<usize>() * 8) - 4;
+    const ID_MASK: usize = !(0xF << Self::CATEGORY_SHIFT);
 
-    pub const LAST_RESERVED_COUNTER: usize = 10;
+    const CATEGORY_SCALAR: usize = 0 << Self::CATEGORY_SHIFT;
+    const CATEGORY_ARRAY: usize = 1 << Self::CATEGORY_SHIFT;
+    const CATEGORY_MAP: usize = 2 << Self::CATEGORY_SHIFT;
+    const CATEGORY_FUNCTION: usize = 3 << Self::CATEGORY_SHIFT;
+    const CATEGORY_STRUCT: usize = 4 << Self::CATEGORY_SHIFT;
+
+    pub const ANY: Self = Self(Self::CATEGORY_SCALAR | 1);
+    pub const BOOL: Self = Self(Self::CATEGORY_SCALAR | 2);
+    pub const NUMBER: Self = Self(Self::CATEGORY_SCALAR | 3);
+    pub const STR: Self = Self(Self::CATEGORY_SCALAR | 4);
+    pub const UNIT: Self = Self(Self::CATEGORY_SCALAR | 5);
+    pub const NIL: Self = Self(Self::CATEGORY_SCALAR | 6);
+
+    pub const ARRAY_ANY: Self = Self(Self::CATEGORY_ARRAY | 1);
+    pub const ARRAY_UNTYPED: Self = Self(Self::CATEGORY_ARRAY | 2);
+
+    pub const FUNCTION_ANY: Self = Self(Self::CATEGORY_FUNCTION | 1);
+
+    const NEXT_IDS: [usize; 5] = [
+        7, // Scalar
+        3, // Array
+        1, // Map
+        2, // Function
+        1, // Struct
+    ];
+
+    pub fn is_array(&self) -> bool {
+        (self.0 & !Self::ID_MASK) == Self::CATEGORY_ARRAY
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -60,7 +84,9 @@ pub enum Type {
 }
 
 impl Type {
-    pub const ANY_FUNCTION: Self = Self::Function {
+    pub const ARRAY_ANY: Self = Self::Array { elem: TypeId::ANY };
+
+    pub const FUNCTION_ANY: Self = Self::Function {
         params: vec![],
         variadic: Some(TypeId::ANY),
         return_: TypeId::ANY,
@@ -73,20 +99,11 @@ pub struct TypeInterner {
     id_to_type: HashMap<TypeId, Type>,
     /// Store the name of the structs and their assoicated fields, maybe method later
     id_to_type_id: HashMap<Id, TypeId>,
-    next_id: usize,
+    counters: [usize; 5],
 }
 
 impl TypeInterner {
     pub fn new() -> Self {
-        let type_to_id = HashMap::from([
-            (Type::Any, TypeId::ANY),
-            (Type::Bool, TypeId::BOOL),
-            (Type::Number, TypeId::NUMBER),
-            (Type::Str, TypeId::STR),
-            (Type::Unit, TypeId::UNIT),
-            (Type::Nil, TypeId::NIL),
-            (Type::ANY_FUNCTION, TypeId::ANY_FUNCTION),
-        ]);
         let id_to_type = HashMap::from([
             (TypeId::ANY, Type::Any),
             (TypeId::BOOL, Type::Bool),
@@ -94,14 +111,20 @@ impl TypeInterner {
             (TypeId::STR, Type::Str),
             (TypeId::UNIT, Type::Unit),
             (TypeId::NIL, Type::Nil),
-            (TypeId::ANY_FUNCTION, Type::ANY_FUNCTION),
+            (TypeId::ARRAY_ANY, Type::ARRAY_ANY),
+            (TypeId::FUNCTION_ANY, Type::FUNCTION_ANY),
         ]);
+
+        let mut type_to_id = HashMap::new();
+        for (type_id, type_) in &id_to_type {
+            type_to_id.insert(type_.clone(), *type_id);
+        }
 
         Self {
             type_to_id,
             id_to_type,
             id_to_type_id: HashMap::new(),
-            next_id: TypeId::LAST_RESERVED_COUNTER + 1,
+            counters: TypeId::NEXT_IDS,
         }
     }
 
@@ -109,10 +132,23 @@ impl TypeInterner {
         if let Some(type_id) = self.type_to_id.get(type_) {
             return *type_id;
         }
-        let type_id = TypeId(self.next_id);
-        self.next_id += 1;
+
+        let (index, category) = match type_ {
+            Type::Array { .. } => (1, TypeId::CATEGORY_ARRAY),
+            Type::Map { .. } => (2, TypeId::CATEGORY_MAP),
+            Type::Function { .. } => (3, TypeId::CATEGORY_FUNCTION),
+            Type::Struct { .. } => (4, TypeId::CATEGORY_STRUCT),
+            _ => (0, TypeId::CATEGORY_SCALAR),
+        };
+
+        let id_payload = self.counters[index];
+        self.counters[index] += 1;
+
+        let type_id = TypeId(category | (id_payload & TypeId::ID_MASK));
+
         self.type_to_id.insert(type_.clone(), type_id);
         self.id_to_type.insert(type_id, type_.clone());
+
         type_id
     }
 

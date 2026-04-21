@@ -7,9 +7,10 @@ pub struct AST<T> {
     pub global_stmts: StatementList<T>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeNode {
     BuiltIn(TypeId),
+    Array(Box<TypeNode>),
     // Identifier(IdentifierNode),
 }
 
