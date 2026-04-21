@@ -103,16 +103,10 @@ const SCOPE_SIZE_LIMIT: usize = 100;
 #[derive(derive_more::Debug)]
 pub struct Environment {
     pub(super) heap: Heap,
-
     scope_stack: ScopeStack,
-
     modules: HashMap<Id, Module>,
-
     preludes: HashMap<Id, Value>,
-
     current_module_id: Id,
-
-    pub(super) strict_assert: bool,
 }
 
 macro_rules! decl_gc_type_methods {
@@ -144,7 +138,7 @@ macro_rules! decl_gc_type_methods {
 }
 
 impl Environment {
-    pub fn new(strict_assert: bool) -> Self {
+    pub fn new() -> Self {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
         let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
@@ -155,8 +149,6 @@ impl Environment {
             modules,
             preludes: prelude::create(),
             current_module_id,
-
-            strict_assert,
         }
     }
 
@@ -340,7 +332,7 @@ mod tests {
     use super::*;
 
     fn make_env() -> Environment {
-        Environment::new(false)
+        Environment::new()
     }
 
     #[test]

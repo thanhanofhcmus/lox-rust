@@ -24,6 +24,7 @@ struct RunnerContext {
     symbol_names: SymbolNames,
     typecheck_env: typecheck::Environment,
     interpret_env: interpret::Environment,
+    strict_assert: bool,
 }
 
 impl RunnerContext {
@@ -31,7 +32,8 @@ impl RunnerContext {
         Self {
             symbol_names: SymbolNames::new(),
             typecheck_env: typecheck::Environment::new(),
-            interpret_env: interpret::Environment::new(strict_assert),
+            interpret_env: interpret::Environment::new(),
+            strict_assert,
         }
     }
 
@@ -104,6 +106,7 @@ impl RunnerContext {
             &mut self.symbol_names,
             input,
             rc,
+            self.strict_assert,
         );
 
         interpreter.interpret(&ast).map_err(|err| {

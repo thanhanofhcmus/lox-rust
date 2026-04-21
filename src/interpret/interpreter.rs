@@ -21,6 +21,7 @@ pub struct BorrowContext<'e> {
     pub environment: &'e mut Environment,
     pub print_writer: Rc<RefCell<dyn std::io::Write>>,
     pub symbol_names: &'e SymbolNames,
+    pub strict_assert: bool,
 }
 
 #[derive(Debug)]
@@ -68,6 +69,8 @@ pub struct Interpreter<'e, 't, 's> {
     input: &'s str,
 
     print_writer: Rc<RefCell<dyn std::io::Write>>,
+
+    strict_assert: bool,
 }
 
 impl<'e, 't, 's> Interpreter<'e, 't, 's> {
@@ -77,6 +80,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         symbol_names: &'s mut SymbolNames,
         input: &'s str,
         print_writer: Rc<RefCell<dyn std::io::Write>>,
+        strict_assert: bool,
     ) -> Self {
         Self {
             environment,
@@ -84,6 +88,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             symbol_names,
             input,
             print_writer,
+            strict_assert,
         }
     }
 
@@ -161,6 +166,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             self.symbol_names,
             &content,
             self.print_writer.clone(),
+            self.strict_assert,
         );
 
         // We treat the module evaluation as a top-level interpret call
@@ -591,6 +597,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             environment: self.environment,
             print_writer: self.print_writer.clone(),
             symbol_names: self.symbol_names,
+            strict_assert: self.strict_assert,
         };
         function(&mut prelude_context, args)
     }

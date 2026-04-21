@@ -134,7 +134,7 @@ fn assert_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interpr
     match condition.get_bool() {
         Some(true) => Ok(Value::make_nil()),
         Some(false) => {
-            if ctx.environment.strict_assert {
+            if ctx.strict_assert {
                 let msg = stringify_assert_message(ctx, message_val)?;
                 Err(InterpretError::AssertionFailed(msg))
             } else {
@@ -142,7 +142,7 @@ fn assert_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interpr
             }
         }
         None => {
-            if ctx.environment.strict_assert {
+            if ctx.strict_assert {
                 let msg = stringify_assert_message(ctx, message_val)?;
                 Err(InterpretError::AssertionFailed(format!(
                     "condition did not evaluate to a boolean: {msg}"
