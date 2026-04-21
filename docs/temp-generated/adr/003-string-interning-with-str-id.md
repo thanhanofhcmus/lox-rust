@@ -1,7 +1,7 @@
 # ADR 003: String Interning via StrId (Strings Removed from GC Heap)
 
 **Date:** 2026-02 (commit `320fe3d`)  
-**Status:** Accepted (with known memory leak)
+**Status:** Accepted (memory leak resolved 2026-04)
 
 ## Context
 
@@ -43,8 +43,14 @@ The `StringInterner` lives inside `Heap` (`heap.rs:118`) and is accessed via `he
 - Map key lookup is clean with no extra borrow.
 - Repeated strings (e.g., the same key used in many maps) share storage.
 
-**Negative / Known Issues:**
-- Strings are **never freed.** The `mark()` phase has a `// TODO: mark for string_interner` comment at `heap.rs:174`. No reachability analysis is done on `StrId` values, so strings accumulate for the lifetime of the process.
-- This is a memory leak for programs that generate many unique strings at runtime (e.g., via string concatenation in a loop).
+**Negative:**
+- `StrId` equality (`id_a == id_b`) implies string equality only within a single interner instance. Across restarts or hypothetical multi-interner scenarios the invariant breaks — not a current concern but worth noting.
+- Monotonic ID allocation means IDs are never reused after sweep; a very long-running program generating unique strings could exhaust `usize` (unlikely in practice).
 
-**Future fix:** Change `StringInterner`'s backing store from `Vec<String>` (index-stable) to `HashMap<StrId, String>` with a monotonic counter. Then during `mark()`, collect all reachable `StrId` values (from `Value::Str` and `MapKey::Str` across all live objects), and call `string_interner.sweep(&reachable_ids)` to drop unreferenced entries from both maps.
+**Resolution (2026-04):** The memory leak was fixed in `src/interpret/string_interner.rs`. `StringInterner` now participates in the mark-and-sweep GC cycle via three methods:
+
+- `reset_marks()` — clears the live-set before each GC cycle.
+- `mark_to_keep(id)` — called for every `StrId` reachable from live values (in `Value::Str` and `MapKey::Str`).
+- `sweep()` — drops all entries from both the `str_to_id` and `id_to_str` maps that were not marked.
+
+The heap's `mark()` function now calls `string_interner.reset_marks()` at the start and `string_interner.mark_to_keep(id)` for each string encountered during root tracing, followed by `string_interner.sweep()` at the end — matching the pattern described in the original future-fix note.
