@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::interpret::{
     error::InterpretError,
+    interpreter::BorrowContext,
     values::{DisplayWriter, Value, number::Number},
 };
 
@@ -22,7 +23,7 @@ pub enum Scalar {
 impl DisplayWriter for Scalar {
     fn write_display(
         self,
-        env: &crate::interpret::Environment,
+        env: &BorrowContext,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         let convert = |e| InterpretError::WriteValueFailed(Value::Scalar(self), e);

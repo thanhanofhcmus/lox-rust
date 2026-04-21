@@ -4,15 +4,16 @@ use crate::{
     ast::{BlockNode, FnParamNode},
     id::Id,
     interpret::{
-        Environment, Interpreter,
+        Environment,
         error::InterpretError,
         heap::{GcHandle, StrId},
+        interpreter::BorrowContext,
         values::{display_writer::DisplayWriter, number::Number, scalar::Scalar},
     },
     types::TypeId,
 };
 
-pub type BuiltinFn = fn(&mut Interpreter, Vec<Value>) -> Result<Value, InterpretError>;
+pub type BuiltinFn = fn(&mut BorrowContext, Vec<Value>) -> Result<Value, InterpretError>;
 
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -33,6 +34,7 @@ pub struct StructField {
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub id: Id,
+    #[allow(dead_code)]
     pub type_id: TypeId,
     pub fields: HashMap<Id, StructField>,
 }
@@ -198,13 +200,14 @@ impl Value {
 impl DisplayWriter for Value {
     fn write_display(
         self,
-        env: &Environment,
+        ctx: &BorrowContext,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         let convert = |e| InterpretError::WriteValueFailed(self, e);
+        let env = &ctx.environment;
 
         match self {
-            Value::Scalar(v) => v.write_display(env, w),
+            Value::Scalar(v) => v.write_display(ctx, w),
             Value::Unit => write!(w, "()").map_err(convert),
             Value::Str(handle) => {
                 let s = env.get_string(handle)?;
@@ -216,10 +219,10 @@ impl DisplayWriter for Value {
 
                 if let Some((last, rest)) = arr.split_last() {
                     for value in rest {
-                        value.write_display(env, w)?;
+                        value.write_display(ctx, w)?;
                         w.write_all(b", ").map_err(convert)?;
                     }
-                    last.write_display(env, w)?;
+                    last.write_display(ctx, w)?;
                 }
 
                 w.write_all(b"]").map_err(convert)?;
@@ -236,27 +239,27 @@ impl DisplayWriter for Value {
                     // for type string, we want to add quotes ""
                     if let MapKey::Str(_) = first_key {
                         w.write_all(b"\"").map_err(convert)?;
-                        first_key.write_display(env, w)?;
+                        first_key.write_display(ctx, w)?;
                         w.write_all(b"\"").map_err(convert)?;
                     } else {
                         // normal type, normal write
-                        first_key.write_display(env, w)?;
+                        first_key.write_display(ctx, w)?;
                     }
                     write!(w, " => ").map_err(convert)?;
-                    first_value.write_display(env, w)?;
+                    first_value.write_display(ctx, w)?;
 
                     for (k, v) in entries {
                         write!(w, ", ").map_err(convert)?;
                         if let MapKey::Str(_) = k {
                             w.write_all(b"\"").map_err(convert)?;
-                            k.write_display(env, w)?;
+                            k.write_display(ctx, w)?;
                             w.write_all(b"\"").map_err(convert)?;
                         } else {
                             // normal type, normal write
-                            k.write_display(env, w)?;
+                            k.write_display(ctx, w)?;
                         }
                         write!(w, " => ").map_err(convert)?;
-                        v.write_display(env, w)?;
+                        v.write_display(ctx, w)?;
                     }
                 }
                 w.write_all(b"}").map_err(convert)?;
@@ -265,7 +268,15 @@ impl DisplayWriter for Value {
             }
             Value::Struct(handle) => {
                 let struct_ = env.get_struct(handle)?;
-                // TODO: get name and fields, print struct
+                write!(w, "{}{{", ctx.symbol_names.get_or_unknown(struct_.id)).map_err(convert)?;
+                // TODO: fix last field like map
+                for (field_id, field_value) in &struct_.fields {
+                    let field_name = ctx.symbol_names.get_or_unknown(*field_id);
+                    write!(w, "{} = ", field_name).map_err(convert)?;
+                    field_value.value.write_display(ctx, w)?;
+                    write!(w, ", ").map_err(convert)?;
+                }
+                write!(w, "}}").map_err(convert)?;
                 Ok(())
             }
             Value::Function(_) => write!(w, "function").map_err(convert),
@@ -300,13 +311,13 @@ impl MapKey {
 impl DisplayWriter for MapKey {
     fn write_display(
         self,
-        env: &Environment,
+        ctx: &BorrowContext,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         match self {
-            MapKey::Scalar(v) => v.write_display(env, w),
+            MapKey::Scalar(v) => v.write_display(ctx, w),
             MapKey::Str(str_id) => {
-                let s = env.get_string(str_id)?;
+                let s = ctx.environment.get_string(str_id)?;
                 w.write_all(s.as_bytes())
                     .map_err(|e| InterpretError::WriteValueFailed(Value::Str(str_id), e))
             }
@@ -468,10 +479,7 @@ mod tests {
 
     #[test]
     fn mapkey_from_builtin_function_errors() {
-        fn dummy_builtin(
-            _: &mut crate::interpret::Interpreter,
-            _: Vec<Value>,
-        ) -> Result<Value, InterpretError> {
+        fn dummy_builtin(_: &mut BorrowContext, _: Vec<Value>) -> Result<Value, InterpretError> {
             Ok(Value::Unit)
         }
         let v = Value::BuiltinFunction(dummy_builtin);

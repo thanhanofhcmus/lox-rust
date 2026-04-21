@@ -56,8 +56,7 @@ fn prompt(args: Vec<String>, strict_assert: bool) -> DynResult {
 
     let mut typecheck_env = typecheck::Environment::new();
 
-    let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut interpreter_env = interpret::Environment::new(rc, strict_assert);
+    let mut interpreter_env = interpret::Environment::new(strict_assert);
 
     run_stmt(
         line,
@@ -76,8 +75,7 @@ fn repl(args: Vec<String>, strict_assert: bool) -> DynResult {
 
     let mut typecheck_env = typecheck::Environment::new();
 
-    let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut interpreter_env = interpret::Environment::new(rc, strict_assert);
+    let mut interpreter_env = interpret::Environment::new(strict_assert);
 
     let mut rl = DefaultEditor::new()?;
     rl.add_history_entry("_dbg_heap_stats();")?;
@@ -127,8 +125,7 @@ fn read_from_file(file_path: &str, strict_assert: bool) -> DynResult {
     let contents = std::fs::read_to_string(file_path)?;
     let mut symbol_names = SymbolNames::new();
     let mut typecheck_env = typecheck::Environment::new();
-    let rc = Rc::new(RefCell::new(std::io::stdout()));
-    let mut itp = interpret::Environment::new(rc, strict_assert);
+    let mut itp = interpret::Environment::new(strict_assert);
     run_stmt(
         &contents,
         Some(file_path),
@@ -223,11 +220,14 @@ fn run_stmt(
 
     debug!("interpreting start");
 
+    let rc = Rc::new(RefCell::new(std::io::stdout()));
+
     match interpret::Interpreter::new(
         interpret_env,
         typecheck_env.get_type_interner(),
         symbol_names,
         input,
+        rc,
     )
     .interpret(&ast)
     {

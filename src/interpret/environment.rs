@@ -1,8 +1,4 @@
-use std::{
-    cell::{RefCell, RefMut},
-    collections::HashMap,
-    rc::Rc,
-};
+use std::collections::HashMap;
 
 use super::values::Value;
 use crate::{
@@ -116,9 +112,6 @@ pub struct Environment {
 
     current_module_id: Id,
 
-    #[debug("<writer>")]
-    print_writer: Rc<RefCell<dyn std::io::Write>>,
-
     pub(super) strict_assert: bool,
 }
 
@@ -151,7 +144,7 @@ macro_rules! decl_gc_type_methods {
 }
 
 impl Environment {
-    pub fn new(print_writer: Rc<RefCell<dyn std::io::Write>>, strict_assert: bool) -> Self {
+    pub fn new(strict_assert: bool) -> Self {
         let current_module_id = Id::new(CURRENT_MODULE_NAME);
 
         let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
@@ -163,14 +156,8 @@ impl Environment {
             preludes: prelude::create(),
             current_module_id,
 
-            print_writer,
-
             strict_assert,
         }
-    }
-
-    pub(super) fn get_print_writer(&'_ self) -> RefMut<'_, dyn std::io::Write> {
-        self.print_writer.borrow_mut()
     }
 
     pub(super) fn collect_all_variables(&self) -> Vec<Value> {
@@ -351,10 +338,9 @@ impl Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{cell::RefCell, rc::Rc};
 
     fn make_env() -> Environment {
-        Environment::new(Rc::new(RefCell::new(std::io::sink())), false)
+        Environment::new(false)
     }
 
     #[test]

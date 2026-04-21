@@ -12,8 +12,16 @@ use crate::string_utils;
 use crate::symbol_names::SymbolNames;
 use crate::token::Token;
 use crate::types::{TypeId, TypeInterner};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
+
+pub struct BorrowContext<'e> {
+    pub environment: &'e mut Environment,
+    pub print_writer: Rc<RefCell<dyn std::io::Write>>,
+    pub symbol_names: &'e SymbolNames,
+}
 
 #[derive(Debug)]
 struct ValueReturn {
@@ -54,10 +62,12 @@ impl ValueReturn {
 }
 
 pub struct Interpreter<'e, 't, 's> {
-    pub(super) environment: &'e mut Environment,
+    environment: &'e mut Environment,
     type_interner: &'t TypeInterner,
     symbol_names: &'s mut SymbolNames,
     input: &'s str,
+
+    print_writer: Rc<RefCell<dyn std::io::Write>>,
 }
 
 impl<'e, 't, 's> Interpreter<'e, 't, 's> {
@@ -66,12 +76,14 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         type_interner: &'t TypeInterner,
         symbol_names: &'s mut SymbolNames,
         input: &'s str,
+        print_writer: Rc<RefCell<dyn std::io::Write>>,
     ) -> Self {
         Self {
             environment,
             type_interner,
             symbol_names,
             input,
+            print_writer,
         }
     }
 
@@ -148,6 +160,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             self.type_interner,
             self.symbol_names,
             &content,
+            self.print_writer.clone(),
         );
 
         // We treat the module evaluation as a top-level interpret call
@@ -574,7 +587,12 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             .iter()
             .map(|expr| self.interpret_expr(expr).and_then(|v| v.get_or_error()))
             .collect::<Result<_, _>>()?;
-        function(self, args)
+        let mut prelude_context = BorrowContext {
+            environment: self.environment,
+            print_writer: self.print_writer.clone(),
+            symbol_names: self.symbol_names,
+        };
+        function(&mut prelude_context, args)
     }
 
     fn interpret_unary_op(
