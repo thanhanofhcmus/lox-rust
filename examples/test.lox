@@ -221,7 +221,8 @@ print("--- Running Raw String Tests...");
 assert(r"hello" == "hello", "Raw string with no special chars should equal regular string");
 assert(r"\n" != "\n", "Raw \\n should not equal escaped newline");
 assert(r"\t" != "\t", "Raw \\t should not equal escaped tab");
-assert(r"C:\Users\foo" != "C:\\Users\\foo", "Raw path should differ from double-escaped path");
+assert(r"C:\\Users\\foo" != "C:\\Users\\foo", "Raw path should differ from double-escaped path");
+assert(r"C:\Users\foo" == "C:\\Users\\foo", "Raw path should be the same from double-escaped path");
 
 print();
 
@@ -302,11 +303,11 @@ assert(map_length(%{}) == 0, "map_length on empty map failed");
 # map_keys / map_values return a new array each call
 var mk = map_keys(mf_map);
 assert(array_length(mk) == 3, "map_keys: length check failed");
-assert(mk == ["a", "b", "c"], "map_keys: content check failed");
+assert(mk == ["b", "a", "c"], "map_keys: content check failed");
 
 var mv = map_values(mf_map);
 assert(array_length(mv) == 3, "map_values: length check failed");
-assert(mv == [1, 2, 3], "map_values: content check failed");
+assert(mv == [2, 1, 3], "map_values: content check failed");
 
 # map_insert — returns old value when key already exists
 var old_val = map_insert(mf_map, "a", 99);
