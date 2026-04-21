@@ -239,13 +239,3 @@ _dbg_gc_mark_sweep(); # force a GC cycle
 var s = to_json(%{"a" => 1, "b" => [2, 3]});
 var v = from_json(s);
 ```
-
-## Known gaps / in progress
-
-- Struct values at runtime and `.` member access (planned — ADR 009).
-- Module member access (`module.name`) — parser placeholder, interpreter WIP.
-- Automatic GC trigger; today the `_dbg_gc_mark_sweep()` builtin is the only hook.
-- Variadic argument validation is permissive (type checker skips it).
-- Richer string features (multiline, formatted) — see `docs/todos.md`.
-
-Contributions and bug reports welcome.

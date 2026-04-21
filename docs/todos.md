@@ -1,31 +1,51 @@
 ## Todos:
-- Implement dot member access for structs (`p.x`) — parser parses it but runtime panics
+- Struct runtime — `RawValueNode::StructLiteral` is `unimplemented!()` at `interpret/interpreter.rs:365`; `Statement::StructDecl` is a no-op at `interpret/interpreter.rs:83`. Typechecker accepts them but the interpreter panics.
+- Dot member access — `Token::Dot` is `unimplemented!()` at `parse/parser.rs:379`; needed for both struct field access (`p.x`) and module member access (`module.name`)
 - Validate struct field types at construction (typechecker checks struct name exists but not field value types)
+- Reject duplicate field names in struct literals — `convert_struct_literal` (`typecheck/typechecker.rs:478-533`) accepts `Point { x = 1, x = 2 }` as long as the arity matches
+- Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier` before runtime
 - Implement more string stuff, formatted string
 - Map comprehension (`%{ k => v for k, v in map }`)
 - Map for loop (`for k, v in map { ... }`)
-- Rework module
+- Rework module (file loader interface, circular-import detection, deeper resolution chains)
 - And standard library module
 - More docs
-- More test, try fuzzing
+- More test, try fuzzing — no end-to-end interpreter tests, no heap/GC tests, no module/import tests
 - On-demand parsing
 - Experimenting the byte code VM
 - Add tree-sitter
 - Add LSP
-- Implement better error messages
+- Implement better error messages — `InterpretError` carries no source spans (`interpret/error.rs:116-124`), so runtime errors can't point at the offending token
+- CLI: replace `.expect("must have one argument")` / `panic!("expect a mode")` in `main.rs` with proper error output
 
 ## Bugs / Correctness Issues:
-- `heap.rs` `update_ref_count`: `ref_count.sub_assign(1)` can underflow (panic in debug, wrap in release) — use saturating subtraction or a checked decrement
-- `heap.rs` `deep_copy_reassign_object()`: old value replaced during deep copy is returned and dropped without decrementing its ref count
-- `environment.rs` `deinit_module()`: heap not handled — GC objects owned by module-scope variables are not accounted for when a module is finalized
-- `environment.rs` `get_variable_all_scope()`: accessing an un-imported module silently returns nil instead of a runtime error
-- `environment.rs` `ScopeStack::push()`: scope overflow calls `panic!` instead of returning a recoverable `Error::StackOverflow`
+- `interpret/heap.rs` `update_ref_count`: `ref_count.sub_assign(1)` can underflow (panic in debug, wrap in release) — use saturating subtraction or a checked decrement
+- `interpret/heap.rs` `deep_copy_reassign_object()`: old intermediate values replaced during deep copy are returned and dropped without decrementing ref count (chained assignment `a[0][1] = x` leaks each copied sub-object)
+- `interpret/environment.rs` `deinit_module()`: heap not handled — GC objects owned by module-scope variables are never disposed
+- `interpret/environment.rs` `deinit_module()`: `assert!(scope_stack.len() == 1)` panics instead of returning an error when a module evaluation leaves extra scopes
+- `interpret/environment.rs` `get_variable_all_scope()`: accessing an un-imported module silently returns nil instead of a runtime error
+- `interpret/environment.rs` `ScopeStack::push()`: scope overflow returns `ScopeOverflow` (good) but the limit is hard-coded at `SCOPE_SIZE_LIMIT = 100` with no adaptive behavior; recursion beyond that aborts rather than tail-calling
+- `typecheck/typechecker.rs:688-724` variadic argument check is dead code — the inner `if variadict_type_id.is_none()` is nested inside the same outer check, so arg count/type validation is skipped entirely for any variadic function (affects `print`, `to_json`, `array_push`, `array_insert`, etc.)
+- `typecheck/typechecker.rs:558` `.declare_id(iden.id, ANY_FUNCTION).unwrap()` has no `TypecheckError::DuplicateDeclaration` branch; `with_scope` currently masks the panic but the path is unsafe
+- `typecheck/typechecker.rs:528` `Type::Any` arm inside `convert_struct_literal` is unreachable — `lookup_type_id_from_id` only populates for struct decls, so the prior `ok_or(UndefinedIdentifier)` fires first
+- `parse/parser.rs` has no recursion depth limit on `parse_pratt`; deeply nested input (e.g. `((((...))))`) can stack-overflow before reaching the interpreter
+- `span.rs` `to_start_row_col()` is off-by-one after newlines (documented in tests `row_col_right_after_newline_has_col_zero`); columns are byte indices, so multi-byte UTF-8 reports wrong columns
+- `id.rs` `Id` uses a 64-bit `DefaultHasher` output only — two names that collide compare equal silently; consider pairing the hash with a string id
+- `parse/lex.rs` `lex_string` unclosed-string check after `\\` uses `*offset > input.len()` where `>=` would be more obviously correct; current behavior still reports `UnclosedString` by fallthrough but is subtle
+- `string_utils.rs::unescape` panics on a trailing `\` and relies on the lexer to have rejected it — tighten the lexer or return an error here
 
 ## Design Issues:
-- GC trigger removed (was naive: fired on every assignment once live objects exceeded 100); implement adaptive trigger (e.g. double threshold after each collection)
+- GC trigger removed (was naive: fired on every assignment once live objects exceeded 100); the only way to reclaim heap memory today is the `_dbg_gc_mark_sweep()` builtin. Implement adaptive trigger (e.g. double threshold after each collection)
+- Reference counting is effectively vestigial — `HeapEntry::new` starts `ref_count = 1`, `insert_variable_current_scope` bumps to 2, `pop_scope` decrements to 1 (never 0). Objects never freed via RC. Also `insert_array_variable` / `insert_map_variable` do NOT bump refs for contained values, while `array_push` / `array_insert` / `map_insert` do — policy is inconsistent. Either fix the invariants end-to-end or drop RC in favor of pure mark-sweep.
 - Module resolution only handles 2-part chains (`module.var`); deeper chains silently misbehave — needs spec and enforcement
-- `Any` type is infectious: once a value is typed `Any` all downstream expressions lose static checking. For-loop iteration variables are always `Any` — element type is not propagated from the collection type
-- Struct values stored as `Value::Map` at runtime; no enforcement that runtime map contents match declared schema after construction
+- No circular-import detection in `interpret_import_stmt`
+- `Any` type is infectious: once a value is typed `Any` all downstream expressions lose static checking. For-loop iteration variables are always `Any` — element type is not propagated from the collection type (see `convert_for`, TODO in-code)
+- `when` with no matching arm returns `Value::Unit` at runtime, but `convert_when` unifies only the arm expression types — the claimed type and the actual yielded type diverge on fall-through
+- Function values are cloned per call and per evaluation — `interpret_fn_decl` clones `params` and `body` on every fn-literal evaluation, and `interpret_normal_fn_call_expr` clones the whole `Function` on every call. Wrap in `Rc<Function>` to share.
+- `ValueReturn` (`interpret/interpreter.rs:14-50`) is a hand-rolled exception mechanism duplicating what `Result<_, ReturnOrError>` / `ControlFlow` already express
+- AST has both `Expression` and `ClauseNode`, both carry `extra: T`; the distinction is not surfaced in names, and the parser/interpreter duplicate "consume semicolon for Clause/Return" logic in multiple places
+- Token names: `LPointParen` / `RPointParen` for `{}`, `Percentage` for `%`, `PercentLPointParent` for `%{`, `RFArrtow` for `=>` — worth renaming before external consumers (tree-sitter) pin on them
+- Typo cleanup — `predule` → `prelude`, `variadict` → `variadic` (throughout `types.rs`, `typecheck/environment.rs`, `typechecker.rs`), `LAST_RESVERED_COUNTER`, `Unclosesed`, `intepret_builtin_fn_call_expr`, `ArrayForComprehention`, `promt`, and several error-message typos (`canot`, `hance`, `is is does not exists`)
 
 - [X] Maybe implement node-id
 - [X] Make last expression in a block return the value of the block (like rust)
@@ -40,5 +60,5 @@
 - [X] Array prelude functions — `array_len`, `array_push`, `array_pop`, `array_insert`
 - [X] Map prelude functions — `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`
 - [X] Add type annotation, type checker — gradual typing with `Any` as top type; two-phase AST (`AST<()>` → `AST<TypeId>`); see ADR 008
-- [X] Struct declaration and typecheck — `struct Name { field: Type }` syntax, nominal typing, stored as `Value::Map` at runtime; see ADR 009
+- [X] Struct declaration parsing and typecheck — `struct Name { field: Type }` syntax, nominal typing, field count / field name / field type validation. **Runtime NOT done** — see top of Todos.
 - [X] String interner GC — `StringInterner` now participates in mark-and-sweep via `reset_marks()` / `mark_to_keep()` / `sweep()`; memory leak resolved
