@@ -269,12 +269,16 @@ impl DisplayWriter for Value {
             Value::Struct(handle) => {
                 let struct_ = env.get_struct(handle)?;
                 write!(w, "{}{{", ctx.symbol_names.get_or_unknown(struct_.id)).map_err(convert)?;
-                // TODO: fix last field like map
-                for (field_id, field_value) in &struct_.fields {
+                let mut entries = struct_.fields.iter();
+                if let Some((field_id, field_value)) = entries.next() {
                     let field_name = ctx.symbol_names.get_or_unknown(*field_id);
                     write!(w, "{} = ", field_name).map_err(convert)?;
                     field_value.value.write_display(ctx, w)?;
-                    write!(w, ", ").map_err(convert)?;
+                    for (field_id, field_value) in entries {
+                        let field_name = ctx.symbol_names.get_or_unknown(*field_id);
+                        write!(w, ", {} = ", field_name).map_err(convert)?;
+                        field_value.value.write_display(ctx, w)?;
+                    }
                 }
                 write!(w, "}}").map_err(convert)?;
                 Ok(())
