@@ -1,6 +1,6 @@
 use crate::id::Id;
-use crate::symbol_names::Identifier;
-use crate::symbol_names::SymbolNames;
+use crate::identifier_registry::Identifier;
+use crate::identifier_registry::IdentifierRegistry;
 use crate::token::Token;
 
 use super::error::ParseError;
@@ -16,7 +16,7 @@ pub struct Context<'a> {
     input: &'a str,
     items: &'a [LexItem],
 
-    symbol_names: &'a mut SymbolNames,
+    identifier_registry: &'a mut IdentifierRegistry,
 
     curr_pos: usize,
 
@@ -41,13 +41,13 @@ impl<'a> Context<'a> {
     pub fn new(
         input: &'a str,
         items: &'a [LexItem],
-        symbol_names: &'a mut SymbolNames,
+        identifier_registry: &'a mut IdentifierRegistry,
         should_eval_string: bool,
     ) -> Self {
         Self {
             input,
             items,
-            symbol_names,
+            identifier_registry,
             curr_pos: 0,
             should_eval_string,
             fn_depth: 0,
@@ -87,7 +87,7 @@ impl<'a> Context<'a> {
     pub fn create_identifier(&mut self, li: LexItem) -> Identifier {
         let name = li.span.string_from_source(self.input);
         let id = Id::new(&name);
-        self.symbol_names.insert(id, name);
+        self.identifier_registry.insert(id, name);
         Identifier { span: li.span, id }
     }
 

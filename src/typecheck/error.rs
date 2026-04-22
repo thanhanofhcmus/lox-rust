@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    symbol_names::{Identifier, SymbolNames},
+    identifier_registry::{Identifier, IdentifierRegistry},
     token::Token,
     types::{TypeId, TypeInterner},
 };
@@ -67,7 +67,7 @@ impl TypecheckError {
         &self,
         source_name: Option<&str>,
         input: &str,
-        sb: &SymbolNames,
+        sb: &IdentifierRegistry,
         interner: &TypeInterner,
     ) -> String {
         let (line, col) = self.get_source_start(input);
@@ -91,7 +91,7 @@ impl TypecheckError {
     }
 
     /// Internal helper to turn TypeIds into names like "Array<Number>"
-    fn resolve_description(&self, sb: &SymbolNames, interner: &TypeInterner) -> String {
+    fn resolve_description(&self, sb: &IdentifierRegistry, interner: &TypeInterner) -> String {
         match self {
             Self::ExplicitTypeMismatch(node, declared, actual) => {
                 format!(

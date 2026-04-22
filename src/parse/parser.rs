@@ -1,5 +1,5 @@
-use crate::symbol_names::Identifier;
-use crate::symbol_names::SymbolNames;
+use crate::identifier_registry::Identifier;
+use crate::identifier_registry::IdentifierRegistry;
 use crate::types::TypeId;
 use crate::{ast::*, string_utils};
 
@@ -13,10 +13,10 @@ use crate::token::Token;
 pub fn parse(
     input: &str,
     items: &[LexItem],
-    symbol_names: &mut SymbolNames,
+    identifier_registry: &mut IdentifierRegistry,
     should_eval_string: bool,
 ) -> Result<AST<()>, ParseError> {
-    let mut state = Context::new(input, items, symbol_names, should_eval_string);
+    let mut state = Context::new(input, items, identifier_registry, should_eval_string);
     let mut imports = vec![];
     let mut global_stmts = vec![];
     let mut is_parsing_import = true;
@@ -838,15 +838,15 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn parse_str(input: &str) -> AST<()> {
-        let mut symbol_names = SymbolNames::new();
+        let mut identifier_registry = IdentifierRegistry::new();
         let items = lex(input).expect("lex failed");
-        parse(input, &items, &mut symbol_names, false).expect("parse failed")
+        parse(input, &items, &mut identifier_registry, false).expect("parse failed")
     }
 
     fn parse_err(input: &str) -> ParseError {
-        let mut symbol_names = SymbolNames::new();
+        let mut identifier_registry = IdentifierRegistry::new();
         let items = lex(input).expect("lex failed");
-        parse(input, &items, &mut symbol_names, false).expect_err("expected parse error")
+        parse(input, &items, &mut identifier_registry, false).expect_err("expected parse error")
     }
 
     /// Extract the first top-level expression statement's inner clause.

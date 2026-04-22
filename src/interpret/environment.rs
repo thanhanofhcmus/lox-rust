@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::values::Value;
 use crate::{
     id::Id,
+    identifier_registry::Identifier,
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
@@ -10,7 +11,6 @@ use crate::{
         prelude,
         values::{Array, Function, Map, Struct},
     },
-    symbol_names::Identifier,
 };
 
 #[derive(Debug)]

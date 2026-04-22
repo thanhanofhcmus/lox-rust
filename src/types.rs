@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{id::Id, symbol_names::SymbolNames};
+use crate::{id::Id, identifier_registry::IdentifierRegistry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(usize);
@@ -164,7 +164,7 @@ impl TypeInterner {
         self.id_to_type_id.get(&id).copied()
     }
 
-    pub fn generate_readable_name(&self, sb: &SymbolNames, id: TypeId) -> String {
+    pub fn generate_readable_name(&self, sb: &IdentifierRegistry, id: TypeId) -> String {
         match self.get_type(id) {
             Some(Type::Any) => "any".into(),
             Some(Type::Bool) => "bool".into(),

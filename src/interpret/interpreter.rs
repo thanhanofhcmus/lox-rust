@@ -4,12 +4,12 @@ use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
 
+use crate::identifier_registry::IdentifierRegistry;
 use crate::interpret::values::{
     Array, BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField,
 };
 use crate::parse;
 use crate::string_utils;
-use crate::symbol_names::SymbolNames;
 use crate::token::Token;
 use crate::types::{TypeId, TypeInterner};
 use std::cell::RefCell;
@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 // Shared interpreter state threaded through evaluation AND value display /
 // serialization. Display code (see `values::display_writer`, `Value::write_display`)
-// technically only needs `&Environment` + `&SymbolNames`, but we pass the whole
+// technically only needs `&Environment` + `&IdentifierRegistry`, but we pass the whole
 // `BorrowContext` to avoid maintaining a second "display-only" context struct
 // that would have to be kept in sync. Fields unused by a given call site are
 // simply ignored — do not split this into a narrower struct without a concrete
@@ -27,7 +27,7 @@ use std::rc::Rc;
 pub struct BorrowContext<'e> {
     pub environment: &'e mut Environment,
     pub print_writer: Rc<RefCell<dyn std::io::Write>>,
-    pub symbol_names: &'e SymbolNames,
+    pub identifier_registry: &'e IdentifierRegistry,
     pub strict_assert: bool,
 }
 
@@ -72,7 +72,7 @@ impl ValueReturn {
 pub struct Interpreter<'e, 't, 's> {
     environment: &'e mut Environment,
     type_interner: &'t TypeInterner,
-    symbol_names: &'s mut SymbolNames,
+    identifier_registry: &'s mut IdentifierRegistry,
     input: &'s str,
 
     print_writer: Rc<RefCell<dyn std::io::Write>>,
@@ -84,7 +84,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     pub fn new(
         environment: &'e mut Environment,
         type_interner: &'t TypeInterner,
-        symbol_names: &'s mut SymbolNames,
+        identifier_registry: &'s mut IdentifierRegistry,
         input: &'s str,
         print_writer: Rc<RefCell<dyn std::io::Write>>,
         strict_assert: bool,
@@ -92,7 +92,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Self {
             environment,
             type_interner,
-            symbol_names,
+            identifier_registry,
             input,
             print_writer,
             strict_assert,
@@ -152,7 +152,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         // TODO: fix should_eval_string
-        let untyped = parse::parse(&content, &tokens, self.symbol_names, true)
+        let untyped = parse::parse(&content, &tokens, self.identifier_registry, true)
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         let mut tc_env = crate::typecheck::Environment::new();
@@ -170,7 +170,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let mut itp = Interpreter::new(
             self.environment,
             self.type_interner,
-            self.symbol_names,
+            self.identifier_registry,
             &content,
             self.print_writer.clone(),
             self.strict_assert,
@@ -604,7 +604,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let mut prelude_context = BorrowContext {
             environment: self.environment,
             print_writer: self.print_writer.clone(),
-            symbol_names: self.symbol_names,
+            identifier_registry: self.identifier_registry,
             strict_assert: self.strict_assert,
         };
         function(&mut prelude_context, args)

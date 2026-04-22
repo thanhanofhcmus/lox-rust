@@ -2,9 +2,9 @@ use super::values::Value;
 use thiserror::Error;
 
 use crate::{
+    identifier_registry::{Identifier, IdentifierRegistry},
     interpret::heap::{GcHandle, GcKind, StrId},
     parse::ParseError,
-    symbol_names::{Identifier, SymbolNames},
     token::Token,
     typecheck,
 };
@@ -115,7 +115,9 @@ pub enum InterpretError {
     #[error("Assertion failed: {0}")]
     AssertionFailed(String),
 
-    #[error("Internal: struct type `{0:?}` was accepted by the typechecker but is not registered in the interpreter's type interner")]
+    #[error(
+        "Internal: struct type `{0:?}` was accepted by the typechecker but is not registered in the interpreter's type interner"
+    )]
     StructTypeNotRegistered(Identifier),
 }
 
@@ -124,7 +126,7 @@ impl InterpretError {
         &self,
         source_name: Option<&str>,
         input: &str,
-        sb: &SymbolNames,
+        sb: &IdentifierRegistry,
     ) -> String {
         let description = self.resolve_description(sb);
         let source_name = source_name.unwrap_or("");
@@ -135,7 +137,7 @@ impl InterpretError {
         format!("Runtime Error: {description}\n  --> {source_name}\n")
     }
 
-    fn resolve_description(&self, sb: &SymbolNames) -> String {
+    fn resolve_description(&self, sb: &IdentifierRegistry) -> String {
         match self {
             Self::ReDeclareVariable(node) => {
                 format!(

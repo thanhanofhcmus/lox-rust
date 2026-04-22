@@ -9,11 +9,11 @@ pub struct Identifier {
 }
 
 #[derive(Debug, Clone)]
-pub struct SymbolNames {
+pub struct IdentifierRegistry {
     map: HashMap<Id, String>,
 }
 
-impl SymbolNames {
+impl IdentifierRegistry {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),

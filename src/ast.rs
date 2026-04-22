@@ -1,4 +1,4 @@
-use crate::{span::Span, symbol_names::Identifier, token::Token, types::TypeId};
+use crate::{identifier_registry::Identifier, span::Span, token::Token, types::TypeId};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]

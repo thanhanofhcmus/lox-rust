@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
-use crate::symbol_names::Identifier;
+use crate::identifier_registry::Identifier;
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
@@ -895,14 +895,14 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), TypecheckError> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{id::Id, parse::lex, symbol_names::SymbolNames};
+    use crate::{id::Id, identifier_registry::IdentifierRegistry, parse::lex};
     use pretty_assertions::assert_eq;
 
     fn typecheck_str(input: &str) -> Result<AST<TypeId>, TypecheckError> {
         let items = lex(input).expect("lex failed");
-        let mut symbol_names = SymbolNames::new();
-        let ast =
-            crate::parse::parse(input, &items, &mut symbol_names, false).expect("parse failed");
+        let mut identifier_registry = IdentifierRegistry::new();
+        let ast = crate::parse::parse(input, &items, &mut identifier_registry, false)
+            .expect("parse failed");
         let mut env = Environment::new();
         TypeChecker::new(&mut env).convert(ast)
     }

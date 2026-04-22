@@ -1,11 +1,11 @@
 mod ast;
 mod id;
+mod identifier_registry;
 mod interpret;
 mod parse;
 mod span;
 mod string_interner;
 mod string_utils;
-mod symbol_names;
 mod token;
 mod typecheck;
 mod types;
@@ -15,13 +15,13 @@ use std::{cell::RefCell, env, rc::Rc};
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
-use crate::{ast::AST, symbol_names::SymbolNames};
+use crate::{ast::AST, identifier_registry::IdentifierRegistry};
 
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
 /// Encapsulates the runtime environment to avoid duplicating setup across modes.
 struct RunnerContext {
-    symbol_names: SymbolNames,
+    identifier_registry: IdentifierRegistry,
     typecheck_env: typecheck::Environment,
     interpret_env: interpret::Environment,
     strict_assert: bool,
@@ -30,7 +30,7 @@ struct RunnerContext {
 impl RunnerContext {
     fn new(strict_assert: bool) -> Self {
         Self {
-            symbol_names: SymbolNames::new(),
+            identifier_registry: IdentifierRegistry::new(),
             typecheck_env: typecheck::Environment::new(),
             interpret_env: interpret::Environment::new(),
             strict_assert,
@@ -64,14 +64,15 @@ impl RunnerContext {
         }
 
         debug!("Parsing start");
-        let ast =
-            parse::parse(input, &tokens, &mut self.symbol_names, is_in_repl).map_err(|err| {
+        let ast = parse::parse(input, &tokens, &mut self.identifier_registry, is_in_repl).map_err(
+            |err| {
                 error!(
                     "Parse error:\n{}",
                     err.generate_user_facing_error(source_name, input)
                 );
                 Box::new(err) as Box<dyn std::error::Error>
-            })?;
+            },
+        )?;
 
         debug!("Parsing done");
         trace!("{:?}", &ast);
@@ -90,7 +91,7 @@ impl RunnerContext {
                 err.generate_user_facing_error(
                     source_name,
                     input,
-                    &self.symbol_names,
+                    &self.identifier_registry,
                     self.typecheck_env.get_type_interner()
                 )
             );
@@ -103,7 +104,7 @@ impl RunnerContext {
         let mut interpreter = interpret::Interpreter::new(
             &mut self.interpret_env,
             self.typecheck_env.get_type_interner(),
-            &mut self.symbol_names,
+            &mut self.identifier_registry,
             input,
             rc,
             self.strict_assert,
@@ -112,7 +113,7 @@ impl RunnerContext {
         interpreter.interpret(&ast).map_err(|err| {
             error!(
                 "Interpreter error:\n{}",
-                err.generate_user_facing_error(source_name, input, &self.symbol_names)
+                err.generate_user_facing_error(source_name, input, &self.identifier_registry)
             );
             Box::new(err) as Box<dyn std::error::Error>
         })?;
