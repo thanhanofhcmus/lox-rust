@@ -1,49 +1,50 @@
 ## Todos:
-- Struct runtime — literal construction, heap disposal/mark, dot-read (`p.x`, `a.b.c`, mixed chains with subscription), and equality (`==` / `!=`, nominally typed, recurses into nested structs/arrays/maps) now work (see `tests/fixtures/17_structs.lox`). Still missing: `Statement::StructDecl` is still a runtime no-op (parser+typechecker do the work; interpreter has nothing to add yet).
-- Struct field assignment (`p.x = y`, `b.center.x = z`, mixed chains like `pair.items[0] = v`) — read path is in, write path is NOT. Requires extending `ChainingReassignTargetNode.follows` from `Vec<ClauseNode<T>>` to a `Vec<ReassignChainStep<T>>` enum (`Subscription(expr) | Member(iden)`) so field names can flow through the chain as compile-time `Id`s rather than runtime `Value`s. See `docs/plan-dot-member-access.md` Phase 2.
-- Struct names as type annotations — `parse_type_node` at `parse/parser.rs:80-106` only accepts built-in type tokens (`any`, `bool`, `number`, `str`). A field like `struct Box { center: Point }` fails to parse with `UnexpectedToken(Identifier, ...)`. Needs to accept `Token::Identifier` and resolve via the type interner during typecheck.
-- Module member access (`math::sin`, `std::math::sin`) — uses `::` per `docs/temp-generated/plan-resolution-syntax.md`, NOT `.` (dot is reserved for struct field read today and method calls later). Requires: new `Token::DoubleColon` in the lexer; new `PathNode` + `ClauseCase::Path` in the AST; path branch in `parse_primary` (not a Pratt infix — a full path is a single primary atom); new `environment.get_module_export(module_id, export_id)`; new interpreter arm. Currently imports are side-effect-only and any `foo::bar` is a parse error.
-- Type-associated calls (`Car:new()`) — single-colon infix per the same plan doc. Out of scope for structs today but part of the same resolution-syntax rework.
-- Method calls on values (`arr.push(v)`, `m.keys()`) — dot is currently struct-field-read only; method calls require the Dot arm in `parse_pratt_infix` to branch on whether `(` follows. Planned migration of prelude `array_*` / `map_*` functions into dot methods — see `docs/temp-generated/plan-resolution-syntax.md` Phase 1.
-- Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier` before runtime
-- Implement more string stuff, formatted string
+- Struct destructuring — `var Point { x, y } = p;` (shorthand) and `var Point { x = px, y = py } = p;` (renamed). Open: nominal vs structural, partial destructuring, `Any` rhs.
+- Struct field assignment (`p.x = y`, chained and mixed) — read works; write needs a `ReassignChainStep` enum (`Subscription | Member`) so field names flow as compile-time `Id`s. See `docs/plan-dot-member-access.md` Phase 2.
+- Struct runtime: `Statement::StructDecl` is still a runtime no-op — might stay that way (all work happens in parser+typechecker). Revisit if/when struct methods land.
+- Struct names as type annotations — `parse_type_node` (`parser.rs:80`) rejects identifiers, so `struct Box { center: Point }` fails. Accept `Token::Identifier` and resolve via type interner.
+- Module member access (`math::sin`) — uses `::` per `docs/temp-generated/plan-resolution-syntax.md`, NOT `.`. Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
+- Type-associated calls (`Car:new()`) — single-colon infix per the same plan doc.
+- Method calls on values (`arr.push(v)`, `m.keys()`) — dot arm in `parse_pratt_infix` needs to branch on trailing `(`. Enables migration of prelude `array_*`/`map_*` to dot methods. See plan doc Phase 1.
+- Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier`.
+- Formatted strings
 - Map comprehension (`%{ k => v for k, v in map }`)
 - Map for loop (`for k, v in map { ... }`)
 - Rework module (file loader interface, circular-import detection, deeper resolution chains)
-- And standard library module
+- Standard library module
 - More docs
-- More test, try fuzzing — e2e fixtures now exist under `tests/fixtures/` (`01`..`17` + `errors/`); still missing: dedicated heap/GC unit tests, module/import tests, and fuzzing
+- More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`17` + `errors/`); no heap/GC unit tests, no module/import tests, no fuzzing.
 - On-demand parsing
-- Experimenting the byte code VM
-- Add tree-sitter
-- Add LSP
-- Add typecheck on when arm, if all arm return value, unitfy, it not, none should return value
-- Implement better error messages — `InterpretError` carries no source spans (`interpret/error.rs:116-124`), so runtime errors can't point at the offending token
-- CLI: replace `.expect("must have one argument")` / `panic!("expect a mode")` in `main.rs` with proper error output
+- Bytecode VM experiment
+- Tree-sitter grammar
+- LSP
+- Typecheck `when` arms — unify arm types; if any arm has no value, none should.
+- Better runtime error messages — `InterpretError` carries no source spans.
+- CLI: replace `.expect(...)` / `panic!(...)` in `main.rs` with proper error output.
 
 ## Bugs / Correctness Issues:
-- `interpret/heap.rs` `update_ref_count`: `ref_count.sub_assign(1)` can underflow (panic in debug, wrap in release) — use saturating subtraction or a checked decrement
-- `interpret/heap.rs` `deep_copy_reassign_object()`: old intermediate values replaced during deep copy are returned and dropped without decrementing ref count (chained assignment `a[0][1] = x` leaks each copied sub-object)
-- `interpret/environment.rs` `deinit_module()`: heap not handled — GC objects owned by module-scope variables are never disposed; ref-count bookkeeping is permanently skewed because `pop_scope` is intentionally skipped. Acceptable today only because mark-sweep is the authoritative reclaim path. Revisit when module loader is reworked.
-- `interpret/environment.rs` `get_variable_all_scope()`: accessing an un-imported module silently returns nil instead of a runtime error
-- `Value: Copy` vs ref-counted heap handles — `Value` derives `Copy`, so any assignment / pass-by-value of an `Array`/`Map`/`Struct`/`Function` handle duplicates the `GcHandle` *without* calling `shallow_copy_value`. Ref-counts are therefore not authoritative and `shallow_dispose_value`'s early-return on `ref_count != 0` is not a reliable GC signal. Combined with the inconsistent bump policy (see Design Issues below), reference counting is effectively decorative. Either drop `Copy` and make handle duplication explicit, or commit to pure mark-sweep and remove the RC scaffolding entirely.
-- `interpret/values/value.rs` `Map = BTreeMap<MapKey, Value>` — `MapKey::Str` is ordered by `StrId`, i.e. interner insertion order, not by string contents. Iteration order for string-keyed maps is a non-deterministic accident of global interner history (two runs that intern strings in a different order produce different map iteration). The test at `examples/test.lox` lines ~306-310 papers over this. Either switch to an insertion-order map (`IndexMap`) or order `MapKey::Str` by the actual string bytes (requires resolving via the interner during comparison).
-- `interpret/environment.rs` `ScopeStack::push()`: scope overflow returns `ScopeOverflow` (good) but the limit is hard-coded at `SCOPE_SIZE_LIMIT = 100` with no adaptive behavior; recursion beyond that aborts rather than tail-calling
-- `typecheck/typechecker.rs` `convert_fn_call` skips all argument validation for variadic functions — the outer `if variadic_type_id.is_none()` gates both arity and type checks, so any function declared variadic (`print`, `to_json`, `array_push`, `array_insert`, etc.) accepts any arity and any arg types without complaint. Needs a separate variadic path that validates fixed params + checks each variadic arg against `variadic_type_id`. (Stale code comment at `convert_fn_call` still describes the old nested-check structure.)
-- `typecheck/typechecker.rs` `convert_struct_literal` `Type::Any` arm is unreachable — `lookup_type_id_from_id` only populates for struct decls, so the prior `ok_or(UndefinedIdentifier)` fires first
-- `id.rs` `Id` uses a 64-bit `DefaultHasher` output only — two names that collide compare equal silently; consider pairing the hash with a string id
-- `string_utils.rs::unescape` panics on a trailing `\` and relies on the lexer to have rejected it — tighten the lexer or return an error here (currently accepted as-is; lexer invariant holds)
+- `heap.rs` `update_ref_count`: `ref_count.sub_assign(1)` can underflow — use saturating or checked sub.
+- `heap.rs` `deep_copy_reassign_object()`: replaced intermediates are dropped without ref-count decrement — chained `a[0][1] = x` leaks each sub-object.
+- `environment.rs` `deinit_module()`: heap not handled — module-scope GC objects never disposed; ref-counts permanently skewed. Tolerable only because mark-sweep is authoritative.
+- `environment.rs` `get_variable_all_scope()`: un-imported module access silently returns nil instead of erroring.
+- `Value: Copy` vs ref-counted handles — assignment / pass-by-value duplicates handles without `shallow_copy_value`, making ref-counts non-authoritative. Either drop `Copy` or commit to mark-sweep and delete the RC scaffolding.
+- `Map = BTreeMap<MapKey, Value>` — `MapKey::Str` orders by `StrId` (interner insertion order), not string bytes. Iteration order is non-deterministic across runs. Switch to `IndexMap` or order by actual bytes.
+- `environment.rs` `ScopeStack::push()`: scope limit is a hard-coded `SCOPE_SIZE_LIMIT = 100`; recursion beyond that aborts rather than TCO-ing.
+- `typechecker.rs` `convert_fn_call` skips ALL argument validation for variadic functions (outer `is_none()` gates every check). Affects `print`, `to_json`, `array_push`, `array_insert`, etc. Code comment is stale.
+- `typechecker.rs` `convert_struct_literal` `Type::Any` arm is unreachable — prior `ok_or(UndefinedIdentifier)` always fires first.
+- `id.rs` `Id` uses a 64-bit `DefaultHasher` only — silent collisions possible. Pair the hash with a string id.
+- `string_utils.rs::unescape` panics on a trailing `\`, relying on the lexer invariant. Either tighten or return an error.
 
 ## Design Issues:
-- GC trigger removed (was naive: fired on every assignment once live objects exceeded 100); the only way to reclaim heap memory today is the `_dbg_gc_mark_sweep()` builtin. Implement adaptive trigger (e.g. double threshold after each collection)
-- Reference counting is effectively vestigial — `HeapEntry::new` starts `ref_count = 1`, `insert_variable_current_scope` bumps to 2, `pop_scope` decrements to 1 (never 0). Objects never freed via RC. Also `insert_array_variable` / `insert_map_variable` do NOT bump refs for contained values, while `array_push` / `array_insert` / `map_insert` do — policy is inconsistent. Either fix the invariants end-to-end or drop RC in favor of pure mark-sweep.
-- Module resolution only handles 2-part chains (`module.var`); deeper chains silently misbehave — needs spec and enforcement
-- No circular-import detection in `interpret_import_stmt`
-- `Any` type is infectious: once a value is typed `Any` all downstream expressions lose static checking. For-loop iteration variables are always `Any` — element type is not propagated from the collection type (see `convert_for`, TODO in-code)
-- Function values are cloned per call and per evaluation — `interpret_fn_decl` clones `params` and `body` on every fn-literal evaluation, and `interpret_normal_fn_call_expr` clones the whole `Function` on every call. Wrap in `Rc<Function>` to share.
-- `ValueReturn` (`interpret/interpreter.rs:14-50`) is a hand-rolled exception mechanism duplicating what `Result<_, ReturnOrError>` / `ControlFlow` already express
-- AST has both `Expression` and `ClauseNode`, both carry `extra: T`; the distinction is not surfaced in names, and the parser/interpreter duplicate "consume semicolon for Clause/Return" logic in multiple places
-- Token names: `LPointParen` / `RPointParen` for `{}`, `Percentage` for `%`, `PercentLPointParent` for `%{` — worth renaming before external consumers (tree-sitter) pin on them
+- GC trigger removed (was naive: every assignment once live > 100). Only `_dbg_gc_mark_sweep()` reclaims today. Add adaptive trigger (double threshold per collection).
+- Reference counting is vestigial — `HeapEntry::new` starts at 1, scope insert bumps to 2, `pop_scope` decrements to 1 (never 0). Bump policy is also inconsistent: `insert_array/map_variable` don't bump contained values, but `array_push`/`array_insert`/`map_insert` do.
+- Module resolution only handles 2-part chains; deeper chains silently misbehave.
+- No circular-import detection in `interpret_import_stmt`.
+- `Any` is infectious and for-loop iteration vars are always `Any` — element type is not propagated from collection type (see `convert_for` TODO).
+- `Function` values cloned per evaluation and per call. Wrap in `Rc<Function>`.
+- `ValueReturn` (`interpreter.rs:14`) is a hand-rolled exception — `Result<_, ReturnOrError>` / `ControlFlow` already exist.
+- AST has both `Expression` and `ClauseNode`, both with `extra: T`; distinction isn't named and "consume semicolon for Clause/Return" is duplicated.
+- Token names to rename before external consumers lock in: `LPointParen`/`RPointParen` for `{}`, `Percentage` for `%`, `PercentLPointParent` for `%{`.
 
 - [X] Maybe implement node-id
 - [X] Make last expression in a block return the value of the block (like rust)
@@ -57,18 +58,18 @@
 - [X] Array for comprehension — `[for x in array: expr]` with optional `if` filter; loop variable readonly
 - [X] Array prelude functions — `array_len`, `array_push`, `array_pop`, `array_insert`
 - [X] Map prelude functions — `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`
-- [X] Add type annotation, type checker — gradual typing with `Any` as top type; two-phase AST (`AST<()>` → `AST<TypeId>`); see ADR 008
-- [X] Struct declaration parsing and typecheck — `struct Name { field: Type }` syntax, nominal typing, field count / field name / field type validation
-- [X] Struct runtime: literal construction, heap disposal, mark-sweep (including string field values) — `Value::Struct(GcHandle)`, `Struct { id, fields: HashMap<Id, StructField> }`; fixture: `tests/fixtures/17_structs.lox`
-- [X] Dot member access (read): `p.x`, chained `a.b.c`, mixed chains `arr[0].x` / `p.items[0]`; `Any` is a gradual-typing passthrough (typecheck allows, runtime validates). New AST node `MemberAccessNode`, new errors `TypecheckError::TypeIsNotStruct` / `StructFieldNotExist`, `InterpretError::MemberAccessOnNonStruct` / `StructFieldNotFound`. Write path (`p.x = y`) still pending — see top of Todos.
-- [X] Struct equality in `Value::deep_eq` — nominally typed (different struct names never equal), field-count check, then recursive `deep_eq` on each field value (nested structs, arrays, maps all recurse correctly). Field-literal order is irrelevant since fields are stored in a `HashMap<Id, StructField>`.
-- [X] String interner GC — `StringInterner` now participates in mark-and-sweep via `reset_marks()` / `mark_to_keep()` / `sweep()`; memory leak resolved
-- [X] Validate struct literal field types at construction — `convert_struct_literal` enforces `StructFieldTypeMismatch` against declared field types (covered by `struct_field_type_mismatch_errors`)
-- [X] Reject duplicate field names in struct literals — `convert_struct_literal` now errors with `TypecheckError::DuplicateStructLiteralField` (test: `struct_literal_duplicate_field_errors`)
-- [X] `typecheck/typechecker.rs` duplicate-fn-name unwrap — the pre-bind of the current declaration id now returns `DuplicateDeclaration` via `.map_err`
-- [X] `interpret/environment.rs` `deinit_module()` no longer panics with `assert!` — returns `InterpretError::ModuleScopeStackUnbalanced(depth)` and the caller in `interpret_import_stmt` runs deinit even after an interpret failure, preferring the interpret error
-- [X] Parser recursion depth limit — `Context::enter_recursion` / `leave_recursion` with `MAX_RECURSION_DEPTH = 256`; `ParseError::RecursionLimitExceeded` covers deeply nested input (test: `deeply_nested_parens_hit_recursion_limit`)
-- [X] `span.rs` `to_start_row_col()` — counts Unicode scalar values instead of bytes and resets column to 1 after a newline; multibyte tests added
-- [X] `parse/lex.rs` `lex_string` escape-end check — now uses `*offset >= input.len()`, matching the invariant
-- [X] Typo cleanup — `predule` → `prelude` (file renamed), `variadict` → `variadic`, `LAST_RESVERED_COUNTER` → `LAST_RESERVED_COUNTER`, `promt` → `prompt`, `RFArrtow` → `RFatArrow`, `RTArrow` → `RThinArrow`, `ArrayForComprehention` → `ArrayForComprehension`, `intepret_builtin_fn_call_expr` → `interpret_builtin_fn_call_expr`, `Unclosesed` → `Unclosed`, plus error-message typos (`canot`, `hance`, `is is does not exists`, `did not evaluated`, `defered`, `horable horable`, `varidict`/`varidiact`)
+- [X] Type annotation + type checker — gradual typing with `Any` as top type; two-phase AST (`AST<()>` → `AST<TypeId>`); see ADR 008
+- [X] Struct declaration parsing and typecheck — nominal typing, field count / name / type validation
+- [X] Struct runtime: literal construction, heap disposal, mark-sweep (including string field values); fixture `tests/fixtures/17_structs.lox`
+- [X] Dot member access (read): `p.x`, chained, mixed with subscription; `Any` passes through to runtime
+- [X] Struct equality in `Value::deep_eq` — nominal, field-count + recursive deep_eq
+- [X] String interner GC — `reset_marks` / `mark_to_keep` / `sweep`
+- [X] Validate struct literal field types at construction (`StructFieldTypeMismatch`)
+- [X] Reject duplicate field names in struct literals (`DuplicateStructLiteralField`)
+- [X] `typechecker.rs` duplicate-fn-name unwrap — returns `DuplicateDeclaration`
+- [X] `environment.rs` `deinit_module()` no longer panics — returns `ModuleScopeStackUnbalanced`
+- [X] Parser recursion depth limit — `MAX_RECURSION_DEPTH = 256` + `RecursionLimitExceeded`
+- [X] `span.rs` `to_start_row_col()` — counts Unicode scalar values, resets col on newline
+- [X] `parse/lex.rs` `lex_string` escape-end check — uses `*offset >= input.len()`
+- [X] Typo cleanup — `predule`, `variadict`, `LAST_RESVERED_COUNTER`, `promt`, `RFArrtow`, `RTArrow`, `ArrayForComprehention`, `intepret_builtin_fn_call_expr`, `Unclosesed`, plus error-message typos
 - [X] Clippy clean — removed needless `return` in `Value::deep_eq`
