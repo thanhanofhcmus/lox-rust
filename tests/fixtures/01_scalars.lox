@@ -1,0 +1,25 @@
+# ---------- Scalars: nil, bool, number ----------
+
+# nil
+assert(nil == nil, "nil equals nil");
+assert(not (nil == 0), "nil is not zero");
+assert(not (nil == false), "nil is not false");
+
+# bool
+assert(true == true, "true equals true");
+assert(false == false, "false equals false");
+assert(not (true == false), "true != false");
+
+# integer numbers
+assert(42 == 42, "integer equality");
+assert(-7 < 0, "negative integer");
+assert(0 == 0, "zero");
+
+# floating numbers
+assert(3.14 > 3, "float greater than integer");
+assert(1.5 + 1.5 == 3, "float arithmetic yields integer-valued result");
+
+# integer vs float equality (via Number::PartialEq delta)
+assert(10.0 == 10, "Integer 10 equals Floating 10.0");
+assert(0 == 0.0, "zeroes of different number variants are equal");
+assert(not (5 == 5.1), "Integer 5 != Floating 5.1");

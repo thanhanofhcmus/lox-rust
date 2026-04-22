@@ -1,0 +1,4 @@
+# Deliberate out-of-bounds — must error before the guard assert runs.
+var a = [1, 2, 3];
+var x = a[10];
+assert(false, "should not reach: array index out of bounds must have errored first");

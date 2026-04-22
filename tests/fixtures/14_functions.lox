@@ -1,0 +1,61 @@
+# ---------- Functions: bodies, types, recursion, identity, capture ----------
+
+# expression body (no braces, no explicit return)
+var inc = fn(x) x + 1;
+assert(inc(5) == 6, "expression-body fn");
+
+# block body with explicit return
+var add = fn(a, b) {
+  return a + b;
+};
+assert(add(2, 3) == 5, "block-body fn with return");
+
+# block body with implicit trailing expression
+var mul = fn(a, b) {
+  var c = a * b;
+  c
+};
+assert(mul(3, 4) == 12, "block-body fn with implicit trailing expr");
+
+# parameter and return type annotations
+var typed: any = fn(a: number, b: number) -> number { return a + b; };
+assert(typed(10, 20) == 30, "typed fn param+return");
+
+# closure-like (dynamic scope) capture of outer var
+var multiplier = 2;
+var scale = fn(n) n * multiplier;
+assert(scale(5) == 10, "fn reads outer var");
+
+# recursion
+var factorial = fn(n) {
+    if n <= 1 { return 1; }
+    return n * factorial(n - 1);
+};
+assert(factorial(5) == 120, "recursion");
+assert(factorial(0) == 1, "recursion base case (n=0)");
+assert(factorial(1) == 1, "recursion base case (n=1)");
+
+# early return short-circuits
+var early = fn(flag) {
+  if flag { return "hit"; }
+  "miss"
+};
+assert(early(true) == "hit", "early return");
+assert(early(false) == "miss", "fall through to trailing expr");
+
+# function identity (same-handle equality)
+var f = fn(a) a;
+var g = f;
+var h = fn(a) a;  # different instance, same body
+assert(f == g, "same function handle equals itself");
+assert(not (f == h), "different fn instances are not equal");
+
+# builtin function identity
+var p1 = print;
+var p2 = print;
+assert(p1 == p2, "same builtin aliases are equal");
+assert(not (p1 == assert), "different builtins are not equal");
+
+# zero-arg function
+var zero = fn() 42;
+assert(zero() == 42, "zero-arg fn");

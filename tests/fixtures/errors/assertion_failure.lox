@@ -1,0 +1,3 @@
+# Deliberate assertion failure — under --strict-assert this becomes
+# InterpretError::AssertionFailed("deliberate") and the process exits non-zero.
+assert(false, "deliberate");

@@ -1,0 +1,32 @@
+# ---------- Strings: regular, raw, escapes, concat ----------
+
+# equality
+assert("abc" == "abc", "string equality");
+assert("" == "", "empty string equality");
+
+# concat with +
+assert("foo" + "bar" == "foobar", "concat");
+assert("" + "x" == "x", "concat with empty");
+
+# escape sequences
+assert("\n" != "n", "newline escape != letter");
+assert("\t" != "t", "tab escape != letter");
+assert("\"" != "", "escaped quote non-empty");
+assert("hello\nworld" != "helloworld", "embedded newline makes strings differ");
+
+# escaped-backslash followed by n is two literal chars, same as raw \n
+assert("\\n" == r"\n", "escaped-backslash + n matches raw \\n");
+assert("\\t" == r"\t", "escaped-backslash + t matches raw \\t");
+
+# raw strings preserve backslashes literally
+assert(r"hello" == "hello", "raw with no specials equals regular");
+assert(r"\n" != "\n", "raw \\n is two chars, not a newline");
+assert(r"a\tb" != "a\tb", "raw \\t is two chars, not a tab");
+# NOTE: r"C:\Users\foo" and "C:\\Users\\foo" are actually EQUAL (both resolve
+# to the same byte sequence). That's intentional: `\\` in an escaped string
+# collapses to one `\`, which is what the raw form encodes literally.
+assert(r"C:\x" == "C:\\x", "raw backslash equals escaped backslash after processing");
+
+# comparison is lexicographic
+assert("abc" < "abd", "str lt");
+assert("abc" <= "abc", "str lte equal");

@@ -1,0 +1,44 @@
+# ---------- Block expressions ----------
+
+# block yields its last expression (no semicolon on the last line)
+var x = {
+  var a = 1;
+  var b = 2;
+  a + b
+};
+assert(x == 3, "block yields last expr");
+
+# nested blocks
+var nested = {
+  var outer = {
+    10 + 5
+  };
+  outer * 2
+};
+assert(nested == 30, "nested block yields product");
+
+# block with only statements (no trailing expr) yields Unit-ish; can't assert on value,
+# but the variables inside should have run. Use a side-effect approach:
+var side = 0;
+{
+  side = 42;
+}
+assert(side == 42, "statement-only block runs its statements");
+
+# block as function body (implicit return)
+var compute = fn() {
+  var a = 3;
+  var b = 4;
+  a * b
+};
+assert(compute() == 12, "block-body fn implicit return");
+
+# mixing explicit return with implicit trailing expr
+var early = fn(check) {
+  if check {
+    return "early";
+  }
+  "late"
+};
+assert(early(true) == "early", "explicit return wins");
+assert(early(false) == "late", "trailing expr when no early return");

@@ -1,0 +1,36 @@
+# ---------- Comparisons: ==, !=, <, <=, >, >= ----------
+
+# numbers
+assert(1 == 1, "int eq");
+assert(1 != 2, "int neq");
+assert(1 < 2, "int lt");
+assert(2 <= 2, "int lte");
+assert(3 > 2, "int gt");
+assert(3 >= 3, "int gte");
+
+# cross-type numeric (Integer vs Floating)
+assert(5 == 5.0, "int == float via coercion");
+assert(5.0 >= 5, "float >= int");
+assert(10.5 > 10, "float > int");
+assert(not (5 == 5.1), "int != slightly larger float");
+
+# strings
+assert("apple" == "apple", "str eq");
+assert("apple" != "banana", "str neq");
+assert("apple" < "banana", "str lt (lexicographic)");
+assert("banana" > "apple", "str gt");
+assert("apple" <= "apple", "str lte equal");
+assert("apple" >= "apple", "str gte equal");
+
+# type mismatches compare as NOT equal (never an error)
+assert(not (10 == "10"), "int != string");
+assert(not (true == 1), "bool != int");
+assert(not (nil == 0), "nil != int");
+
+# collection equality recurses
+assert([1, 2, [3, 4]] == [1, 2, [3, 4]], "nested array eq");
+assert([1, 5.0] == [1.0, 5], "array eq with numeric coercion");
+
+var ma = %{ "x" => 10, "y" => [1, 2] };
+var mb = %{ "x" => 10.0, "y" => [1.0, 2.0] };
+assert(ma == mb, "nested map eq with coercion");

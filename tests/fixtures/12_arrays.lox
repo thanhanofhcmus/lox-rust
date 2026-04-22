@@ -1,0 +1,58 @@
+# ---------- Arrays: literal, index, assign, repeat, comprehension, builtins ----------
+
+# literal and indexing
+var a = [10, 20, 30];
+assert(a[0] == 10, "index 0");
+assert(a[1] == 20, "index 1");
+assert(a[2] == 30, "index 2");
+
+# subscript assignment
+a[1] = 99;
+assert(a[1] == 99, "subscript assign");
+assert(a[0] == 10, "neighboring element unchanged");
+
+# nested and mixed-type
+var mixed = [true, 1, "yes"];
+assert(mixed[0], "mixed-type bool");
+assert(mixed[1] == 1, "mixed-type int");
+assert(mixed[2] == "yes", "mixed-type str");
+
+# float-as-index (Floating with integer value)
+var arr = ["zero", "one", "two"];
+var idx = 2.0;
+assert(arr[idx] == "two", "float-valued integer index");
+
+# repeat syntax [:value:count]
+var zeros = [:0:5];
+assert(array_length(zeros) == 5, "repeat: length");
+assert(zeros[0] == 0, "repeat: first element");
+assert(zeros[4] == 0, "repeat: last element");
+
+# for-comprehension (no filter)
+var doubles = [for x in [1, 2, 3]: x * 2];
+assert(doubles == [2, 4, 6], "comprehension without filter");
+
+# for-comprehension with `if` filter
+var evens_doubled = [for x in [1, 2, 3, 4, 5] if x % 2 == 0: x * 10];
+assert(evens_doubled == [20, 40], "comprehension with filter");
+
+# builtins: array_length
+assert(array_length([]) == 0, "empty len");
+assert(array_length([1, 2, 3]) == 3, "len");
+
+# builtins: array_push (single and variadic, in-place)
+var p = [1, 2];
+array_push(p, 3);
+assert(p == [1, 2, 3], "push single");
+array_push(p, 4, 5);
+assert(p == [1, 2, 3, 4, 5], "push variadic");
+
+# builtins: array_pop
+var popped = array_pop(p);
+assert(popped == 5, "pop returns last");
+assert(array_length(p) == 4, "pop decreases length");
+
+# builtins: array_insert
+var ins = [1, 2, 4];
+array_insert(ins, 2, 3);
+assert(ins == [1, 2, 3, 4], "insert at index");

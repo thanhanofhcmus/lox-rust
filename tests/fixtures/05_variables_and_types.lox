@@ -1,0 +1,31 @@
+# ---------- Variables, reassignment, type annotations ----------
+
+# bare declaration — type inferred
+var a = 5;
+assert(a == 5, "inferred number");
+var b = "hi";
+assert(b == "hi", "inferred string");
+var c = true;
+assert(c, "inferred bool");
+
+# reassignment (no `var` keyword)
+a = 10;
+assert(a == 10, "reassign number");
+b = "bye";
+assert(b == "bye", "reassign string");
+
+# explicit type annotations — matching
+var n: number = 42;
+assert(n == 42, "var x: number");
+var s: str = "typed";
+assert(s == "typed", "var x: str");
+var t: bool = false;
+assert(not t, "var x: bool");
+
+# `any` annotation — permissive
+var any_val: any = 1;
+assert(any_val == 1, "any = int");
+any_val = "now a string";
+assert(any_val == "now a string", "any reassigned to str");
+any_val = [1, 2, 3];
+assert(any_val[1] == 2, "any reassigned to array");

@@ -1,0 +1,22 @@
+# ---------- Boolean logic: and, or, not ----------
+
+# `and`
+assert(true and true, "and: T and T");
+assert(not (true and false), "and: T and F");
+assert(not (false and true), "and: F and T");
+assert(not (false and false), "and: F and F");
+
+# `or`
+assert(true or true, "or: T or T");
+assert(true or false, "or: T or F");
+assert(false or true, "or: F or T");
+assert(not (false or false), "or: F or F");
+
+# `not`
+assert(not false, "not F");
+assert(not (not true), "double not");
+
+# combined with comparisons
+assert((1 < 2) and (2 < 3), "and with comparisons");
+assert((1 > 2) or (2 < 3), "or with comparisons");
+assert(not ((1 > 2) or (2 > 3)), "not ((1>2) or (2>3))");

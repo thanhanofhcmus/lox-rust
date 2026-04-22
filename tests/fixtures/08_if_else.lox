@@ -1,0 +1,53 @@
+# ---------- if / else if / else as expression ----------
+
+# if-only (truthy)
+var r1 = if true { 1 } else { 0 };
+assert(r1 == 1, "if true yields then-branch");
+
+# if-only (falsy)
+var r2 = if false { 1 } else { 0 };
+assert(r2 == 0, "if false yields else-branch");
+
+# nested comparison in condition
+var r3 = if 5 > 3 { "yes" } else { "no" };
+assert(r3 == "yes", "comparison in if cond");
+
+# else-if chain
+var grade = {
+  var score = 72;
+  if score >= 90 {
+    "A"
+  } else if score >= 80 {
+    "B"
+  } else if score >= 70 {
+    "C"
+  } else {
+    "F"
+  }
+};
+assert(grade == "C", "else-if chain picks right arm");
+
+# else-if chain falling through to else
+var edge = {
+  var n = 5;
+  if n > 100 {
+    "big"
+  } else if n > 50 {
+    "mid"
+  } else {
+    "small"
+  }
+};
+assert(edge == "small", "chain falls through to else");
+
+# nested ifs
+var nested = {
+  var a = 10;
+  var b = 20;
+  if a > 5 {
+    if b > 15 { "both" } else { "only a" }
+  } else {
+    "neither"
+  }
+};
+assert(nested == "both", "nested if-else");

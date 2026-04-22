@@ -1,0 +1,45 @@
+# ---------- when expression ----------
+
+# first truthy arm wins
+var n = 1;
+var r = when {
+  n == 0 -> "zero",
+  n == 1 -> "one",
+  n == 2 -> "two",
+};
+assert(r == "one", "when picks first truthy arm");
+
+# fallthrough via `true`
+var grade = {
+  var score = 55;
+  when {
+    score >= 90 -> "A",
+    score >= 80 -> "B",
+    score >= 70 -> "C",
+    true        -> "F",
+  }
+};
+assert(grade == "F", "when default via `true`");
+
+# arm ordering matters — first truthy wins, not the strongest match
+var first_wins = {
+  var x = 10;
+  when {
+    x > 0 -> "positive",
+    x > 5 -> "big positive",
+    true  -> "other",
+  }
+};
+assert(first_wins == "positive", "first truthy arm wins even if later is also true");
+
+# nested expressions inside arms
+var classify = fn(v) when {
+  v < 0   -> "negative",
+  v == 0  -> "zero",
+  v > 100 -> "huge",
+  true    -> "positive",
+};
+assert(classify(-3) == "negative", "when in fn: negative");
+assert(classify(0) == "zero", "when in fn: zero");
+assert(classify(42) == "positive", "when in fn: positive");
+assert(classify(500) == "huge", "when in fn: huge");

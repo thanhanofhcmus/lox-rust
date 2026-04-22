@@ -1,0 +1,34 @@
+# ---------- Chained calls, indexing, and reassignment ----------
+
+# nested array indexing
+var a2d = [[1, 2, 3], [4, 5, 6]];
+assert(a2d[0][1] == 2, "2d array index");
+assert(a2d[1][2] == 6, "2d array index 2");
+
+# chained subscript assignment (CoW path through deep_copy_reassign_object)
+var nested = [[10, 20], [30, 40]];
+nested[0][1] = 99;
+assert(nested[0][1] == 99, "2d subscript assign");
+assert(nested[0][0] == 10, "neighboring element untouched");
+assert(nested[1] == [30, 40], "other row untouched");
+
+# map containing arrays
+var mfm = %{ "nums" => [1, 2, 3], "letters" => ["a", "b", "c"] };
+assert(mfm["nums"][1] == 2, "map-of-array index");
+mfm["nums"][0] = 100;
+assert(mfm["nums"][0] == 100, "map-of-array subscript assign");
+
+# deeply chained call / index / map
+var arr_fn_a = fn() [[1, 2, 3], [4, 5, 6]];
+var fn_arr = [[], [], [0, 0, [0, arr_fn_a]]];
+var arr_fn_b = fn() [[], fn_arr];
+var map_arr = %{ "b" => arr_fn_b };
+var arr_fn_index = fn() 2;
+assert(
+  arr_fn_b()[1][2][arr_fn_index()][1]()[1][2] == 6,
+  "deep chaining: fn -> array -> array -> fn -> array"
+);
+assert(
+  map_arr["b"]()[1][arr_fn_index()][2][1]()[1][0] == 4,
+  "deep chaining: map -> fn -> array -> ..."
+);

@@ -1,0 +1,50 @@
+# ---------- Maps: literal, subscript, builtins ----------
+
+# literal + subscript get
+var m = %{ "a" => 1, "b" => 2, "c" => 3 };
+assert(m["a"] == 1, "string key lookup");
+assert(m["b"] == 2, "string key lookup 2");
+
+# missing key returns nil
+assert(m["nope"] == nil, "missing key yields nil");
+
+# subscript set
+m["d"] = 4;
+assert(m["d"] == 4, "subscript assignment adds new key");
+m["a"] = 99;
+assert(m["a"] == 99, "subscript assignment overwrites");
+
+# mixed-type keys (integer, float, bool, string)
+var registry = %{
+    "name" => "Gemini",
+    100 => "Centurion",
+    200 => 300,
+    200.5 => 400,
+    true => "Active",
+};
+assert(registry["name"] == "Gemini", "string key");
+assert(registry[100] == "Centurion", "integer key");
+assert(registry[200] == 300, "integer key 200");
+assert(registry[200.5] == 400, "float key");
+assert(registry[true] == "Active", "bool key");
+assert(registry[false] == nil, "missing bool key yields nil");
+
+# builtins: map_length
+assert(map_length(%{}) == 0, "empty map length");
+assert(map_length(m) == 4, "map length");
+
+# builtins: map_keys / map_values
+var km = %{ "a" => 1, "b" => 2, "c" => 3 };
+assert(map_keys(km) == ["a", "b", "c"], "map_keys (BTreeMap ordering)");
+assert(map_values(km) == [1, 2, 3], "map_values (BTreeMap ordering)");
+
+# builtins: map_insert returns the previous value when key existed
+var old = map_insert(km, "a", 99);
+assert(old == 1, "map_insert returns old value");
+assert(km["a"] == 99, "map_insert updates value");
+
+# builtins: map_remove returns the value
+var removed = map_remove(km, "b");
+assert(removed == 2, "map_remove returns removed value");
+assert(map_length(km) == 2, "map_remove decreases length");
+assert(km["b"] == nil, "removed key now yields nil");

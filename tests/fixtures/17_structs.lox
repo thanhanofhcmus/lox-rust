@@ -1,0 +1,77 @@
+# ---------- Structs: decl, literal, disposal, GC, field read ----------
+# Dot member access (read) is now implemented; struct field assignment
+# (`p.x = y`) and struct equality are still pending.
+# A panic in heap disposal or a dangling StrId after GC will abort the
+# process and fail the fixture.
+
+# basic decl + literal + field read
+struct Point { x: number, y: number }
+var p = Point { x = 1, y = 2 };
+assert(p.x == 1, "field read x");
+assert(p.y == 2, "field read y");
+
+# reassignment drops the old struct — exercises shallow_dispose_value::Struct
+p = Point { x = 10, y = 20 };
+assert(p.x == 10, "field read after reassignment");
+
+# block-scoped struct: leaving the block pops the scope and disposes the struct
+{
+    var tmp = Point { x = 99, y = 99 };
+    assert(tmp.x == 99, "block-local struct field read");
+}
+
+# struct containing a string field: after GC, the string must still be
+# reachable via the struct. If mark() fails to mark string field values,
+# print(p_str) below will hit StringNotFoundOnHeap and fail the fixture.
+struct Named { label }
+var p_str = Named { label = "hello-struct-field" };
+_dbg_gc_mark_sweep();
+print(p_str);  # Named{label = hello-struct-field}
+
+# chained field access: struct within a struct
+# note: user-defined struct names aren't valid type annotations yet
+# (parse_type_node only accepts built-ins), so we use `any` for the
+# struct-typed field. Dot access on Any is a gradual-typing passthrough.
+struct Box { center: any }
+var b = Box { center = Point { x = 10, y = 20 } };
+assert(b.center.x == 10, "chained field read: outer.inner.field");
+assert(b.center.y == 20, "chained field read (second field)");
+
+# mixed chain: struct field then array index
+struct Pair { items }
+var pair = Pair { items = [100, 200, 300] };
+assert(pair.items[0] == 100, "struct field then array index");
+assert(pair.items[2] == 300, "struct field then array index (end)");
+
+# mixed chain: array index then struct field
+var ps = [Point { x = 5, y = 6 }, Point { x = 7, y = 8 }];
+assert(ps[0].x == 5, "array index then struct field");
+assert(ps[1].y == 8, "array index then struct field (second elem)");
+
+# struct containing an array field: recursive disposal on scope exit
+# (leaving the block triggers shallow_dispose_value on the struct, which
+# must recurse into the array field without crashing)
+struct Bag { items }
+{
+    var bag = Bag { items = [1, 2, 3] };
+    assert(bag.items[1] == 2, "array field readable inside block");
+}
+
+# struct inside an array literal: array owns the struct handles
+var points = [Point { x = 1, y = 1 }, Point { x = 2, y = 2 }, Point { x = 3, y = 3 }];
+assert(array_length(points) == 3, "array of structs has correct length");
+assert(points[1].x == 2, "field read on indexed struct");
+
+# drop the array holding structs; structs should be disposed recursively
+points = [];
+assert(array_length(points) == 0, "array emptied after reassignment");
+
+# force GC after everything to make sure nothing crashes
+_dbg_gc_mark_sweep();
+
+# read a field AFTER a GC cycle to ensure structs survive mark-sweep
+assert(b.center.x == 10, "field readable after GC");
+assert(pair.items[0] == 100, "array field readable after GC");
+
+# sentinel: if we reach here, all disposal / GC / read paths ran cleanly
+assert(true, "all struct paths completed");

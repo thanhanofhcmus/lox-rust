@@ -1,0 +1,38 @@
+# ---------- for-in loop over array ----------
+
+# basic sum
+var total = 0;
+for x in [1, 2, 3, 4, 5] {
+  total = total + x;
+}
+assert(total == 15, "for-in sums array");
+
+# empty array — body never runs
+var touched = false;
+for item in [] {
+  touched = true;
+}
+assert(not touched, "for-in over empty array is a no-op");
+
+# iterating strings in an array
+var parts = "";
+for s in ["a", "b", "c"] {
+  parts = parts + s;
+}
+assert(parts == "abc", "for-in over strings");
+
+# variable bound is readonly in the body — reassigning a different name works
+var seen = [];
+for v in [10, 20, 30] {
+  array_push(seen, v);
+}
+assert(seen == [10, 20, 30], "for-in populates external array via push");
+
+# nested for loops
+var pairs = 0;
+for a in [1, 2, 3] {
+  for b in [10, 20] {
+    pairs = pairs + 1;
+  }
+}
+assert(pairs == 6, "nested for loops run body n*m times");

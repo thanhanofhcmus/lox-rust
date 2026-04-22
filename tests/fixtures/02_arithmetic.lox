@@ -1,0 +1,28 @@
+# ---------- Arithmetic & type promotion ----------
+
+# basic ops
+assert(2 + 3 == 5, "addition");
+assert(10 - 4 == 6, "subtraction");
+assert(6 * 7 == 42, "multiplication");
+assert(10 % 3 == 1, "modulo");
+
+# exact integer division stays integer; inexact promotes to floating
+assert(10 / 2 == 5, "exact int/int -> int");
+assert(5 / 2 == 2.5, "inexact int/int -> float");
+
+# mixed-type division is always floating
+assert(10.0 / 4 == 2.5, "float / int -> float");
+assert(7 / 2.0 == 3.5, "int / float -> float");
+
+# unary minus
+assert(-5 == -5, "unary minus on literal");
+var x = 10;
+assert(-x == -10, "unary minus on variable");
+assert(- -5 == 5, "double negation");
+
+# precedence: * binds tighter than +
+assert(1 + 2 * 3 == 7, "multiplication before addition");
+assert((1 + 2) * 3 == 9, "parens override precedence");
+
+# float comparisons with delta
+assert(0.1 + 0.2 == 0.3, "float equality uses delta");

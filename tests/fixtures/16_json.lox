@@ -1,0 +1,17 @@
+# ---------- JSON roundtrip ----------
+
+# scalar roundtrip
+assert(from_json(to_json(42)) == 42, "int roundtrip");
+assert(from_json(to_json("hello")) == "hello", "string roundtrip");
+assert(from_json(to_json(true)) == true, "bool roundtrip");
+
+# array roundtrip (nested)
+var arr = [1, 2, [3, 4, [5]]];
+assert(from_json(to_json(arr)) == arr, "nested array roundtrip");
+
+# map roundtrip (string keys only — serde JSON object keys)
+var m = %{ "a" => 1, "b" => [2, 3], "c" => "nested" };
+var back = from_json(to_json(m));
+assert(back["a"] == 1, "map roundtrip: scalar value");
+assert(back["b"] == [2, 3], "map roundtrip: array value");
+assert(back["c"] == "nested", "map roundtrip: string value");

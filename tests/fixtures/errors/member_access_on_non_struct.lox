@@ -1,0 +1,4 @@
+# Dot access on a non-struct type — must fail at typecheck.
+var n: number = 1;
+var x = n.foo;
+assert(false, "should not reach: dot on non-struct must have errored first");

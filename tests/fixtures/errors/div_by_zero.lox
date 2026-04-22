@@ -1,0 +1,3 @@
+# Deliberate division-by-zero — must error before the guard assert runs.
+var x = 1 / 0;
+assert(false, "should not reach: division by zero must have errored first");

@@ -1,0 +1,5 @@
+# Typechecker allows dot access on Any-typed value; runtime must raise
+# MemberAccessOnNonStruct when the value isn't actually a struct.
+var n: any = 1;
+var x = n.foo;
+assert(false, "should not reach: runtime must have errored on non-struct member access");
