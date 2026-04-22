@@ -12,6 +12,10 @@ pub enum TypeNode {
     BuiltIn(TypeId),
     Array(Box<TypeNode>),
     // Identifier(IdentifierNode),
+    Map {
+        key: Box<TypeNode>,
+        value: Box<TypeNode>,
+    },
 }
 
 #[derive(Debug, Clone)]

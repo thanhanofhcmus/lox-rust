@@ -93,13 +93,15 @@ impl<'cl> TypeChecker<'cl> {
         let expr = self.convert_expr(expr)?;
 
         let type_id = match explicit_type_id {
-            None => {
-                // handle map any as well
-                if expr.extra == TypeId::ARRAY_UNTYPED { TypeId::ARRAY_ANY } else { expr.extra }
-            }
+            None => match expr.extra {
+                TypeId::ARRAY_UNTYPED => TypeId::ARRAY_ANY,
+                TypeId::MAP_UNTYPED => TypeId::MAP_ANY_ANY,
+                v => v,
+            },
             Some(TypeId::ANY) => TypeId::ANY,
             Some(v) if v == expr.extra => v,
             Some(v) if v.is_array() && expr.extra == TypeId::ARRAY_UNTYPED => v,
+            Some(v) if v.is_map() && expr.extra == TypeId::MAP_UNTYPED => v,
             Some(v) => {
                 return Err(TypecheckError::ExplicitTypeMismatch(iden, v, expr.extra));
             }
@@ -122,6 +124,14 @@ impl<'cl> TypeChecker<'cl> {
             TypeNode::Array(inner_type_node) => {
                 let elem = self.extract_type_node_id(inner_type_node);
                 self.environment.declare_type(&Type::Array { elem })
+            }
+            TypeNode::Map { key, value } => {
+                let key_type_id = self.extract_type_node_id(key);
+                let value_type_id = self.extract_type_node_id(value);
+                self.environment.declare_type(&Type::Map {
+                    key: key_type_id,
+                    value: value_type_id,
+                })
             }
         }
     }

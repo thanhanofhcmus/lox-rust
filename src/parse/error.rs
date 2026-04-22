@@ -37,6 +37,11 @@ pub enum ParseError {
         "Parser recursion limit ({0}) exceeded — expression is nested too deeply to parse safely."
     )]
     RecursionLimitExceeded(usize),
+
+    #[error(
+        "Invalid map key type: only `any`, `bool`, `number`, `str`, and `nil` are allowed as map keys."
+    )]
+    InvalidMapKeyType(Span),
 }
 
 impl ParseError {
@@ -53,6 +58,7 @@ impl ParseError {
             Unfinished(_, s) => s.to_start_row_col(input),
             ReassignRootIsNotAnIdentifier => (0, 0),
             RecursionLimitExceeded(_) => (0, 0),
+            InvalidMapKeyType(s) => s.to_start_row_col(input),
         }
     }
 

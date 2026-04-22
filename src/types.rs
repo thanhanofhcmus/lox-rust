@@ -26,18 +26,25 @@ impl TypeId {
     pub const ARRAY_ANY: Self = Self(Self::CATEGORY_ARRAY | 1);
     pub const ARRAY_UNTYPED: Self = Self(Self::CATEGORY_ARRAY | 2);
 
+    pub const MAP_UNTYPED: Self = Self(Self::CATEGORY_MAP | 1);
+    pub const MAP_ANY_ANY: Self = Self(Self::CATEGORY_MAP | 2);
+
     pub const FUNCTION_ANY: Self = Self(Self::CATEGORY_FUNCTION | 1);
 
     const NEXT_IDS: [usize; 5] = [
         7, // Scalar
         3, // Array
-        1, // Map
+        3, // Map
         2, // Function
         1, // Struct
     ];
 
     pub fn is_array(&self) -> bool {
         (self.0 & !Self::ID_MASK) == Self::CATEGORY_ARRAY
+    }
+
+    pub fn is_map(&self) -> bool {
+        (self.0 & !Self::ID_MASK) == Self::CATEGORY_MAP
     }
 }
 
@@ -86,6 +93,11 @@ pub enum Type {
 impl Type {
     pub const ARRAY_ANY: Self = Self::Array { elem: TypeId::ANY };
 
+    pub const MAP_ANY_ANY: Self = Self::Map {
+        key: TypeId::ANY,
+        value: TypeId::ANY,
+    };
+
     pub const FUNCTION_ANY: Self = Self::Function {
         params: vec![],
         variadic: Some(TypeId::ANY),
@@ -104,6 +116,9 @@ pub struct TypeInterner {
 
 impl TypeInterner {
     pub fn new() -> Self {
+        // The TypeId::*_UNTYPED variants are deliberately left out.
+        // They do not have a type representation and cannot be interned as an existing type.
+
         let id_to_type = HashMap::from([
             (TypeId::ANY, Type::Any),
             (TypeId::BOOL, Type::Bool),
@@ -112,6 +127,7 @@ impl TypeInterner {
             (TypeId::UNIT, Type::Unit),
             (TypeId::NIL, Type::Nil),
             (TypeId::ARRAY_ANY, Type::ARRAY_ANY),
+            (TypeId::MAP_ANY_ANY, Type::MAP_ANY_ANY),
             (TypeId::FUNCTION_ANY, Type::FUNCTION_ANY),
         ]);
 
@@ -175,7 +191,7 @@ impl TypeInterner {
             Some(Type::Array { elem }) => format!("[{}]", self.generate_readable_name(sb, *elem)),
             Some(Type::Map { key, value }) => {
                 format!(
-                    "%{{{}, {}}}",
+                    "%{{{} => {}}}",
                     self.generate_readable_name(sb, *key),
                     self.generate_readable_name(sb, *value)
                 )

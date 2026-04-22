@@ -84,6 +84,26 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
         state.consume_token(Token::RSquareParen)?;
         return Ok(TypeNode::Array(Box::new(inner_type_node)));
     }
+    if state.peek(&[Token::PercentLPointParent]) {
+        state.consume_token(Token::PercentLPointParent)?;
+        let key_start = state.get_curr()?.span;
+        let key = parse_type_node(state)?;
+        if !matches!(
+            &key,
+            TypeNode::BuiltIn(
+                TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
+            )
+        ) {
+            return Err(ParseError::InvalidMapKeyType(key_start));
+        }
+        state.consume_token(Token::RFatArrow)?;
+        let value = parse_type_node(state)?;
+        state.consume_token(Token::RPointParen)?;
+        return Ok(TypeNode::Map {
+            key: Box::new(key),
+            value: Box::new(value),
+        });
+    }
 
     let type_item = *state.get_curr()?;
     state.advance();
@@ -1102,6 +1122,60 @@ mod tests {
             }
             other => panic!("expected Declare, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_declaration_with_map_annotation() {
+        let ast = parse_str("var m: %{str => number} = %{};");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => match type_ {
+                Some(TypeNode::Map { key, value }) => {
+                    assert_eq!(**key, TypeNode::BuiltIn(TypeId::STR));
+                    assert_eq!(**value, TypeNode::BuiltIn(TypeId::NUMBER));
+                }
+                other => panic!("expected Map annotation, got {other:?}"),
+            },
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_map_annotation_any_key_is_allowed() {
+        let ast = parse_str("var m: %{any => any} = %{};");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => match type_ {
+                Some(TypeNode::Map { key, value }) => {
+                    assert_eq!(**key, TypeNode::BuiltIn(TypeId::ANY));
+                    assert_eq!(**value, TypeNode::BuiltIn(TypeId::ANY));
+                }
+                other => panic!("expected Map annotation, got {other:?}"),
+            },
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_map_annotation_rejects_array_key() {
+        let err = parse_err("var m: %{[number] => number} = %{};");
+        assert!(
+            matches!(err, ParseError::InvalidMapKeyType(_)),
+            "expected InvalidMapKeyType, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_map_annotation_rejects_nested_map_key() {
+        let err = parse_err("var m: %{%{str => str} => number} = %{};");
+        assert!(
+            matches!(err, ParseError::InvalidMapKeyType(_)),
+            "expected InvalidMapKeyType, got {err:?}"
+        );
     }
 
     // ---------- blocks ----------
