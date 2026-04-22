@@ -389,6 +389,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             ClauseCase::Group(node) => self.interpret_clause_expr(node),
             ClauseCase::FnCall(node) => self.interpret_fn_call(node),
             ClauseCase::Subscription(node) => self.interpret_subscription(node),
+            ClauseCase::MemberAccess(node) => self.interpret_member_access(node),
             ClauseCase::Identifier(node) => self
                 .environment
                 .get_variable_all_scope(node)
@@ -500,28 +501,15 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         node: &StructLiteralNode<TypeId>,
     ) -> Result<Value, InterpretError> {
         let id = node.iden.id;
-
-        let type_id = self
-            .type_interner
-            .get_type_id_by_id(id)
-            .ok_or(InterpretError::StructTypeNotRegistered(node.iden))?;
-
         // compare field type with actual value
         let mut fields = HashMap::new();
         for field_literal in &node.fields {
             let field_value = self.interpret_clause_expr(&field_literal.value)?;
-            let field = StructField {
-                // TODO: add type id
-                value: field_value,
-            };
+            let field = StructField { value: field_value };
             fields.insert(field_literal.iden.id, field);
         }
 
-        let struct_val = Struct {
-            id,
-            type_id,
-            fields,
-        };
+        let struct_val = Struct { id, fields };
 
         Ok(self.environment.insert_struct_variable(struct_val))
     }
@@ -540,6 +528,22 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let indexer = self.interpret_clause_expr(&node.indexer)?;
         let indexee = self.interpret_clause_expr(&node.indexee)?;
         indexer.get_by_subscription(indexee, self.environment)
+    }
+
+    fn interpret_member_access(
+        &mut self,
+        node: &MemberAccessNode<TypeId>,
+    ) -> Result<Value, InterpretError> {
+        let object = self.interpret_clause_expr(&node.object)?;
+        let Value::Struct(handle) = object else {
+            return Err(InterpretError::MemberAccessOnNonStruct(object, node.field));
+        };
+        let struct_ = self.environment.get_struct(handle)?;
+        let field = struct_
+            .fields
+            .get(&node.field.id)
+            .ok_or(InterpretError::StructFieldNotFound(node.field))?;
+        Ok(field.value)
     }
 
     fn interpret_fn_call(&mut self, node: &FnCallNode<TypeId>) -> Result<Value, InterpretError> {

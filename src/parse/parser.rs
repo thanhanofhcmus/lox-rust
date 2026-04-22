@@ -395,8 +395,17 @@ fn parse_pratt_infix(
 ) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
-        // TODO: support member/module access via dot notation; requires a dot-access AST node
-        Token::Dot => unimplemented!(),
+        Token::Dot => {
+            state.consume_token(li.token)?;
+            let field_li = state.consume_token(Token::Identifier)?;
+            let field = state.create_identifier(field_li);
+            Ok(ClauseNode::new(ClauseCase::MemberAccess(
+                MemberAccessNode {
+                    object: Box::new(lhs),
+                    field,
+                },
+            )))
+        }
 
         Token::LSquareParen => {
             state.consume_token(li.token)?;
@@ -1312,6 +1321,65 @@ mod tests {
             }
             other => panic!("expected StructLiteral, got {other:?}"),
         }
+    }
+
+    // ---------- member access (dot) ----------
+
+    #[test]
+    fn parse_member_access_simple() {
+        let ast = parse_str("p.x;");
+        match first_clause(&ast) {
+            ClauseCase::MemberAccess(node) => match &node.object.case {
+                ClauseCase::Identifier(_) => {}
+                other => panic!("expected Identifier as object, got {other:?}"),
+            },
+            other => panic!("expected MemberAccess, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_member_access_chained() {
+        let ast = parse_str("a.b.c;");
+        match first_clause(&ast) {
+            ClauseCase::MemberAccess(outer) => match &outer.object.case {
+                ClauseCase::MemberAccess(inner) => match &inner.object.case {
+                    ClauseCase::Identifier(_) => {}
+                    other => panic!("expected Identifier at innermost, got {other:?}"),
+                },
+                other => panic!("expected MemberAccess at middle, got {other:?}"),
+            },
+            other => panic!("expected MemberAccess at outer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_member_then_subscript() {
+        let ast = parse_str("p.items[0];");
+        match first_clause(&ast) {
+            ClauseCase::Subscription(sub) => match &sub.indexer.case {
+                ClauseCase::MemberAccess(_) => {}
+                other => panic!("expected MemberAccess inside subscript, got {other:?}"),
+            },
+            other => panic!("expected Subscription, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_subscript_then_member() {
+        let ast = parse_str("arr[0].x;");
+        match first_clause(&ast) {
+            ClauseCase::MemberAccess(m) => match &m.object.case {
+                ClauseCase::Subscription(_) => {}
+                other => panic!("expected Subscription inside member, got {other:?}"),
+            },
+            other => panic!("expected MemberAccess, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_member_access_requires_identifier_after_dot() {
+        // `p.` with nothing after should fail
+        parse_err("p.;");
     }
 
     // ---------- struct literal disambiguation ----------

@@ -154,12 +154,19 @@ pub enum ClauseCase<T> {
     Identifier(Identifier),
     Subscription(SubscriptionNode<T>),
     FnCall(FnCallNode<T>),
+    MemberAccess(MemberAccessNode<T>),
 }
 
 #[derive(Debug, Clone)]
 pub struct SubscriptionNode<T> {
     pub indexer: Box<ClauseNode<T>>,
     pub indexee: Box<ClauseNode<T>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MemberAccessNode<T> {
+    pub object: Box<ClauseNode<T>>,
+    pub field: Identifier,
 }
 
 #[derive(Debug, Clone)]

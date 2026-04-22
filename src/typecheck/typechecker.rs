@@ -95,7 +95,7 @@ impl<'cl> TypeChecker<'cl> {
         let type_id = match explicit_type_id {
             None => {
                 // handle map any as well
-                if expr.extra == TypeId::ARRAY_UNTYPED { TypeId::ARRAY_ANY } else { TypeId::ANY }
+                if expr.extra == TypeId::ARRAY_UNTYPED { TypeId::ARRAY_ANY } else { expr.extra }
             }
             Some(TypeId::ANY) => TypeId::ANY,
             Some(v) if v == expr.extra => v,
@@ -368,6 +368,10 @@ impl<'cl> TypeChecker<'cl> {
                 let (type_id, case) = self.convert_subscription(sub)?;
                 (type_id, ClauseCase::Subscription(case))
             }
+            ClauseCase::MemberAccess(node) => {
+                let (type_id, case) = self.convert_member_access(node)?;
+                (type_id, ClauseCase::MemberAccess(case))
+            }
             ClauseCase::FnCall(call) => {
                 let (type_id, case) = self.convert_fn_call(call)?;
                 (type_id, ClauseCase::FnCall(case))
@@ -545,7 +549,7 @@ impl<'cl> TypeChecker<'cl> {
                         .fields
                         .iter()
                         .find(|f| f.id == provided.iden.id)
-                        .ok_or(TypecheckError::StructFieldNameMismatch(
+                        .ok_or(TypecheckError::StructFieldNotExist(
                             struct_type_id,
                             provided.iden,
                         ))?;
@@ -644,6 +648,47 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
+    fn convert_member_access(
+        &mut self,
+        node: MemberAccessNode<()>,
+    ) -> Result<(TypeId, MemberAccessNode<TypeId>), TypecheckError> {
+        let object = self.convert_clause(*node.object)?;
+        let object_type_id = object.extra;
+
+        // gradual typing: Any is the escape hatch — defer the field check to runtime
+        let field_type_id = if object_type_id == TypeId::ANY {
+            TypeId::ANY
+        } else {
+            let object_type = self
+                .environment
+                .lookup_type(object_type_id)
+                .ok_or(TypecheckError::TypeIsNotDeclared(object_type_id))?;
+
+            let struct_type = match object_type {
+                Type::Struct(struct_type) => struct_type,
+                _ => return Err(TypecheckError::TypeIsNotStruct(object_type_id)),
+            };
+
+            match struct_type.fields.iter().find(|f| f.id == node.field.id) {
+                Some(v) => v.type_,
+                None => {
+                    return Err(TypecheckError::StructFieldNotExist(
+                        object_type_id,
+                        node.field,
+                    ));
+                }
+            }
+        };
+
+        Ok((
+            field_type_id,
+            MemberAccessNode {
+                object: Box::new(object),
+                field: node.field,
+            },
+        ))
+    }
+
     fn convert_subscription(
         &mut self,
         node: SubscriptionNode<()>,
@@ -727,7 +772,7 @@ impl<'cl> TypeChecker<'cl> {
                 return_,
                 variadic,
             } => (params, *variadic, *return_),
-            _ => return Err(TypecheckError::TypeIsNoCallable(caller_type_id)),
+            _ => return Err(TypecheckError::TypeIsNotCallable(caller_type_id)),
         };
 
         // TODO: variadic arg checking is broken — outer and inner both check
@@ -1224,7 +1269,7 @@ mod tests {
     fn struct_field_name_mismatch_errors() {
         let err = typecheck_str("struct Point { x: number } var p = Point { z = 1 };").unwrap_err();
         assert!(
-            matches!(err, TypecheckError::StructFieldNameMismatch(_, _)),
+            matches!(err, TypecheckError::StructFieldNotExist(_, _)),
             "expected StructFieldNameMismatch, got {err:?}"
         );
     }
@@ -1255,6 +1300,52 @@ mod tests {
         // A field with `any` annotation accepts any value type.
         typecheck_str("struct Bag { item: any } var b = Bag { item = 42 };").unwrap();
         typecheck_str("struct Bag { item: any } var b = Bag { item = \"hello\" };").unwrap();
+    }
+
+    // ---------- member access ----------
+
+    #[test]
+    fn member_access_on_known_struct_typechecks() {
+        typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.x;").unwrap();
+    }
+
+    #[test]
+    fn member_access_unknown_field_errors() {
+        let err =
+            typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.z;").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::StructFieldNotExist(_, _)),
+            "expected StructFieldNotExist, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn member_access_on_non_struct_errors() {
+        let err = typecheck_str("var n: number = 1; n.x;").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::TypeIsNotStruct(_)),
+            "expected TypeIsNotStruct, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn member_access_on_any_is_permissive() {
+        // gradual-typing escape hatch: Any-typed object defers field check to runtime
+        typecheck_str("var p: any = 1; p.x;").unwrap();
+    }
+
+    #[test]
+    fn member_access_chained_typechecks() {
+        // Note: user-defined struct names aren't valid in type annotations yet
+        // (see parse_type_node), so we use `any` for the nested-struct field.
+        // Dot access on Any is a typecheck-level passthrough.
+        typecheck_str(
+            "struct Inner { v: number } \
+             struct Outer { inner: any } \
+             var o = Outer { inner = Inner { v = 42 } }; \
+             o.inner.v;",
+        )
+        .unwrap();
     }
 
     // ---------- block types ----------

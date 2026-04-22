@@ -115,10 +115,11 @@ pub enum InterpretError {
     #[error("Assertion failed: {0}")]
     AssertionFailed(String),
 
-    #[error(
-        "Internal: struct type `{0:?}` was accepted by the typechecker but is not registered in the interpreter's type interner"
-    )]
-    StructTypeNotRegistered(Identifier),
+    #[error("Value `{0:?}` is not a struct; cannot access member `{1:?}`")]
+    MemberAccessOnNonStruct(Value, Identifier),
+
+    #[error("Struct value does not have field `{0:?}`")]
+    StructFieldNotFound(Identifier),
 }
 
 impl InterpretError {
@@ -265,9 +266,15 @@ impl InterpretError {
             Self::AssertionFailed(msg) => {
                 format!("Assertion failed: {msg}")
             }
-            Self::StructTypeNotRegistered(iden) => {
+            Self::MemberAccessOnNonStruct(val, iden) => {
                 format!(
-                    "Internal error: struct type '{}' was accepted by the typechecker but is not registered in the interpreter's type interner.",
+                    "`{val:?}` is not a struct; cannot access member '{}'.",
+                    sb.get_or_unknown(iden.id)
+                )
+            }
+            Self::StructFieldNotFound(iden) => {
+                format!(
+                    "Struct value does not have a field named '{}'.",
                     sb.get_or_unknown(iden.id)
                 )
             }

@@ -26,7 +26,7 @@ pub enum TypecheckError {
     IndexOpTypeMismatch(TypeId, TypeId),
 
     #[error("The type `{0:?}` is not a callable")]
-    TypeIsNoCallable(TypeId),
+    TypeIsNotCallable(TypeId),
 
     #[error("Callable `{0:?}` accepts {1} number of arguments but received {2}")]
     WrongNumberOfArgument(TypeId, usize, usize),
@@ -49,11 +49,14 @@ pub enum TypecheckError {
     #[error("Internal: Type with id {0:?} should have been declared but not found")]
     TypeIsNotDeclared(TypeId),
 
+    #[error("The type `{0:?}` is not a struct")]
+    TypeIsNotStruct(TypeId),
+
     #[error("Struct `{0:?}` expects {1} field(s) but {2} were provided")]
     StructFieldCountMismatch(TypeId, usize, usize),
 
     #[error("Struct `{0:?}` has no field '{:?}'", _1.id)]
-    StructFieldNameMismatch(TypeId, Identifier),
+    StructFieldNotExist(TypeId, Identifier),
 
     #[error("Field of struct `{0:?}` expects type `{1:?}` but got `{2:?}`")]
     StructFieldTypeMismatch(TypeId, TypeId, TypeId),
@@ -121,7 +124,7 @@ impl TypecheckError {
                 interner.generate_readable_name(sb, *indexee_type_id)
             ),
 
-            Self::TypeIsNoCallable(caller_type_id) => format!(
+            Self::TypeIsNotCallable(caller_type_id) => format!(
                 "The type `{}` is not a function or built-in function.",
                 interner.generate_readable_name(sb, *caller_type_id)
             ),
@@ -187,7 +190,15 @@ impl TypecheckError {
                 )
             }
 
-            Self::TypeIsNotDeclared(_) => self.to_string(),
+            Self::TypeIsNotDeclared(type_id) => format!(
+                "Type with id {} should have been declared but not found.",
+                interner.generate_readable_name(sb, *type_id),
+            ),
+
+            Self::TypeIsNotStruct(type_id) => format!(
+                "The type `{}` is not a struct.",
+                interner.generate_readable_name(sb, *type_id)
+            ),
 
             Self::StructFieldCountMismatch(struct_type_id, expected, actual) => format!(
                 "Struct `{}` expects {} field(s) but {} were provided.",
@@ -196,7 +207,7 @@ impl TypecheckError {
                 actual,
             ),
 
-            Self::StructFieldNameMismatch(struct_type_id, node) => format!(
+            Self::StructFieldNotExist(struct_type_id, node) => format!(
                 "Struct `{}` has no field '{:?}'.",
                 interner.generate_readable_name(sb, *struct_type_id),
                 sb.get_or_unknown(node.id),
@@ -218,11 +229,11 @@ impl TypecheckError {
 
     fn get_source_start(&self, input: &str) -> (usize, usize) {
         match self {
-            Self::ExplicitTypeMismatch(node, _, _) => node.span.to_start_row_col(input),
-            Self::UndefinedIdentifier(node) => node.span.to_start_row_col(input),
-            Self::DuplicateDeclaration(node) => node.span.to_start_row_col(input),
-            Self::StructFieldNameMismatch(_, node) => node.span.to_start_row_col(input),
-            Self::DuplicateStructLiteralField(node) => node.span.to_start_row_col(input),
+            Self::ExplicitTypeMismatch(node, _, _)
+            | Self::UndefinedIdentifier(node)
+            | Self::DuplicateDeclaration(node)
+            | Self::StructFieldNotExist(_, node)
+            | Self::DuplicateStructLiteralField(node) => node.span.to_start_row_col(input),
             // Default to start of file if the variant doesn't carry a specific span
             _ => (1, 1),
         }

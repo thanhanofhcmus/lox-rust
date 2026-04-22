@@ -27,15 +27,12 @@ pub type Map = BTreeMap<MapKey, Value>;
 
 #[derive(Debug, Clone)]
 pub struct StructField {
-    // pub type_id: TypeId,
     pub value: Value,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub id: Id,
-    #[allow(dead_code)]
-    pub type_id: TypeId,
     pub fields: HashMap<Id, StructField>,
 }
 
