@@ -166,7 +166,30 @@ impl Value {
                 Ok(true)
             }
 
-            // TODO: Handle structs comparision
+            (Struct(l_handle), Struct(r_handle)) => {
+                if l_handle == r_handle {
+                    return Ok(true);
+                }
+                let l_struct = env.get_struct(*l_handle)?;
+                let r_struct = env.get_struct(*r_handle)?;
+                // nominal typing: distinct struct types are never equal
+                if l_struct.id != r_struct.id {
+                    return Ok(false);
+                }
+                if l_struct.fields.len() != r_struct.fields.len() {
+                    return Ok(false);
+                }
+                for (field_id, l_field) in l_struct.fields.iter() {
+                    let Some(r_field) = r_struct.fields.get(field_id) else {
+                        return Ok(false);
+                    };
+                    if !(l_field.value.deep_eq(&r_field.value, env)?) {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+
             _ => Ok(false),
         }
     }

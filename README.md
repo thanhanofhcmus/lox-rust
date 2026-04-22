@@ -219,10 +219,14 @@ print(b.items[1]);     # mixed chain: struct field -> array index
 
 > Known limitations:
 > - Field write (`p.x = 5`) is not yet implemented — only read access works.
-> - Struct equality is undefined today: `p1 == p2` always returns `false`.
 > - User-defined struct names are **not yet valid in type annotations**. Built-in
 >   types (`any`, `bool`, `number`, `str`) are; for struct-typed fields, use
 >   `any` as a placeholder (e.g. `struct Box { center: any }`).
+
+Struct equality (`==`) is nominal and recursive: two values of the same
+struct type are equal iff every field is equal (recursing through nested
+structs, arrays, and maps). Values of different struct types are never
+equal, even with identical field names and values.
 
 ### Imports
 

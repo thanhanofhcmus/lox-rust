@@ -73,5 +73,46 @@ _dbg_gc_mark_sweep();
 assert(b.center.x == 10, "field readable after GC");
 assert(pair.items[0] == 100, "array field readable after GC");
 
-# sentinel: if we reach here, all disposal / GC / read paths ran cleanly
+# ---------- struct equality (deep_eq) ----------
+
+# same handle: trivially equal
+var eq1 = Point { x = 1, y = 2 };
+assert(eq1 == eq1, "struct equals itself");
+
+# structurally-equal distinct instances
+var eq2a = Point { x = 3, y = 4 };
+var eq2b = Point { x = 3, y = 4 };
+assert(eq2a == eq2b, "distinct instances with equal fields are equal");
+
+# differ in one field
+var neq = Point { x = 3, y = 5 };
+assert((eq2a == neq) == false, "differing field makes structs unequal");
+
+# field order in literal must not matter
+var reorder1 = Point { x = 7, y = 8 };
+var reorder2 = Point { y = 8, x = 7 };
+assert(reorder1 == reorder2, "field order in literal is irrelevant");
+
+# nominal typing: distinct struct types never equal, even with identical fields
+struct PointB { x: number, y: number }
+var nom_a = Point  { x = 1, y = 2 };
+var nom_b = PointB { x = 1, y = 2 };
+assert((nom_a == nom_b) == false, "different struct types are not equal");
+
+# recursive equality: struct with nested struct field
+var nest_a = Box { center = Point { x = 9, y = 9 } };
+var nest_b = Box { center = Point { x = 9, y = 9 } };
+assert(nest_a == nest_b, "nested struct equality recurses");
+
+var nest_c = Box { center = Point { x = 9, y = 10 } };
+assert((nest_a == nest_c) == false, "nested struct inequality recurses");
+
+# recursive equality: struct with array field
+var arr_a = Bag { items = [1, 2, 3] };
+var arr_b = Bag { items = [1, 2, 3] };
+var arr_c = Bag { items = [1, 2, 4] };
+assert(arr_a == arr_b, "struct with equal array fields is equal");
+assert((arr_a == arr_c) == false, "struct with differing array fields is not equal");
+
+# sentinel: if we reach here, all disposal / GC / read / eq paths ran cleanly
 assert(true, "all struct paths completed");
