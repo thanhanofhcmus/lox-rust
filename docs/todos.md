@@ -1,6 +1,10 @@
 ## Todos:
-- Struct runtime — literal construction and heap disposal/mark now work (see `tests/fixtures/17_structs.lox`). Still missing: struct equality in `Value::deep_eq` (currently `_ => Ok(false)`), and `Statement::StructDecl` is still a runtime no-op (parser+typechecker do the work; interpreter has nothing to add yet).
-- Dot member access — `Token::Dot` is `unimplemented!()` at `parse/parser.rs:379`; needed for both struct field access (`p.x`) and module member access (`module.name`). Biggest gap preventing structs from being actually useful.
+- Struct runtime — literal construction, heap disposal/mark, and dot-read (`p.x`, `a.b.c`, mixed chains with subscription) now work (see `tests/fixtures/17_structs.lox`). Still missing: struct equality in `Value::deep_eq` (currently `_ => Ok(false)`); `Statement::StructDecl` is still a runtime no-op (parser+typechecker do the work; interpreter has nothing to add yet).
+- Struct field assignment (`p.x = y`, `b.center.x = z`, mixed chains like `pair.items[0] = v`) — read path is in, write path is NOT. Requires extending `ChainingReassignTargetNode.follows` from `Vec<ClauseNode<T>>` to a `Vec<ReassignChainStep<T>>` enum (`Subscription(expr) | Member(iden)`) so field names can flow through the chain as compile-time `Id`s rather than runtime `Value`s. See `docs/plan-dot-member-access.md` Phase 2.
+- Struct names as type annotations — `parse_type_node` at `parse/parser.rs:80-106` only accepts built-in type tokens (`any`, `bool`, `number`, `str`). A field like `struct Box { center: Point }` fails to parse with `UnexpectedToken(Identifier, ...)`. Needs to accept `Token::Identifier` and resolve via the type interner during typecheck.
+- Module member access (`math::sin`, `std::math::sin`) — uses `::` per `docs/temp-generated/plan-resolution-syntax.md`, NOT `.` (dot is reserved for struct field read today and method calls later). Requires: new `Token::DoubleColon` in the lexer; new `PathNode` + `ClauseCase::Path` in the AST; path branch in `parse_primary` (not a Pratt infix — a full path is a single primary atom); new `environment.get_module_export(module_id, export_id)`; new interpreter arm. Currently imports are side-effect-only and any `foo::bar` is a parse error.
+- Type-associated calls (`Car:new()`) — single-colon infix per the same plan doc. Out of scope for structs today but part of the same resolution-syntax rework.
+- Method calls on values (`arr.push(v)`, `m.keys()`) — dot is currently struct-field-read only; method calls require the Dot arm in `parse_pratt_infix` to branch on whether `(` follows. Planned migration of prelude `array_*` / `map_*` functions into dot methods — see `docs/temp-generated/plan-resolution-syntax.md` Phase 1.
 - Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier` before runtime
 - Implement more string stuff, formatted string
 - Map comprehension (`%{ k => v for k, v in map }`)
@@ -8,7 +12,7 @@
 - Rework module (file loader interface, circular-import detection, deeper resolution chains)
 - And standard library module
 - More docs
-- More test, try fuzzing — no end-to-end interpreter tests, no heap/GC tests, no module/import tests
+- More test, try fuzzing — e2e fixtures now exist under `tests/fixtures/` (`01`..`17` + `errors/`); still missing: dedicated heap/GC unit tests, module/import tests, and fuzzing
 - On-demand parsing
 - Experimenting the byte code VM
 - Add tree-sitter
@@ -25,7 +29,7 @@
 - `Value: Copy` vs ref-counted heap handles — `Value` derives `Copy`, so any assignment / pass-by-value of an `Array`/`Map`/`Struct`/`Function` handle duplicates the `GcHandle` *without* calling `shallow_copy_value`. Ref-counts are therefore not authoritative and `shallow_dispose_value`'s early-return on `ref_count != 0` is not a reliable GC signal. Combined with the inconsistent bump policy (see Design Issues below), reference counting is effectively decorative. Either drop `Copy` and make handle duplication explicit, or commit to pure mark-sweep and remove the RC scaffolding entirely.
 - `interpret/values/value.rs` `Map = BTreeMap<MapKey, Value>` — `MapKey::Str` is ordered by `StrId`, i.e. interner insertion order, not by string contents. Iteration order for string-keyed maps is a non-deterministic accident of global interner history (two runs that intern strings in a different order produce different map iteration). The test at `examples/test.lox` lines ~306-310 papers over this. Either switch to an insertion-order map (`IndexMap`) or order `MapKey::Str` by the actual string bytes (requires resolving via the interner during comparison).
 - `interpret/environment.rs` `ScopeStack::push()`: scope overflow returns `ScopeOverflow` (good) but the limit is hard-coded at `SCOPE_SIZE_LIMIT = 100` with no adaptive behavior; recursion beyond that aborts rather than tail-calling
-- `typecheck/typechecker.rs` `convert_fn_call` variadic argument check is dead code — the inner `if variadic_type_id.is_none()` is nested inside the same outer check, so arg count/type validation is skipped entirely for any variadic function (affects `print`, `to_json`, `array_push`, `array_insert`, etc.)
+- `typecheck/typechecker.rs` `convert_fn_call` skips all argument validation for variadic functions — the outer `if variadic_type_id.is_none()` gates both arity and type checks, so any function declared variadic (`print`, `to_json`, `array_push`, `array_insert`, etc.) accepts any arity and any arg types without complaint. Needs a separate variadic path that validates fixed params + checks each variadic arg against `variadic_type_id`. (Stale code comment at `convert_fn_call` still describes the old nested-check structure.)
 - `typecheck/typechecker.rs` `convert_struct_literal` `Type::Any` arm is unreachable — `lookup_type_id_from_id` only populates for struct decls, so the prior `ok_or(UndefinedIdentifier)` fires first
 - `id.rs` `Id` uses a 64-bit `DefaultHasher` output only — two names that collide compare equal silently; consider pairing the hash with a string id
 - `string_utils.rs::unescape` panics on a trailing `\` and relies on the lexer to have rejected it — tighten the lexer or return an error here (currently accepted as-is; lexer invariant holds)
@@ -54,7 +58,9 @@
 - [X] Array prelude functions — `array_len`, `array_push`, `array_pop`, `array_insert`
 - [X] Map prelude functions — `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`
 - [X] Add type annotation, type checker — gradual typing with `Any` as top type; two-phase AST (`AST<()>` → `AST<TypeId>`); see ADR 008
-- [X] Struct declaration parsing and typecheck — `struct Name { field: Type }` syntax, nominal typing, field count / field name / field type validation. **Runtime NOT done** — see top of Todos.
+- [X] Struct declaration parsing and typecheck — `struct Name { field: Type }` syntax, nominal typing, field count / field name / field type validation
+- [X] Struct runtime: literal construction, heap disposal, mark-sweep (including string field values) — `Value::Struct(GcHandle)`, `Struct { id, fields: HashMap<Id, StructField> }`; fixture: `tests/fixtures/17_structs.lox`
+- [X] Dot member access (read): `p.x`, chained `a.b.c`, mixed chains `arr[0].x` / `p.items[0]`; `Any` is a gradual-typing passthrough (typecheck allows, runtime validates). New AST node `MemberAccessNode`, new errors `TypecheckError::TypeIsNotStruct` / `StructFieldNotExist`, `InterpretError::MemberAccessOnNonStruct` / `StructFieldNotFound`. Write path (`p.x = y`) still pending — see top of Todos.
 - [X] String interner GC — `StringInterner` now participates in mark-and-sweep via `reset_marks()` / `mark_to_keep()` / `sweep()`; memory leak resolved
 - [X] Validate struct literal field types at construction — `convert_struct_literal` enforces `StructFieldTypeMismatch` against declared field types (covered by `struct_field_type_mismatch_errors`)
 - [X] Reject duplicate field names in struct literals — `convert_struct_literal` now errors with `TypecheckError::DuplicateStructLiteralField` (test: `struct_literal_duplicate_field_errors`)

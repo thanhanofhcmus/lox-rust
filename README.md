@@ -208,11 +208,21 @@ literal doesn't matter, but every field must be present.
 struct Point { x: number, y: number }
 
 var p = Point { x = 1, y = 2 };
+print(p.x);            # field read with `.` works
+print(p.y);
+
+# dot access chains with itself and with subscription
+struct Bag { items: any }
+var b = Bag { items = [10, 20, 30] };
+print(b.items[1]);     # mixed chain: struct field -> array index
 ```
 
-> Note: struct **declarations and literals** pass the type checker today, but
-> the runtime for struct values is still landing — see `docs/adr/009-struct-types.md`.
-> Field access with `.` is not yet implemented.
+> Known limitations:
+> - Field write (`p.x = 5`) is not yet implemented — only read access works.
+> - Struct equality is undefined today: `p1 == p2` always returns `false`.
+> - User-defined struct names are **not yet valid in type annotations**. Built-in
+>   types (`any`, `bool`, `number`, `str`) are; for struct-typed fields, use
+>   `any` as a placeholder (e.g. `struct Box { center: any }`).
 
 ### Imports
 
@@ -220,7 +230,10 @@ Modules are loaded from the filesystem. Imports must be at the top of the file.
 
 ```
 import "./math.lox" as math;
-# (member access via `math.add(...)` is tracked but not yet implemented)
+# Planned syntax for referring to an exported name is `math::add(...)`
+# using `::` — NOT `math.add(...)`. Dot (`.`) is reserved for struct
+# field access and (future) method calls on values, while `::` is
+# the module-path operator. Neither form is implemented yet.
 ```
 
 ### Built-in debug helpers
