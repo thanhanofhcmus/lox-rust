@@ -1125,6 +1125,100 @@ mod tests {
     }
 
     #[test]
+    fn parse_declaration_with_array_annotation() {
+        let ast = parse_str("var a: [number] = [];");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => match type_ {
+                Some(TypeNode::Array(inner)) => {
+                    assert_eq!(**inner, TypeNode::BuiltIn(TypeId::NUMBER));
+                }
+                other => panic!("expected Array annotation, got {other:?}"),
+            },
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_declaration_with_array_of_any_annotation() {
+        let ast = parse_str("var a: [any] = [];");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => match type_ {
+                Some(TypeNode::Array(inner)) => {
+                    assert_eq!(**inner, TypeNode::BuiltIn(TypeId::ANY));
+                }
+                other => panic!("expected Array annotation, got {other:?}"),
+            },
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_declaration_with_nested_array_annotation() {
+        let ast = parse_str("var a: [[number]] = [];");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => match type_ {
+                Some(TypeNode::Array(outer)) => match outer.as_ref() {
+                    TypeNode::Array(inner) => {
+                        assert_eq!(**inner, TypeNode::BuiltIn(TypeId::NUMBER));
+                    }
+                    other => panic!("expected inner Array, got {other:?}"),
+                },
+                other => panic!("expected Array annotation, got {other:?}"),
+            },
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_declaration_with_array_of_map_annotation() {
+        let ast = parse_str("var a: [%{str => number}] = [];");
+        match first_stmt(&ast) {
+            Statement::Declare(DeclareStatementNode {
+                explicit_type: type_,
+                ..
+            }) => match type_ {
+                Some(TypeNode::Array(outer)) => match outer.as_ref() {
+                    TypeNode::Map { key, value } => {
+                        assert_eq!(**key, TypeNode::BuiltIn(TypeId::STR));
+                        assert_eq!(**value, TypeNode::BuiltIn(TypeId::NUMBER));
+                    }
+                    other => panic!("expected inner Map, got {other:?}"),
+                },
+                other => panic!("expected Array annotation, got {other:?}"),
+            },
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_array_annotation_rejects_empty_brackets() {
+        // `[]` on its own is not a valid type — inner type is required
+        let err = parse_err("var a: [] = [];");
+        assert!(
+            matches!(err, ParseError::UnexpectedToken(_, _, _)),
+            "expected UnexpectedToken, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_array_annotation_rejects_unclosed() {
+        let err = parse_err("var a: [number = [];");
+        assert!(
+            matches!(err, ParseError::UnexpectedToken(_, _, _)),
+            "expected UnexpectedToken, got {err:?}"
+        );
+    }
+
+    #[test]
     fn parse_declaration_with_map_annotation() {
         let ast = parse_str("var m: %{str => number} = %{};");
         match first_stmt(&ast) {

@@ -1361,6 +1361,72 @@ mod tests {
         .unwrap();
     }
 
+    // ---------- array / map annotations ----------
+
+    #[test]
+    fn array_annotation_accepts_matching_literal() {
+        typecheck_str("var a: [number] = [1, 2, 3];").unwrap();
+    }
+
+    #[test]
+    fn array_annotation_accepts_empty_literal() {
+        // empty literal is ARRAY_UNTYPED; annotation pins the element type
+        typecheck_str("var a: [number] = [];").unwrap();
+    }
+
+    #[test]
+    fn array_annotation_rejects_wrong_element_type() {
+        let err = typecheck_str("var a: [number] = [\"hello\"];").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+            "expected ExplicitTypeMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn array_annotation_any_accepts_mixed() {
+        typecheck_str("var a: [any] = [1, \"mixed\", true];").unwrap();
+    }
+
+    #[test]
+    fn nested_array_annotation_accepts_matching_literal() {
+        typecheck_str("var a: [[number]] = [[1, 2], [3, 4]];").unwrap();
+    }
+
+    #[test]
+    fn nested_array_annotation_rejects_wrong_inner_type() {
+        let err = typecheck_str("var a: [[number]] = [[\"s\"]];").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+            "expected ExplicitTypeMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn map_annotation_accepts_matching_literal() {
+        typecheck_str("var m: %{str => number} = %{\"a\" => 1, \"b\" => 2};").unwrap();
+    }
+
+    #[test]
+    fn map_annotation_accepts_empty_literal() {
+        // empty literal is MAP_UNTYPED; annotation pins key/value types
+        typecheck_str("var m: %{str => number} = %{};").unwrap();
+    }
+
+    #[test]
+    fn map_annotation_rejects_wrong_value_type() {
+        let err = typecheck_str("var m: %{str => number} = %{\"a\" => \"x\"};").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+            "expected ExplicitTypeMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn map_annotation_any_accepts_mixed_keys_and_values() {
+        typecheck_str("var m: %{any => any} = %{\"a\" => 1, 42 => \"b\", true => nil};").unwrap();
+    }
+
     // ---------- block types ----------
 
     #[test]
