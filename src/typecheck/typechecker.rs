@@ -498,15 +498,18 @@ impl<'cl> TypeChecker<'cl> {
             });
         }
 
-        let key_types: Vec<_> = nodes
-            .iter()
-            .map(|n| get_scalar_node_type_id(&n.key))
-            .collect();
-
-        let type_id = self.environment.declare_type(&Type::Map {
-            key: unify_types(&key_types),
-            value: unify_types(nodes.iter().map(|n| &n.value.extra)),
-        });
+        let type_id = if nodes.is_empty() {
+            TypeId::MAP_UNTYPED
+        } else {
+            let key_types: Vec<_> = nodes
+                .iter()
+                .map(|n| get_scalar_node_type_id(&n.key))
+                .collect();
+            self.environment.declare_type(&Type::Map {
+                key: unify_types(&key_types),
+                value: unify_types(nodes.iter().map(|n| &n.value.extra)),
+            })
+        };
 
         Ok((type_id, MapLiteralNode { nodes }))
     }
