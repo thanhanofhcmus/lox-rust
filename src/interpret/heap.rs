@@ -215,6 +215,11 @@ impl Heap {
                     trace_list.extend(arr.iter().filter_map(|v| v.get_handle()));
                 }
                 GcObject::Struct(struct_) => {
+                    struct_
+                        .fields
+                        .values()
+                        .filter_map(|f| f.value.get_str_id())
+                        .for_each(|id| self.string_interner.mark_to_keep(id));
                     trace_list.extend(struct_.fields.values().filter_map(|f| f.value.get_handle()));
                 }
                 GcObject::Map(map) => {
@@ -271,8 +276,13 @@ impl Heap {
                     self.shallow_dispose_value(value);
                 }
             }
-            GcObject::Struct(_) => {
-                unimplemented!()
+            GcObject::Struct(struct_) => {
+                // collect an owned Vec<Value> to release the borrow on self.slots
+                // before recursing (same reason Array/Map arms clone)
+                let field_values: Vec<Value> = struct_.fields.values().map(|f| f.value).collect();
+                for value in field_values {
+                    self.shallow_dispose_value(value);
+                }
             }
             GcObject::Map(map) => {
                 // have to use clone here since we are modifying the backing GC object

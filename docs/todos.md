@@ -1,6 +1,6 @@
 ## Todos:
-- Struct runtime — `RawValueNode::StructLiteral` is `unimplemented!()` at `interpret/interpreter.rs:365`; `Statement::StructDecl` is a no-op at `interpret/interpreter.rs:83`. Typechecker accepts them but the interpreter panics.
-- Dot member access — `Token::Dot` is `unimplemented!()` at `parse/parser.rs:379`; needed for both struct field access (`p.x`) and module member access (`module.name`)
+- Struct runtime — literal construction and heap disposal/mark now work (see `tests/fixtures/17_structs.lox`). Still missing: struct equality in `Value::deep_eq` (currently `_ => Ok(false)`), and `Statement::StructDecl` is still a runtime no-op (parser+typechecker do the work; interpreter has nothing to add yet).
+- Dot member access — `Token::Dot` is `unimplemented!()` at `parse/parser.rs:379`; needed for both struct field access (`p.x`) and module member access (`module.name`). Biggest gap preventing structs from being actually useful.
 - Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier` before runtime
 - Implement more string stuff, formatted string
 - Map comprehension (`%{ k => v for k, v in map }`)
