@@ -186,13 +186,10 @@ fn to_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interp
 
     let serial_value = SerialValue::convert_from_value(value, ctx.environment)?;
 
-    // maybe also throw error here
-    let is_print_pretty = args
-        .get(1)
-        .map(|v| v.get_bool())
-        .unwrap_or_default()
-        .unwrap_or(false);
-
+    let is_print_pretty = get_bool_arg(
+        to_json_fn,
+        args.get(1).copied().unwrap_or(Value::make_bool(false)),
+    )?;
     let result = if is_print_pretty {
         serde_json::to_string_pretty(&serial_value)
     } else {
@@ -325,7 +322,7 @@ fn map_remove_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Int
         return Err(InterpretError::GcObjectNotFound(handle));
     };
     // ownership of the removed value transfers to the caller; ref count stays at 1
-    Ok(map.remove(&key).unwrap_or(Value::Unit))
+    Ok(map.remove(&key).unwrap_or(Value::make_nil()))
 }
 
 // Argument validation helpers
@@ -356,6 +353,17 @@ fn check_min_args(func: BuiltinFn, args: &[Value], min: usize) -> Result<(), Int
     Ok(())
 }
 
+fn get_bool_arg(func: BuiltinFn, arg: Value) -> Result<bool, InterpretError> {
+    match arg.get_bool() {
+        Some(b) => Ok(b),
+        None => Err(InterpretError::WrongArgumentType(
+            Value::BuiltinFunction(func),
+            arg,
+            "bool",
+        )),
+    }
+}
+
 fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<StrId, InterpretError> {
     match arg {
         Value::Str(str_id) => Ok(str_id),
@@ -373,7 +381,7 @@ fn get_array_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, InterpretError
         _ => Err(InterpretError::WrongArgumentType(
             Value::BuiltinFunction(func),
             arg,
-            "Array",
+            "array",
         )),
     }
 }
@@ -384,7 +392,7 @@ fn get_map_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, InterpretError> 
         _ => Err(InterpretError::WrongArgumentType(
             Value::BuiltinFunction(func),
             arg,
-            "Map",
+            "map",
         )),
     }
 }
