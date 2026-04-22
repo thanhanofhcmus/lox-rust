@@ -17,6 +17,13 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
+// Shared interpreter state threaded through evaluation AND value display /
+// serialization. Display code (see `values::display_writer`, `Value::write_display`)
+// technically only needs `&Environment` + `&SymbolNames`, but we pass the whole
+// `BorrowContext` to avoid maintaining a second "display-only" context struct
+// that would have to be kept in sync. Fields unused by a given call site are
+// simply ignored — do not split this into a narrower struct without a concrete
+// reason.
 pub struct BorrowContext<'e> {
     pub environment: &'e mut Environment,
     pub print_writer: Rc<RefCell<dyn std::io::Write>>,
@@ -492,11 +499,12 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         &mut self,
         node: &StructLiteralNode<TypeId>,
     ) -> Result<Value, InterpretError> {
-        // TODO: fix unwrap
-
         let id = node.iden.id;
 
-        let type_id = self.type_interner.get_type_id_by_id(id).unwrap();
+        let type_id = self
+            .type_interner
+            .get_type_id_by_id(id)
+            .ok_or(InterpretError::StructTypeNotRegistered(node.iden))?;
 
         // compare field type with actual value
         let mut fields = HashMap::new();

@@ -194,7 +194,14 @@ impl Environment {
         let last_scope = self.scope_stack.pop()?;
         module.variables = last_scope.variables;
 
-        // TODO: handle heap
+        // TODO: module GC is incomplete. Heap objects owned by module-scope
+        // variables are never disposed here — they stay alive for the process
+        // lifetime. Ref-count bookkeeping for these values is also permanently
+        // skewed (pop_scope was intentionally skipped). This is acceptable
+        // today because mark-sweep is the authoritative reclaim path and
+        // module variables root via `collect_all_variables`, but the whole
+        // module loader needs a proper design pass (see docs/todos.md:
+        // "Rework module"). Revisit ref-count invariants when that lands.
 
         self.modules.insert(self.current_module_id, module);
         Ok(())

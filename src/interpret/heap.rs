@@ -412,7 +412,12 @@ impl DebugString for HeapStats {
         )
         .unwrap();
 
-        let kinds = [GcKind::Array, GcKind::Map, GcKind::Function];
+        let kinds = [
+            GcKind::Array,
+            GcKind::Map,
+            GcKind::Struct,
+            GcKind::Function,
+        ];
         let fmt_kind = |map: &HashMap<GcKind, usize>| -> String {
             kinds
                 .iter()

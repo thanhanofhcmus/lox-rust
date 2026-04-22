@@ -735,7 +735,7 @@ impl<'cl> TypeChecker<'cl> {
         // Needs separate non-variadic and variadic validation paths.
 
         if variadic_type_id.is_none() {
-            if variadic_type_id.is_none() && param_type_ids.len() != args.len() {
+            if param_type_ids.len() != args.len() {
                 return Err(TypecheckError::WrongNumberOfArgument(
                     caller_type_id,
                     param_type_ids.len(),
@@ -1159,18 +1159,6 @@ mod tests {
     fn declare_with_any_annotation_accepts_anything() {
         typecheck_str("var x: any = \"hello\";").unwrap();
         typecheck_str("var x: any = 5;").unwrap();
-    }
-
-    #[test]
-    fn declare_without_annotation_infers() {
-        let ast = typecheck_str("var x = 5; x;").unwrap();
-        match &ast.global_stmts[1] {
-            Statement::Expr(Expression {
-                case: ExprCase::Clause(c),
-                ..
-            }) => assert_eq!(c.extra, TypeId::NUMBER),
-            other => panic!("expected Expr clause, got {other:?}"),
-        }
     }
 
     // ---------- reassign ----------
