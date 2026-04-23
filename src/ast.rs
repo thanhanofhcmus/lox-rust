@@ -10,11 +10,14 @@ pub struct AST<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeNode {
     BuiltIn(TypeId),
-    Array(Box<TypeNode>),
     Named(Identifier),
+    Array(Box<TypeNode>),
     Map {
         key: Box<TypeNode>,
         value: Box<TypeNode>,
+    },
+    Tuple {
+        members: Vec<TypeNode>,
     },
 }
 

@@ -103,6 +103,12 @@ impl<'a> Context<'a> {
         Ok(li)
     }
 
+    pub fn get_then_advance(&mut self) -> Result<LexItem, ParseError> {
+        let li = *self.get_curr()?;
+        self.advance();
+        Ok(li)
+    }
+
     pub fn advance(&mut self) {
         self.curr_pos += 1;
         self.prepare_next();

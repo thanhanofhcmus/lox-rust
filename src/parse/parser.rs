@@ -78,55 +78,64 @@ fn parse_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
 }
 
 fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
-    if state.peek(&[Token::LSquareParen]) {
-        state.consume_token(Token::LSquareParen)?;
-        let inner_type_node = parse_type_node(state)?;
-        state.consume_token(Token::RSquareParen)?;
-        return Ok(TypeNode::Array(Box::new(inner_type_node)));
-    }
-    if state.peek(&[Token::PercentLPointParent]) {
-        state.consume_token(Token::PercentLPointParent)?;
-        let key_start = state.get_curr()?.span;
-        let key = parse_type_node(state)?;
-        if !matches!(
-            &key,
-            TypeNode::BuiltIn(
-                TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
-            )
-        ) {
-            return Err(ParseError::InvalidMapKeyType(key_start));
-        }
-        state.consume_token(Token::RFatArrow)?;
-        let value = parse_type_node(state)?;
-        state.consume_token(Token::RPointParen)?;
-        return Ok(TypeNode::Map {
-            key: Box::new(key),
-            value: Box::new(value),
-        });
-    }
+    let li = *state.get_curr()?;
 
-    let type_item = *state.get_curr()?;
-    state.advance();
-
-    if type_item.token == Token::Identifier {
-        return Ok(TypeNode::Named(state.create_identifier(type_item)));
-    }
-
-    // for a simple case we we can work out the type right a way
-    let type_id = match type_item.token {
-        Token::TypeAny => TypeId::ANY,
-        Token::TypeBool => TypeId::BOOL,
-        Token::TypeNumber => TypeId::NUMBER,
-        Token::TypeStr => TypeId::STR,
-        _ => {
-            return Err(ParseError::UnexpectedToken(
-                type_item.token,
-                type_item.span,
-                None,
-            ));
-        }
+    let mut next = |type_id| {
+        state.advance();
+        Ok(TypeNode::BuiltIn(type_id))
     };
-    Ok(TypeNode::BuiltIn(type_id))
+
+    match li.token {
+        // builtin
+        Token::TypeAny => next(TypeId::ANY),
+        Token::TypeBool => next(TypeId::BOOL),
+        Token::TypeNumber => next(TypeId::NUMBER),
+        Token::TypeStr => next(TypeId::STR),
+        // named
+        Token::Identifier => {
+            state.advance();
+            Ok(TypeNode::Named(state.create_identifier(li)))
+        }
+        // array
+        Token::LSquareParen => {
+            state.consume_token(Token::LSquareParen)?;
+            let inner_type_node = parse_type_node(state)?;
+            state.consume_token(Token::RSquareParen)?;
+            Ok(TypeNode::Array(Box::new(inner_type_node)))
+        }
+        // Map
+        Token::PercentLPointParent => {
+            state.consume_token(Token::PercentLPointParent)?;
+            let key_start = state.get_curr()?.span;
+            let key = parse_type_node(state)?;
+            if !matches!(
+                &key,
+                TypeNode::BuiltIn(
+                    TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
+                )
+            ) {
+                return Err(ParseError::InvalidMapKeyType(key_start));
+            }
+            state.consume_token(Token::RFatArrow)?;
+            let value = parse_type_node(state)?;
+            state.consume_token(Token::RPointParen)?;
+            Ok(TypeNode::Map {
+                key: Box::new(key),
+                value: Box::new(value),
+            })
+        }
+        // Tuple
+        Token::PercentLRoundParen => {
+            let members = parse_comma_list(
+                state,
+                Token::PercentLRoundParen,
+                Token::RRoundParen,
+                parse_type_node,
+            )?;
+            Ok(TypeNode::Tuple { members })
+        }
+        _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
+    }
 }
 
 fn parse_struct_field_node(state: &mut Context) -> Result<StructFieldNode, ParseError> {
@@ -422,8 +431,7 @@ fn parse_pratt_infix(
         // Struct/Tuple member access
         Token::Dot => {
             state.consume_token(li.token)?;
-            let member_li = *state.get_curr()?;
-            state.advance();
+            let member_li = state.get_then_advance()?;
             match member_li.token {
                 Token::Identifier => {
                     let field_iden = state.create_identifier(member_li);
@@ -764,8 +772,7 @@ fn parse_fn_param(state: &mut Context) -> Result<FnParamNode, ParseError> {
 }
 
 fn parse_number(state: &mut Context) -> Result<ScalarNode, ParseError> {
-    let li = *state.get_curr()?;
-    state.advance();
+    let li = state.get_then_advance()?;
     let source = li.span.str_from_source(state.get_input());
 
     if let Ok(num) = source.parse::<i64>() {

@@ -124,6 +124,10 @@ impl<'cl> TypeChecker<'cl> {
     fn extract_type_node_id(&mut self, node: &TypeNode) -> Result<TypeId, TypecheckError> {
         match node {
             TypeNode::BuiltIn(type_id) => Ok(*type_id),
+            TypeNode::Named(type_iden) => self
+                .environment
+                .lookup_type_id_from_id(type_iden.id)
+                .ok_or(TypecheckError::UndefinedTypeIdentifier(*type_iden)),
             TypeNode::Array(inner_type_node) => {
                 let elem = self.extract_type_node_id(inner_type_node)?;
                 Ok(self.environment.declare_type(&Type::Array { elem }))
@@ -136,10 +140,13 @@ impl<'cl> TypeChecker<'cl> {
                     value: value_type_id,
                 }))
             }
-            TypeNode::Named(type_iden) => self
-                .environment
-                .lookup_type_id_from_id(type_iden.id)
-                .ok_or(TypecheckError::UndefinedTypeIdentifier(*type_iden)),
+            TypeNode::Tuple { members } => {
+                let members = members
+                    .iter()
+                    .map(|n| self.extract_type_node_id(n))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(self.environment.declare_type(&Type::Tuple { members }))
+            }
         }
     }
 
