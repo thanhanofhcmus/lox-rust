@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    ast::ChainStep,
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
@@ -58,40 +59,70 @@ impl GcObject {
         }
     }
 
-    pub fn get_by_subscription(&self, indexee: Value) -> Result<Value, InterpretError> {
-        match self {
-            GcObject::Array(arr) => {
-                let idx = indexee.to_index()?;
-                arr.get(idx)
-                    .copied()
-                    .ok_or(InterpretError::ArrayOutOfBound(arr.len(), idx))
-            }
-            GcObject::Map(map) => {
-                let map_key = MapKey::convert_from_value(indexee)?;
-                Ok(map.get(&map_key).copied().unwrap_or(Value::make_nil()))
-            }
-            _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
+    pub fn get_by_chain_step(&self, chain_step: ChainStep<Value>) -> Result<Value, InterpretError> {
+        match chain_step {
+            ChainStep::Subscription(indexee) => match self {
+                GcObject::Array(arr) => {
+                    let idx = indexee.to_index()?;
+                    arr.get(idx)
+                        .copied()
+                        .ok_or(InterpretError::ArrayOutOfBound(arr.len(), idx))
+                }
+                GcObject::Map(map) => {
+                    let map_key = MapKey::convert_from_value(indexee)?;
+                    Ok(map.get(&map_key).copied().unwrap_or(Value::make_nil()))
+                }
+                _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
+            },
+            ChainStep::Member(field_iden) => match self {
+                GcObject::Struct(struct_) => {
+                    let field = struct_
+                        .fields
+                        .get(&field_iden.id)
+                        .ok_or(InterpretError::StructFieldNotFound(struct_.id, field_iden))?;
+                    Ok(field.value)
+                }
+                _ => Err(InterpretError::GcObjectNotStruct(
+                    self.get_kind(),
+                    field_iden,
+                )),
+            },
         }
     }
 
-    pub fn replace_at_index(
+    pub fn replace_at_chain_step(
         &mut self,
-        indexee: Value,
+        step: ChainStep<Value>,
         new_value: Value,
     ) -> Result<Value, InterpretError> {
-        match self {
-            GcObject::Array(arr) => {
-                let idx = indexee.to_index()?;
-                match arr.get_mut(idx) {
-                    Some(v) => Ok(std::mem::replace(v, new_value)),
-                    None => Err(InterpretError::ArrayOutOfBound(arr.len(), idx)),
+        match step {
+            ChainStep::Subscription(indexee) => match self {
+                GcObject::Array(arr) => {
+                    let idx = indexee.to_index()?;
+                    match arr.get_mut(idx) {
+                        Some(v) => Ok(std::mem::replace(v, new_value)),
+                        None => Err(InterpretError::ArrayOutOfBound(arr.len(), idx)),
+                    }
                 }
-            }
-            GcObject::Map(map) => {
-                let map_key = MapKey::convert_from_value(indexee)?;
-                Ok(map.insert(map_key, new_value).unwrap_or(Value::make_nil()))
-            }
-            _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
+                GcObject::Map(map) => {
+                    let map_key = MapKey::convert_from_value(indexee)?;
+                    Ok(map.insert(map_key, new_value).unwrap_or(Value::make_nil()))
+                }
+                _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
+            },
+            ChainStep::Member(field_iden) => match self {
+                GcObject::Struct(struct_) => {
+                    let field = struct_
+                        .fields
+                        .get_mut(&field_iden.id)
+                        .ok_or(InterpretError::StructFieldNotFound(struct_.id, field_iden))?;
+                    Ok(std::mem::replace(&mut field.value, new_value))
+                }
+                _ => Err(InterpretError::GcObjectNotStruct(
+                    self.get_kind(),
+                    field_iden,
+                )),
+            },
         }
     }
 }
@@ -305,32 +336,32 @@ impl Heap {
     pub fn deep_copy_reassign_object(
         &mut self,
         current_root_value: Value,
-        last_value: Value,
-        chain: &[Value],
+        last_step: ChainStep<Value>,
+        chain_steps: &[ChainStep<Value>],
         reassigning_value: Value,
     ) -> Result<Value, InterpretError> {
         let (root_handle, root_value) = self.copy_by_value(current_root_value)?;
 
         let mut current_handle = root_handle;
 
-        for indexee in chain.iter().copied() {
+        for step in chain_steps.iter().copied() {
             let current_value = self
                 .get_object_or_error(current_handle)?
-                .get_by_subscription(indexee)?;
+                .get_by_chain_step(step)?;
 
             let (new_handle, new_value) = self.copy_by_value(current_value)?;
 
             // TODO: dispose old value
             _ = self
                 .get_object_mut_or_error(current_handle)?
-                .replace_at_index(indexee, new_value)?;
+                .replace_at_chain_step(step, new_value)?;
 
             current_handle = new_handle;
         }
 
         _ = self
             .get_object_mut_or_error(current_handle)?
-            .replace_at_index(last_value, reassigning_value)?;
+            .replace_at_chain_step(last_step, reassigning_value)?;
 
         Ok(root_value)
     }

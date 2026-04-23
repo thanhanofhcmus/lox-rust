@@ -824,37 +824,32 @@ fn convert_chaining(
         return Err(ParseError::ReassignRootIsNotAnIdentifier);
     };
 
-    let mut index_chain = vec![];
+    // Walk the parsed expression from the outermost postfix inward. Each
+    // iteration peels one step off the tail (subscription index or member
+    // field) and recurses into the object being indexed/accessed. Steps are
+    // collected in reverse order, then flipped before returning.
+    let mut follows: Vec<ChainStep<ClauseNode<()>>> = vec![];
     let mut clause = clause;
 
-    loop {
+    let base = loop {
         match clause.case {
             ClauseCase::Subscription(SubscriptionNode { indexer, indexee }) => {
-                index_chain.push(*indexee);
+                follows.push(ChainStep::Subscription(*indexee));
                 clause = *indexer;
             }
-            v => {
-                index_chain.push(ClauseNode { case: v, extra: () });
-                break;
+            ClauseCase::MemberAccess(MemberAccessNode { object, field }) => {
+                follows.push(ChainStep::Member(field));
+                clause = *object;
             }
+            ClauseCase::Identifier(node) => break node,
+            // Anything else (FnCall, Binary, Group, etc.) is not a valid lvalue.
+            _ => return Err(ParseError::ReassignRootIsNotAnIdentifier),
         }
-    }
-
-    let first = index_chain
-        .pop()
-        .ok_or(ParseError::ReassignRootIsNotAnIdentifier)?;
-
-    index_chain.reverse();
-
-    let base = match first.case {
-        ClauseCase::Identifier(node) => node,
-        _ => return Err(ParseError::ReassignRootIsNotAnIdentifier),
     };
 
-    Ok(ChainingReassignTargetNode {
-        base,
-        follows: index_chain,
-    })
+    follows.reverse();
+
+    Ok(ChainingReassignTargetNode { base, follows })
 }
 
 #[cfg(test)]

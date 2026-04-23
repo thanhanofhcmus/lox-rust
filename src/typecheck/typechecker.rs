@@ -174,18 +174,100 @@ impl<'cl> TypeChecker<'cl> {
         &mut self,
         target: ChainingReassignTargetNode<()>,
     ) -> Result<ChainingReassignTargetNode<TypeId>, TypecheckError> {
-        if self.environment.lookup_id(target.base.id).is_none() {
-            return Err(TypecheckError::UndefinedIdentifier(target.base));
+        let base_type_id = self
+            .environment
+            .lookup_id(target.base.id)
+            .ok_or(TypecheckError::UndefinedIdentifier(target.base))?;
+
+        // Walk the chain with an explicit running type, validating each step
+        // against the current type and computing the next running type.
+        let mut running_type_id = base_type_id;
+        let mut follows: Vec<ChainStep<ClauseNode<TypeId>>> =
+            Vec::with_capacity(target.follows.len());
+
+        for step in target.follows {
+            let next_type_id = match &step {
+                ChainStep::Subscription(clause) => {
+                    let typed_clause = self.convert_clause(clause.clone())?;
+                    let indexee_type_id = typed_clause.extra;
+                    let next =
+                        self.resolve_subscription_result_type(running_type_id, indexee_type_id)?;
+                    follows.push(ChainStep::Subscription(typed_clause));
+                    next
+                }
+                ChainStep::Member(field_iden) => {
+                    let next = self.resolve_member_result_type(running_type_id, *field_iden)?;
+                    follows.push(ChainStep::Member(*field_iden));
+                    next
+                }
+            };
+            running_type_id = next_type_id;
         }
-        let follows = target
-            .follows
-            .into_iter()
-            .map(|c| self.convert_clause(c))
-            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(ChainingReassignTargetNode {
             base: target.base,
             follows,
         })
+    }
+
+    /// Resolve the element / value type produced by a subscription against an
+    /// indexer type. Used by both the read path (`convert_subscription`) and
+    /// the reassign path (`convert_reassign_target`).
+    fn resolve_subscription_result_type(
+        &self,
+        indexer_type_id: TypeId,
+        indexee_type_id: TypeId,
+    ) -> Result<TypeId, TypecheckError> {
+        let indexer_type = self
+            .environment
+            .lookup_type(indexer_type_id)
+            .ok_or(TypecheckError::TypeIsNotDeclared(indexer_type_id))?;
+        match indexer_type {
+            Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => {
+                Ok(*elem)
+            }
+            Type::Map { key, value }
+                if (*key == indexee_type_id)
+                    || (*key == TypeId::ANY
+                        && matches!(
+                            indexee_type_id,
+                            TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
+                        )) =>
+            {
+                Ok(*value)
+            }
+            Type::Any => Ok(TypeId::ANY),
+            _ => Err(TypecheckError::IndexOpTypeMismatch(
+                indexer_type_id,
+                indexee_type_id,
+            )),
+        }
+    }
+
+    /// Resolve the declared type of a struct field. Used by both the read path
+    /// (`convert_member_access`) and the reassign path (`convert_reassign_target`).
+    fn resolve_member_result_type(
+        &self,
+        object_type_id: TypeId,
+        field: Identifier,
+    ) -> Result<TypeId, TypecheckError> {
+        if object_type_id == TypeId::ANY {
+            return Ok(TypeId::ANY);
+        }
+        let object_type = self
+            .environment
+            .lookup_type(object_type_id)
+            .ok_or(TypecheckError::TypeIsNotDeclared(object_type_id))?;
+        let struct_type = match object_type {
+            Type::Struct(struct_type) => struct_type,
+            _ => return Err(TypecheckError::TypeIsNotStruct(object_type_id)),
+        };
+        struct_type
+            .fields
+            .iter()
+            .find(|f| f.id == field.id)
+            .map(|f| f.type_)
+            .ok_or(TypecheckError::StructFieldNotExist(object_type_id, field))
     }
 
     fn convert_expr(
@@ -666,33 +748,7 @@ impl<'cl> TypeChecker<'cl> {
         node: MemberAccessNode<()>,
     ) -> Result<(TypeId, MemberAccessNode<TypeId>), TypecheckError> {
         let object = self.convert_clause(*node.object)?;
-        let object_type_id = object.extra;
-
-        // gradual typing: Any is the escape hatch — defer the field check to runtime
-        let field_type_id = if object_type_id == TypeId::ANY {
-            TypeId::ANY
-        } else {
-            let object_type = self
-                .environment
-                .lookup_type(object_type_id)
-                .ok_or(TypecheckError::TypeIsNotDeclared(object_type_id))?;
-
-            let struct_type = match object_type {
-                Type::Struct(struct_type) => struct_type,
-                _ => return Err(TypecheckError::TypeIsNotStruct(object_type_id)),
-            };
-
-            match struct_type.fields.iter().find(|f| f.id == node.field.id) {
-                Some(v) => v.type_,
-                None => {
-                    return Err(TypecheckError::StructFieldNotExist(
-                        object_type_id,
-                        node.field,
-                    ));
-                }
-            }
-        };
-
+        let field_type_id = self.resolve_member_result_type(object.extra, node.field)?;
         Ok((
             field_type_id,
             MemberAccessNode {
@@ -708,39 +764,7 @@ impl<'cl> TypeChecker<'cl> {
     ) -> Result<(TypeId, SubscriptionNode<TypeId>), TypecheckError> {
         let indexer = self.convert_clause(*node.indexer)?;
         let indexee = self.convert_clause(*node.indexee)?;
-        let indexer_type_id = indexer.extra;
-        let indexee_type_id = indexee.extra;
-
-        let indexer_type = self
-            .environment
-            .lookup_type(indexer_type_id)
-            .ok_or(TypecheckError::TypeIsNotDeclared(indexer_type_id))?;
-
-        // Any is a special case, will need to resovle the actual type at runtime
-        let result_type_id = match indexer_type {
-            Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => {
-                *elem
-            }
-            Type::Map { key, value }
-                if (*key == indexee_type_id)
-                    || (*key == TypeId::ANY
-                        && matches!(
-                            indexee_type_id,
-                            TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
-                        )) =>
-            {
-                *value
-            }
-            // deferred to runtime
-            Type::Any => TypeId::ANY,
-            _ => {
-                return Err(TypecheckError::IndexOpTypeMismatch(
-                    indexer_type_id,
-                    indexee_type_id,
-                ));
-            }
-        };
-
+        let result_type_id = self.resolve_subscription_result_type(indexer.extra, indexee.extra)?;
         Ok((
             result_type_id,
             SubscriptionNode {

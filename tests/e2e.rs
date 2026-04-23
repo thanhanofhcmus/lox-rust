@@ -134,3 +134,15 @@ fn error_member_access_any_runtime() {
     let res = run_fixture("errors/member_access_any_runtime.lox");
     assert_err_contains(&res, "is not a struct");
 }
+
+#[test]
+fn error_fn_call_lvalue() {
+    let res = run_fixture("errors/fn_call_lvalue.lox");
+    assert_err_contains(&res, "must be a valid identifier");
+}
+
+#[test]
+fn error_struct_field_write_readonly() {
+    let res = run_fixture("errors/struct_field_write_readonly.lox");
+    assert_err_contains(&res, "read-only");
+}

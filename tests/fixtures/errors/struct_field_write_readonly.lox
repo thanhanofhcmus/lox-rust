@@ -1,0 +1,12 @@
+# Field assignment must respect the readonly check on the BASE variable.
+# For-loop iteration variables live in a readonly scope, so writing through
+# `p.x = ...` with `p` being the loop var must raise VariableReadOnly.
+# (The array is built outside the `for` header because struct literals are
+# disallowed directly in the for-collection position to avoid grammar
+# ambiguity with the block body.)
+struct P { x: number }
+var ps = [P { x = 1 }, P { x = 2 }];
+for p in ps {
+    p.x = 99;
+}
+assert(false, "should not reach: readonly base write must have errored first");

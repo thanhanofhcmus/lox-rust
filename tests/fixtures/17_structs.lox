@@ -1,6 +1,5 @@
-# ---------- Structs: decl, literal, disposal, GC, field read ----------
-# Dot member access (read) is now implemented; struct field assignment
-# (`p.x = y`) and struct equality are still pending.
+# ---------- Structs: decl, literal, disposal, GC, field read/write ----------
+# Dot member access (read and write) and struct equality are implemented.
 # A panic in heap disposal or a dangling StrId after GC will abort the
 # process and fail the fixture.
 
@@ -114,5 +113,50 @@ var arr_c = Bag { items = [1, 2, 4] };
 assert(arr_a == arr_b, "struct with equal array fields is equal");
 assert((arr_a == arr_c) == false, "struct with differing array fields is not equal");
 
-# sentinel: if we reach here, all disposal / GC / read / eq paths ran cleanly
+# ---------- struct field assignment (write path) ----------
+
+# basic write
+var wp = Point { x = 1, y = 2 };
+wp.x = 99;
+assert(wp.x == 99, "field write x");
+assert(wp.y == 2, "unaffected field stays the same");
+
+# overwrite with a different scalar type (any field)
+struct Anything { v: any }
+var aw = Anything { v = 1 };
+aw.v = "now a string";
+assert(aw.v == "now a string", "field write re-types through any");
+
+# chained write: struct.field.field
+var wb = Box { center = Point { x = 10, y = 20 } };
+wb.center.x = 42;
+assert(wb.center.x == 42, "chained field write reaches nested field");
+assert(wb.center.y == 20, "chained field write leaves siblings alone");
+
+# mixed chain write: struct field then array subscript
+var wpair = Pair { items = [100, 200, 300] };
+wpair.items[1] = 777;
+assert(wpair.items[0] == 100, "mixed chain write: sibling untouched");
+assert(wpair.items[1] == 777, "mixed chain write: target updated");
+assert(wpair.items[2] == 300, "mixed chain write: end untouched");
+
+# mixed chain write: array index then struct field
+var wps = [Point { x = 5, y = 6 }, Point { x = 7, y = 8 }];
+wps[0].x = 500;
+assert(wps[0].x == 500, "array-then-member write hits right cell");
+assert(wps[0].y == 6, "array-then-member write leaves sibling field");
+assert(wps[1].x == 7, "array-then-member write leaves sibling elem");
+
+# nested subscript write: exercises chain ordering (was reversed pre-fix)
+var grid = [[1, 2], [3, 4]];
+grid[0][1] = 99;
+assert(grid[0][1] == 99, "nested subscript writes to the right cell");
+assert(grid[1][0] == 3, "nested subscript leaves the swapped cell alone");
+
+# read-back after a GC cycle to confirm the write survives mark-sweep
+_dbg_gc_mark_sweep();
+assert(wp.x == 99, "field write survives GC");
+assert(wb.center.x == 42, "chained field write survives GC");
+
+# sentinel: if we reach here, all disposal / GC / read / write / eq paths ran cleanly
 assert(true, "all struct paths completed");

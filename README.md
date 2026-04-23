@@ -211,14 +211,19 @@ var p = Point { x = 1, y = 2 };
 print(p.x);            # field read with `.` works
 print(p.y);
 
-# dot access chains with itself and with subscription
+# field write works too, including chained and mixed chains
+p.x = 99;
+struct Box { center: any }
+var b = Box { center = Point { x = 10, y = 20 } };
+b.center.x = 42;       # chained write: struct.field.field
+
 struct Bag { items: any }
-var b = Bag { items = [10, 20, 30] };
-print(b.items[1]);     # mixed chain: struct field -> array index
+var bag = Bag { items = [10, 20, 30] };
+print(bag.items[1]);   # mixed chain read: struct field -> array index
+bag.items[0] = 99;     # mixed chain write
 ```
 
-> Known limitations:
-> - Field write (`p.x = 5`) is not yet implemented — only read access works.
+> Known limitation:
 > - User-defined struct names are **not yet valid in type annotations**. Built-in
 >   types (`any`, `bool`, `number`, `str`) are; for struct-typed fields, use
 >   `any` as a placeholder (e.g. `struct Box { center: any }`).

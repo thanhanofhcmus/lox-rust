@@ -101,6 +101,9 @@ pub enum InterpretError {
     #[error("GcObject with type `{}` is not indexable", .0.type_name())]
     GcObjectUnIndexable(GcKind),
 
+    #[error("GcObject with type `{}` is not a struct; cannot access member `{1:?}`", .0.type_name())]
+    GcObjectNotStruct(GcKind, Identifier),
+
     #[error("String with Id `{:?}` does not exist in the heap interner", .0)]
     StringNotFoundOnHeap(StrId),
 
@@ -246,6 +249,13 @@ impl InterpretError {
                 format!(
                     "Internal error: GC object of type `{}` is not indexable.",
                     kind.type_name()
+                )
+            }
+            Self::GcObjectNotStruct(kind, iden) => {
+                format!(
+                    "Internal error: GC object of type `{}` is not a struct; cannot access member '{}'.",
+                    kind.type_name(),
+                    sb.get_or_unknown(iden.id)
                 )
             }
             Self::StringNotFoundOnHeap(id) => {

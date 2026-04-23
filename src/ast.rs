@@ -48,10 +48,21 @@ pub struct DeclareStatementNode<T> {
 
 pub type StatementList<T> = Vec<Statement<T>>;
 
+#[derive(Debug, Clone, Copy)]
+pub enum ChainStep<S> {
+    /// Subscription step like `a[0]`. Payload is the index (expression or value
+    /// depending on the phase).
+    Subscription(S),
+    /// Member step like `p.x`. Payload is the field identifier (Id + span).
+    Member(Identifier),
+}
+
 #[derive(Debug, Clone)]
 pub struct ChainingReassignTargetNode<T> {
     pub base: Identifier,
-    pub follows: Vec<ClauseNode<T>>,
+    /// Steps in source order (outermost-first). For `a[0][1] = x` → `[0, 1]`;
+    /// for `p.x = y` → `[.x]`; for `b.center.x = z` → `[.center, .x]`.
+    pub follows: Vec<ChainStep<ClauseNode<T>>>,
 }
 
 #[derive(Debug, Clone)]

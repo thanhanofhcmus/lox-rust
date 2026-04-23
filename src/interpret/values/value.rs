@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    ast::{BlockNode, FnParamNode},
+    ast::{BlockNode, ChainStep, FnParamNode},
     id::Id,
     interpret::{
         Environment,
@@ -194,9 +194,9 @@ impl Value {
         }
     }
 
-    pub fn get_by_subscription(
+    pub fn get_by_chain_step(
         &self,
-        indexee: Value,
+        step: ChainStep<Value>,
         env: &Environment,
     ) -> Result<Value, InterpretError> {
         // all the 2 types array and map that have the index method also have to get the value through a handle
@@ -206,7 +206,7 @@ impl Value {
         env.heap
             .get_object(handle)
             .ok_or(InterpretError::GcObjectNotFound(handle))?
-            .get_by_subscription(indexee)
+            .get_by_chain_step(step)
     }
 
     pub fn to_index(self) -> Result<usize, InterpretError> {

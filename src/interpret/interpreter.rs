@@ -230,11 +230,17 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
         let reassigning_value = res.get_or_error()?;
 
-        // evaluate left hand side
-        let mut index_chain = Vec::with_capacity(node.follows.len());
-        for expr in &node.follows {
-            let value = self.interpret_clause_expr(expr)?;
-            index_chain.push(value);
+        // evaluate subscription index expressions; member steps pass through
+        let mut reassign_chain_steps: Vec<ChainStep<Value>> =
+            Vec::with_capacity(node.follows.len());
+        for step in &node.follows {
+            let chain_step = match step {
+                ChainStep::Subscription(clause) => {
+                    ChainStep::Subscription(self.interpret_clause_expr(clause)?)
+                }
+                ChainStep::Member(field_iden) => ChainStep::Member(*field_iden),
+            };
+            reassign_chain_steps.push(chain_step);
         }
 
         let iden = &node.base;
@@ -247,7 +253,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             return Err(InterpretError::VariableReadOnly(*iden));
         }
 
-        match index_chain.split_last() {
+        match reassign_chain_steps.split_last() {
             Some((last, chain)) => {
                 let new_root_value = self.environment.heap.deep_copy_reassign_object(
                     current_root_value,
@@ -527,7 +533,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     ) -> Result<Value, InterpretError> {
         let indexer = self.interpret_clause_expr(&node.indexer)?;
         let indexee = self.interpret_clause_expr(&node.indexee)?;
-        indexer.get_by_subscription(indexee, self.environment)
+        indexer.get_by_chain_step(ChainStep::Subscription(indexee), self.environment)
     }
 
     fn interpret_member_access(

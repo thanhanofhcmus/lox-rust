@@ -1,0 +1,6 @@
+# A function call is not a valid lvalue — `f()[0] = x` must be rejected
+# at parse time with ReassignRootIsNotAnIdentifier.
+var a = [1, 2, 3];
+var f = fn() a;
+f()[0] = 99;
+assert(false, "should not reach: FnCall lvalue must have errored first");

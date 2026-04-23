@@ -1,6 +1,5 @@
 ## Todos:
 - Struct destructuring — `var Point { x, y } = p;` (shorthand) and `var Point { x = px, y = py } = p;` (renamed). Open: nominal vs structural, partial destructuring, `Any` rhs.
-- Struct field assignment (`p.x = y`, chained and mixed) — read works; write needs a `ReassignChainStep` enum (`Subscription | Member`) so field names flow as compile-time `Id`s. See `docs/plan-dot-member-access.md` Phase 2.
 - Struct runtime: `Statement::StructDecl` is still a runtime no-op — might stay that way (all work happens in parser+typechecker). Revisit if/when struct methods land.
 - Struct names as type annotations — `parse_type_node` (`parser.rs:80`) rejects identifiers, so `struct Box { center: Point }` fails. Accept `Token::Identifier` and resolve via type interner.
 - Module member access (`math::sin`) — uses `::` per `docs/temp-generated/plan-resolution-syntax.md`, NOT `.`. Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
@@ -13,7 +12,7 @@
 - Rework module (file loader interface, circular-import detection, deeper resolution chains)
 - Standard library module
 - More docs
-- More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`17` + `errors/`); no heap/GC unit tests, no module/import tests, no fuzzing.
+- More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`17` + `errors/`, including struct read/write and lvalue-rejection error fixtures); no heap/GC unit tests, no module/import tests, no fuzzing.
 - On-demand parsing
 - Bytecode VM experiment
 - Tree-sitter grammar
@@ -62,6 +61,7 @@
 - [X] Struct declaration parsing and typecheck — nominal typing, field count / name / type validation
 - [X] Struct runtime: literal construction, heap disposal, mark-sweep (including string field values); fixture `tests/fixtures/17_structs.lox`
 - [X] Dot member access (read): `p.x`, chained, mixed with subscription; `Any` passes through to runtime
+- [X] Dot member access (write): `p.x = y`, chained (`b.center.x = z`), mixed chains (`pair.items[0] = v`, `arr[0].x = v`); reassign chain refactored to `Vec<ChainStep<ClauseNode<T>>>` (unified generic enum shared with the runtime `ChainStep<Value>`). Readonly-base check still fires for loop vars / fn args. Also fixed a pre-existing chain-order bug: `a[0][1] = 99` previously wrote to `a[1][0]`.
 - [X] Struct equality in `Value::deep_eq` — nominal, field-count + recursive deep_eq
 - [X] String interner GC — `reset_marks` / `mark_to_keep` / `sweep`
 - [X] Validate struct literal field types at construction (`StructFieldTypeMismatch`)
