@@ -497,6 +497,10 @@ impl<'cl> TypeChecker<'cl> {
                 let (type_id, map) = self.convert_map_literal(map)?;
                 Ok((type_id, RawValueNode::MapLiteral(map)))
             }
+            RawValueNode::TupleLiteral(node) => {
+                let (type_id, node) = self.convert_tuple_literal(node)?;
+                Ok((type_id, RawValueNode::TupleLiteral(node)))
+            }
             RawValueNode::StructLiteral(node) => {
                 let (type_id, node) = self.convert_struct_literal(node)?;
                 Ok((type_id, RawValueNode::StructLiteral(node)))
@@ -604,6 +608,22 @@ impl<'cl> TypeChecker<'cl> {
         Ok((type_id, MapLiteralNode { nodes }))
     }
 
+    fn convert_tuple_literal(
+        &mut self,
+        node: TupleLiteralNode<()>,
+    ) -> Result<(TypeId, TupleLiteralNode<TypeId>), TypecheckError> {
+        let members = node
+            .members
+            .into_iter()
+            .map(|m| self.convert_clause(m))
+            .collect::<Result<Vec<_>, _>>()?;
+        let type_ = Type::Tuple {
+            members: members.iter().map(|v| v.extra).collect(),
+        };
+        let type_id = self.environment.declare_type(&type_);
+        Ok((type_id, TupleLiteralNode { members }))
+    }
+
     fn convert_struct_literal(
         &mut self,
         node: StructLiteralNode<()>,
@@ -613,12 +633,10 @@ impl<'cl> TypeChecker<'cl> {
             fields: ut_fields,
         } = node;
 
-        let mut fields = vec![];
+        let mut fields = Vec::with_capacity(ut_fields.len());
         let mut seen_field_ids = HashSet::with_capacity(ut_fields.len());
         for field in ut_fields {
-            // Reject `Point { x = 1, x = 2 }` — each field name must appear
-            // at most once per literal. Catching this here keeps the runtime
-            // contract simple and gives a precise source location.
+            // Reject `Point { x = 1, x = 2 }` — each field name must appear at most once per literal
             if !seen_field_ids.insert(field.iden.id) {
                 return Err(TypecheckError::DuplicateStructLiteralField(field.iden));
             }

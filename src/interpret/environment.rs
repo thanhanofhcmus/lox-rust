@@ -9,7 +9,7 @@ use crate::{
         error::InterpretError,
         heap::{GcHandle, GcKind, GcObject, Heap, StrId},
         prelude,
-        values::{Array, Function, Map, Struct},
+        values::{Array, Function, Map, Struct, Tuple},
     },
 };
 
@@ -291,6 +291,7 @@ impl Environment {
 
     decl_gc_type_methods!(array, Array, Array, GcKind::Array, Array);
     decl_gc_type_methods!(map, Map, Map, GcKind::Map, Map);
+    decl_gc_type_methods!(tuple, Tuple, Tuple, GcKind::Tuple, Tuple);
     decl_gc_type_methods!(struct, Struct, Struct, GcKind::Struct, Struct);
     decl_gc_type_methods!(function, Function, Function, GcKind::Function, Function);
 

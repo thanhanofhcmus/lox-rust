@@ -195,6 +195,7 @@ pub enum RawValueNode<T> {
     Scalar(ScalarNode),
     ArrayLiteral(ArrayLiteralNode<T>),
     MapLiteral(MapLiteralNode<T>),
+    TupleLiteral(TupleLiteralNode<T>),
     StructLiteral(StructLiteralNode<T>),
     FnDecl(FnDeclNode<T>),
 }
@@ -211,6 +212,11 @@ pub enum ScalarNode {
     },
     /// Store the actual string, for REPL intepreter
     LiteralStr(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct TupleLiteralNode<T> {
+    pub members: Vec<ClauseNode<T>>,
 }
 
 #[derive(Debug, Clone)]

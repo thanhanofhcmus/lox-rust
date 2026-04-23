@@ -13,8 +13,9 @@ impl TypeId {
     const CATEGORY_SCALAR: usize = 0 << Self::CATEGORY_SHIFT;
     const CATEGORY_ARRAY: usize = 1 << Self::CATEGORY_SHIFT;
     const CATEGORY_MAP: usize = 2 << Self::CATEGORY_SHIFT;
-    const CATEGORY_FUNCTION: usize = 3 << Self::CATEGORY_SHIFT;
-    const CATEGORY_STRUCT: usize = 4 << Self::CATEGORY_SHIFT;
+    const CATEGORY_TUPLE: usize = 3 << Self::CATEGORY_SHIFT;
+    const CATEGORY_FUNCTION: usize = 4 << Self::CATEGORY_SHIFT;
+    const CATEGORY_STRUCT: usize = 5 << Self::CATEGORY_SHIFT;
 
     pub const ANY: Self = Self(Self::CATEGORY_SCALAR | 1);
     pub const BOOL: Self = Self(Self::CATEGORY_SCALAR | 2);
@@ -23,18 +24,19 @@ impl TypeId {
     pub const UNIT: Self = Self(Self::CATEGORY_SCALAR | 5);
     pub const NIL: Self = Self(Self::CATEGORY_SCALAR | 6);
 
-    pub const ARRAY_ANY: Self = Self(Self::CATEGORY_ARRAY | 1);
-    pub const ARRAY_UNTYPED: Self = Self(Self::CATEGORY_ARRAY | 2);
+    pub const ARRAY_UNTYPED: Self = Self(Self::CATEGORY_ARRAY | 1);
+    pub const ARRAY_ANY: Self = Self(Self::CATEGORY_ARRAY | 2);
 
-    pub const MAP_UNTYPED: Self = Self(Self::CATEGORY_MAP | 1);
-    pub const MAP_ANY_ANY: Self = Self(Self::CATEGORY_MAP | 2);
+    pub const MAP_ANY_ANY: Self = Self(Self::CATEGORY_MAP | 1);
+    pub const MAP_UNTYPED: Self = Self(Self::CATEGORY_MAP | 2);
 
     pub const FUNCTION_ANY: Self = Self(Self::CATEGORY_FUNCTION | 1);
 
-    const NEXT_IDS: [usize; 5] = [
+    const NEXT_IDS: [usize; 6] = [
         7, // Scalar
         3, // Array
         3, // Map
+        1, // Tuple
         2, // Function
         1, // Struct
     ];
@@ -78,6 +80,10 @@ pub enum Type {
         value: TypeId,
     },
 
+    Tuple {
+        members: Vec<TypeId>,
+    },
+
     Struct(StructType),
 
     // TODO: support generic types
@@ -111,7 +117,7 @@ pub struct TypeInterner {
     id_to_type: HashMap<TypeId, Type>,
     /// Store the name of the structs and their assoicated fields, maybe method later
     id_to_type_id: HashMap<Id, TypeId>,
-    counters: [usize; 5],
+    counters: [usize; 6],
 }
 
 impl TypeInterner {
@@ -150,11 +156,14 @@ impl TypeInterner {
         }
 
         let (index, category) = match type_ {
+            Type::Unit | Type::Nil | Type::Any | Type::Bool | Type::Number | Type::Str => {
+                (0, TypeId::CATEGORY_SCALAR)
+            }
             Type::Array { .. } => (1, TypeId::CATEGORY_ARRAY),
             Type::Map { .. } => (2, TypeId::CATEGORY_MAP),
+            Type::Tuple { .. } => (2, TypeId::CATEGORY_TUPLE),
             Type::Function { .. } => (3, TypeId::CATEGORY_FUNCTION),
             Type::Struct { .. } => (4, TypeId::CATEGORY_STRUCT),
-            _ => (0, TypeId::CATEGORY_SCALAR),
         };
 
         let id_payload = self.counters[index];
@@ -195,6 +204,13 @@ impl TypeInterner {
                     self.generate_readable_name(sb, *key),
                     self.generate_readable_name(sb, *value)
                 )
+            }
+            Some(Type::Tuple { members }) => {
+                let names = members
+                    .iter()
+                    .map(|m| self.generate_readable_name(sb, *m))
+                    .collect::<Vec<String>>();
+                format!("%({})", names.join(", "))
             }
             Some(Type::Struct(StructType { id, fields })) => {
                 let name = sb.get_or_unknown(*id);

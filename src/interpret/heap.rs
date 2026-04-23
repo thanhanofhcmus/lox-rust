@@ -8,7 +8,7 @@ use crate::{
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
-        values::{Array, Function, Map, MapKey, Struct, Value},
+        values::{Array, Function, Map, MapKey, Struct, Tuple, Value},
     },
     string_interner::{StringInterner, SymbolId},
 };
@@ -26,6 +26,7 @@ pub struct GcHandle(usize);
 pub enum GcKind {
     Array,
     Map,
+    Tuple,
     Struct,
     Function,
 }
@@ -35,6 +36,7 @@ impl GcKind {
         match self {
             GcKind::Array => "Array",
             GcKind::Map => "Map",
+            GcKind::Tuple => "Tuple",
             GcKind::Struct => "Struct",
             GcKind::Function => "Function",
         }
@@ -45,6 +47,7 @@ impl GcKind {
 pub enum GcObject {
     Array(Array),
     Map(Map),
+    Tuple(Tuple),
     Struct(Struct),
     Function(Function),
 }
@@ -54,6 +57,7 @@ impl GcObject {
         match self {
             GcObject::Array(_) => GcKind::Array,
             GcObject::Map(_) => GcKind::Map,
+            GcObject::Tuple(_) => GcKind::Tuple,
             GcObject::Struct(_) => GcKind::Struct,
             GcObject::Function(_) => GcKind::Function,
         }
@@ -245,6 +249,14 @@ impl Heap {
                         .for_each(|id| self.string_interner.mark_to_keep(id));
                     trace_list.extend(arr.iter().filter_map(|v| v.get_handle()));
                 }
+                GcObject::Tuple(tuple) => {
+                    tuple
+                        .members
+                        .iter()
+                        .filter_map(|m| m.get_str_id())
+                        .for_each(|id| self.string_interner.mark_to_keep(id));
+                    trace_list.extend(tuple.members.iter().filter_map(|m| m.get_handle()));
+                }
                 GcObject::Struct(struct_) => {
                     struct_
                         .fields
@@ -304,6 +316,12 @@ impl Heap {
             GcObject::Array(arr) => {
                 // have to use clone here since we are modifying the backing GC object
                 for value in arr.clone() {
+                    self.shallow_dispose_value(value);
+                }
+            }
+            GcObject::Tuple(tuple) => {
+                // have to use clone here since we are modifying the backing GC object
+                for value in tuple.members.clone() {
                     self.shallow_dispose_value(value);
                 }
             }
@@ -518,6 +536,11 @@ impl DebugString for Heap {
                 GcObject::Map(map) => {
                     for (k, v) in map.iter() {
                         writeln!(s, "    {k:?} => {v:?}").unwrap();
+                    }
+                }
+                GcObject::Tuple(tuple) => {
+                    for (j, v) in tuple.members.iter().enumerate() {
+                        writeln!(s, "    ({j:3}) {v:?}").unwrap();
                     }
                 }
                 GcObject::Struct(st) => {

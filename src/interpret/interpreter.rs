@@ -6,7 +6,7 @@ use crate::interpret::heap::GcHandle;
 
 use crate::identifier_registry::IdentifierRegistry;
 use crate::interpret::values::{
-    Array, BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField,
+    Array, BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple,
 };
 use crate::parse;
 use crate::string_utils;
@@ -412,6 +412,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             RawValueNode::Scalar(node) => self.interpret_scalar_expr(node),
             RawValueNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
             RawValueNode::MapLiteral(node) => self.interpret_map_literal(node)?,
+            RawValueNode::TupleLiteral(node) => self.interpret_tuple_literal(node)?,
             RawValueNode::StructLiteral(node) => self.interpret_struct_literal(node)?,
             RawValueNode::FnDecl(node) => self.interpret_fn_decl(node)?,
         };
@@ -500,6 +501,18 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             map.insert(key, value);
         }
         Ok(self.environment.insert_map_variable(map))
+    }
+
+    fn interpret_tuple_literal(
+        &mut self,
+        node: &TupleLiteralNode<TypeId>,
+    ) -> Result<Value, InterpretError> {
+        let members = node
+            .members
+            .iter()
+            .map(|m| self.interpret_clause_expr(m))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(self.environment.insert_tuple_variable(Tuple { members }))
     }
 
     fn interpret_struct_literal(

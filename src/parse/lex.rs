@@ -101,6 +101,12 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                         Span::two(curr_offset),
                     ));
                     curr_offset += 1;
+                } else if is_next_char(utf8_bytes, curr_offset, b'(') {
+                    result.push(LexItem::new(
+                        Token::PercentLRoundParen,
+                        Span::two(curr_offset),
+                    ));
+                    curr_offset += 1;
                 } else {
                     result.push(tok_one(Token::Percentage));
                 }

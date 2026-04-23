@@ -26,6 +26,11 @@ pub type Array = Vec<Value>;
 pub type Map = BTreeMap<MapKey, Value>;
 
 #[derive(Debug, Clone)]
+pub struct Tuple {
+    pub members: Vec<Value>,
+}
+
+#[derive(Debug, Clone)]
 pub struct StructField {
     pub value: Value,
 }
@@ -53,6 +58,9 @@ pub enum Value {
 
     #[debug("Map({:?})", _0)]
     Map(GcHandle),
+
+    #[debug("Struct({:?})", _0)]
+    Tuple(GcHandle),
 
     #[debug("Struct({:?})", _0)]
     Struct(GcHandle),
@@ -103,8 +111,9 @@ impl Value {
             Value::Array(handle)
             | Value::Map(handle)
             | Value::Function(handle)
+            | Value::Tuple(handle)
             | Value::Struct(handle) => Some(handle),
-            _ => None,
+            Value::Unit | Value::Scalar(_) | Value::Str(_) | Value::BuiltinFunction(_) => None,
         }
     }
 
@@ -113,8 +122,9 @@ impl Value {
             Value::Array(handle)
             | Value::Map(handle)
             | Value::Function(handle)
+            | Value::Tuple(handle)
             | Value::Struct(handle) => Some(std::mem::replace(handle, new_handle)),
-            _ => None,
+            Value::Unit | Value::Scalar(_) | Value::Str(_) | Value::BuiltinFunction(_) => None,
         }
     }
 
@@ -149,6 +159,7 @@ impl Value {
                 }
                 Ok(true)
             }
+
             (Map(l_handle), Map(r_handle)) => {
                 if l_handle == r_handle {
                     return Ok(true);
@@ -159,6 +170,23 @@ impl Value {
                     let Some(r_value) = r_map.get(l_key) else {
                         return Ok(false);
                     };
+                    if !(l_value.deep_eq(r_value, env)?) {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+
+            (Tuple(l_handle), Tuple(r_handle)) => {
+                if l_handle == r_handle {
+                    return Ok(true);
+                }
+                let l_tuple = env.get_tuple(*l_handle)?;
+                let r_tuple = env.get_tuple(*r_handle)?;
+                if l_tuple.members.len() != r_tuple.members.len() {
+                    return Ok(false);
+                }
+                for (l_value, r_value) in l_tuple.members.iter().zip(&r_tuple.members) {
                     if !(l_value.deep_eq(r_value, env)?) {
                         return Ok(false);
                     }
@@ -194,6 +222,7 @@ impl Value {
         }
     }
 
+    // TODO: support tuple
     pub fn get_by_chain_step(
         &self,
         step: ChainStep<Value>,
@@ -306,6 +335,22 @@ impl DisplayWriter for Value {
                     }
                 }
                 write!(w, "}}").map_err(convert)?;
+                Ok(())
+            }
+            Value::Tuple(handle) => {
+                let tuple = env.get_tuple(handle)?;
+                w.write_all(b"%(").map_err(convert)?;
+
+                if let Some((last, rest)) = tuple.members.split_last() {
+                    for value in rest {
+                        value.write_display(ctx, w)?;
+                        w.write_all(b", ").map_err(convert)?;
+                    }
+                    last.write_display(ctx, w)?;
+                }
+
+                w.write_all(b")").map_err(convert)?;
+
                 Ok(())
             }
             Value::Function(_) => write!(w, "function").map_err(convert),

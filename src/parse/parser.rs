@@ -419,6 +419,7 @@ fn parse_pratt_infix(
 ) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
+        // Struct/Tuple member access
         Token::Dot => {
             state.consume_token(li.token)?;
             let field_li = state.consume_token(Token::Identifier)?;
@@ -430,7 +431,7 @@ fn parse_pratt_infix(
                 },
             )))
         }
-
+        // Subscription call
         Token::LSquareParen => {
             state.consume_token(li.token)?;
             let indexee = parse_clause_node(state)?;
@@ -442,6 +443,7 @@ fn parse_pratt_infix(
                 },
             )))
         }
+        // function call
         Token::LRoundParen => {
             let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
             Ok(ClauseNode::new(ClauseCase::FnCall(FnCallNode {
@@ -526,6 +528,7 @@ fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
             ClauseCase::Identifier(node)
         }
     } else if state.peek(&[Token::LRoundParen]) {
+        // conflict
         let node = parse_group(state)?;
         ClauseCase::Group(Box::new(node))
     } else {
@@ -545,6 +548,9 @@ fn parse_raw_value_node(state: &mut Context) -> Result<RawValueNode<()>, ParseEr
         | Token::String
         | Token::RawString => parse_scalar_node(state).map(RawValueNode::Scalar),
         Token::LSquareParen => parse_array_literal_node(state).map(RawValueNode::ArrayLiteral),
+        Token::PercentLRoundParen => {
+            parse_tuple_literal_node(state).map(RawValueNode::TupleLiteral)
+        }
         Token::PercentLPointParent => parse_map_literal_node(state).map(RawValueNode::MapLiteral),
         Token::Fn => parse_function_decl(state).map(RawValueNode::FnDecl),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
@@ -668,6 +674,16 @@ fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode<()>, Par
         parse_map_literal_element_node,
     )?;
     Ok(MapLiteralNode { nodes })
+}
+
+fn parse_tuple_literal_node(state: &mut Context) -> Result<TupleLiteralNode<()>, ParseError> {
+    let members = parse_comma_list(
+        state,
+        Token::PercentLRoundParen,
+        Token::RRoundParen,
+        parse_clause_node,
+    )?;
+    Ok(TupleLiteralNode { members })
 }
 
 fn parse_map_literal_element_node(
