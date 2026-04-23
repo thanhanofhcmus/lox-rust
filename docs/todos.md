@@ -3,13 +3,12 @@
 - Struct runtime: `Statement::StructDecl` is still a runtime no-op — might stay that way (all work happens in parser+typechecker). Revisit if/when struct methods land.
 - Module member access (`math::sin`) — uses `::` . Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
 - Type-associated calls (`Car:new()`) — single-colon infix per the same plan doc.
-- 
 - Method calls on values (`arr.push(v)`, `m.keys()`) — dot arm in `parse_pratt_infix` needs to branch on trailing `(`. Enables migration of prelude `array_*`/`map_*` to dot methods. See plan doc Phase 1.
-- Tuple syntax `var x = (a, b); print(x.0);`
+- Tuple syntax `var x = %(a, b); print(x.0);`
 - Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier`.
 - Formatted strings
 - Map comprehension (`%{ k => v for (k, v) in map }`), using tuple symtax
-- Map for loop (`for (k, v) in map { ... }`), using tuple syntax
+- Map for loop (`for %(k, v) in map { ... }`), using tuple syntax
 - Rework module (fil(e loader interface, circular-import detection, deeper resolution chains)
 - Standard library module
 - More docs
@@ -60,9 +59,9 @@
 - [X] Map prelude functions — `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`
 - [X] Type annotation + type checker — gradual typing with `Any` as top type; two-phase AST (`AST<()>` → `AST<TypeId>`); see ADR 008
 - [X] Struct declaration parsing and typecheck — nominal typing, field count / name / type validation
-- [X] Struct runtime: literal construction, heap disposal, mark-sweep (including string field values); fixture `tests/fixtures/17_structs.lox`
+- [X] Struct runtime: literal construction, heap disposal, mark-sweep (including string field values)
 - [X] Dot member access (read): `p.x`, chained, mixed with subscription; `Any` passes through to runtime
-- [X] Dot member access (write): `p.x = y`, chained (`b.center.x = z`), mixed chains (`pair.items[0] = v`, `arr[0].x = v`); reassign chain refactored to `Vec<ChainStep<ClauseNode<T>>>` (unified generic enum shared with the runtime `ChainStep<Value>`). Readonly-base check still fires for loop vars / fn args. Also fixed a pre-existing chain-order bug: `a[0][1] = 99` previously wrote to `a[1][0]`.
+- [X] Dot member access (write): `p.x = y`, chained (`b.center.x = z`), mixed chains (`pair.items[0] = v`, `arr[0].x = v`); 
 - [X] Struct equality in `Value::deep_eq` — nominal, field-count + recursive deep_eq
 - [X] String interner GC — `reset_marks` / `mark_to_keep` / `sweep`
 - [X] Validate struct literal field types at construction (`StructFieldTypeMismatch`)
@@ -72,5 +71,3 @@
 - [X] Parser recursion depth limit — `MAX_RECURSION_DEPTH = 256` + `RecursionLimitExceeded`
 - [X] `span.rs` `to_start_row_col()` — counts Unicode scalar values, resets col on newline
 - [X] `parse/lex.rs` `lex_string` escape-end check — uses `*offset >= input.len()`
-- [X] Typo cleanup — `predule`, `variadict`, `LAST_RESVERED_COUNTER`, `promt`, `RFArrtow`, `RTArrow`, `ArrayForComprehention`, `intepret_builtin_fn_call_expr`, `Unclosesed`, plus error-message typos
-- [X] Clippy clean — removed needless `return` in `Value::deep_eq`

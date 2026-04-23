@@ -240,20 +240,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             return Ok(res);
         }
         let value = res.get_or_error()?;
-
-        match &node.binding {
-            DeclareBindingNode::Identifier(iden) => self.insert_variable(*iden, value)?,
-            DeclareBindingNode::Tuple { members } => {
-                let handle = value.get_handle().unwrap();
-                let tuple = self.environment.get_tuple(handle)?;
-                if members.len() != tuple.members.len() {
-                    unimplemented!()
-                }
-                for (iden, value) in members.iter().zip(tuple.members.clone()) {
-                    self.insert_variable(*iden, value)?;
-                }
-            }
-        }
+        self.interpret_binding(&node.binding, value)?;
         Ok(ValueReturn::none())
     }
 
