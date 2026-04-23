@@ -9,19 +9,19 @@ Syntax point
 
 ```
 global_block      = import* stmt*
-stmt              = declaration | reassignment | struct_decl | expr
+stmt              = declaration | struct_decl | reassignment | expr
 struct_decl       = "struct" "{" (struct_field_decl "," ...)* "}"
-struct_field_decl = IDENTIFIER (":"  TYPE_IDENTIFIER)?
+struct_field_decl = IDENTIFIER (":" type_iden )?
 block             = "{" stmt* "}"
 function_block    = "{" (return | stmt)* "}"
 return            = "return" expr? ";"
 import            = "import" UNIX_PATH_STRING "as" IDENTIFIER ";"
-declaration       = "var" IDENTIFIER (":" type) "=" expr ";"
+declaration       = "var" IDENTIFIER (":" type_iden) "=" expr ";"
 reassignment      = IDENTIFIER "=" expr ";"
-expr              = while | when | clause
+expr              = if | while | when | clause
 when              = "when" "{" ( clause "->" expr "," ... )* "}"
 while             = "while" clause block
-clause            = binary | unary | call | subscription | if
+clause            = binary | unary | fn_call | subscription | member_access
 if                = "if" clause block ("else" if | block)?
 binary            = clause ( "and" | "or" )          clause
                   | clause ("==" | "!=")             clause
@@ -29,16 +29,17 @@ binary            = clause ( "and" | "or" )          clause
                   | clause ("+" | "-")               clause
                   | clause ("*" | "/" | "%")         clause
 unary             = ("not" | "-")* unary | primary
-call              = clause "(" (clause, "," ...)* ")"
+fn_call           = clause "(" (clause, "," ...)* ")"
 subscription      = clause "[" clause "]"
+member_access     = clause "." IDENTIFIER
 primary           = IDENTIFIER | group | raw_value
-raw_value         = scalar | array_literal | map_literal | struct_decl | fn_decl | struct_literal
+raw_value         = scalar | array_literal | map_literal | struct_decl | fn_decl | struct_literal 
 scalar            = STRING | NUMBER | "true" | "false" | "nil" 
-fn_decl           = "fn" "(" (fn_param "," ...)* ")" ("->" type)? (function_block | expr)
-fn_param          = IDENTIFIER (":" type)?
+fn_decl           = "fn" "(" (fn_param "," ...)* ")" ("->" type_iden)? (function_block | expr)
+fn_param          = IDENTIFIER (":" type_iden)?
 struct_literal    = TYPE_IDENTIFIER "{" (IDENTIFIER "=" clause "," ... )* "}"
 array_literal     = "[" (clause, "," ... )* "]" | "[" ":" clause ":" clause "]" | "[" "for" IDENTIFIER "in" clause ("if" clause)? ":" clause "]"
 map_literal       = "%{" (primary "=>" clause , ...)* "}"
 group             = "(" clause ")"
-type              = "any" | "bool" | "number" | "str" | TYPE_IDENTIFIER
+type_iden         = "any" | "bool" | "number" | "str" | "[" type_iden "]" | "%{" type_iden "=>" type_iden "}" | TYPE_IDENTIFIER
 ```
