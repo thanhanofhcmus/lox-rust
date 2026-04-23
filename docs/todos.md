@@ -1,15 +1,16 @@
 ## Todos:
 - Struct destructuring — `var Point { x, y } = p;` (shorthand) and `var Point { x = px, y = py } = p;` (renamed). Open: nominal vs structural, partial destructuring, `Any` rhs.
 - Struct runtime: `Statement::StructDecl` is still a runtime no-op — might stay that way (all work happens in parser+typechecker). Revisit if/when struct methods land.
-- Struct names as type annotations — `parse_type_node` (`parser.rs:80`) rejects identifiers, so `struct Box { center: Point }` fails. Accept `Token::Identifier` and resolve via type interner.
-- Module member access (`math::sin`) — uses `::` per `docs/temp-generated/plan-resolution-syntax.md`, NOT `.`. Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
+- Module member access (`math::sin`) — uses `::` . Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
 - Type-associated calls (`Car:new()`) — single-colon infix per the same plan doc.
+- 
 - Method calls on values (`arr.push(v)`, `m.keys()`) — dot arm in `parse_pratt_infix` needs to branch on trailing `(`. Enables migration of prelude `array_*`/`map_*` to dot methods. See plan doc Phase 1.
+- Tuple syntax `var x = (a, b); print(x.0);`
 - Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier`.
 - Formatted strings
-- Map comprehension (`%{ k => v for k, v in map }`)
-- Map for loop (`for k, v in map { ... }`)
-- Rework module (file loader interface, circular-import detection, deeper resolution chains)
+- Map comprehension (`%{ k => v for (k, v) in map }`), using tuple symtax
+- Map for loop (`for (k, v) in map { ... }`), using tuple syntax
+- Rework module (fil(e loader interface, circular-import detection, deeper resolution chains)
 - Standard library module
 - More docs
 - More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`17` + `errors/`, including struct read/write and lvalue-rejection error fixtures); no heap/GC unit tests, no module/import tests, no fuzzing.
