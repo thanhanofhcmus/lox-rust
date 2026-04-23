@@ -88,7 +88,10 @@ impl<'cl> TypeChecker<'cl> {
             expr,
         }: DeclareStatementNode<()>,
     ) -> Result<DeclareStatementNode<TypeId>, TypecheckError> {
-        let explicit_type_id = type_node.as_ref().map(|n| self.extract_type_node_id(n));
+        let explicit_type_id = type_node
+            .as_ref()
+            .map(|n| self.extract_type_node_id(n))
+            .transpose()?;
 
         let expr = self.convert_expr(expr)?;
 
@@ -118,21 +121,25 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn extract_type_node_id(&mut self, node: &TypeNode) -> TypeId {
+    fn extract_type_node_id(&mut self, node: &TypeNode) -> Result<TypeId, TypecheckError> {
         match node {
-            TypeNode::BuiltIn(type_id) => *type_id,
+            TypeNode::BuiltIn(type_id) => Ok(*type_id),
             TypeNode::Array(inner_type_node) => {
-                let elem = self.extract_type_node_id(inner_type_node);
-                self.environment.declare_type(&Type::Array { elem })
+                let elem = self.extract_type_node_id(inner_type_node)?;
+                Ok(self.environment.declare_type(&Type::Array { elem }))
             }
             TypeNode::Map { key, value } => {
-                let key_type_id = self.extract_type_node_id(key);
-                let value_type_id = self.extract_type_node_id(value);
-                self.environment.declare_type(&Type::Map {
+                let key_type_id = self.extract_type_node_id(key)?;
+                let value_type_id = self.extract_type_node_id(value)?;
+                Ok(self.environment.declare_type(&Type::Map {
                     key: key_type_id,
                     value: value_type_id,
-                })
+                }))
             }
+            TypeNode::Named(type_iden) => self
+                .environment
+                .lookup_type_id_from_id(type_iden.id)
+                .ok_or(TypecheckError::UndefinedTypeIdentifier(*type_iden)),
         }
     }
 
@@ -148,15 +155,16 @@ impl<'cl> TypeChecker<'cl> {
                     .explicit_type
                     .as_ref()
                     .map(|n| self.extract_type_node_id(n))
+                    .transpose()?
                     .unwrap_or(TypeId::ANY);
                 self.environment
                     .associate_id_with_type(field.iden.id, type_id);
-                StructField {
+                Ok(StructField {
                     id: field.iden.id,
                     type_: type_id,
-                }
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, TypecheckError>>()?;
 
         let type_id = self.environment.declare_type(&Type::Struct(StructType {
             id: node.iden.id,
@@ -177,7 +185,7 @@ impl<'cl> TypeChecker<'cl> {
         let base_type_id = self
             .environment
             .lookup_id(target.base.id)
-            .ok_or(TypecheckError::UndefinedIdentifier(target.base))?;
+            .ok_or(TypecheckError::UndefinedVariableIdentifier(target.base))?;
 
         // Walk the chain with an explicit running type, validating each step
         // against the current type and computing the next running type.
@@ -221,7 +229,7 @@ impl<'cl> TypeChecker<'cl> {
         let indexer_type = self
             .environment
             .lookup_type(indexer_type_id)
-            .ok_or(TypecheckError::TypeIsNotDeclared(indexer_type_id))?;
+            .ok_or(TypecheckError::TypeIsNotDeclaredInternal(indexer_type_id))?;
         match indexer_type {
             Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => {
                 Ok(*elem)
@@ -257,7 +265,7 @@ impl<'cl> TypeChecker<'cl> {
         let object_type = self
             .environment
             .lookup_type(object_type_id)
-            .ok_or(TypecheckError::TypeIsNotDeclared(object_type_id))?;
+            .ok_or(TypecheckError::TypeIsNotDeclaredInternal(object_type_id))?;
         let struct_type = match object_type {
             Type::Struct(struct_type) => struct_type,
             _ => return Err(TypecheckError::TypeIsNotStruct(object_type_id)),
@@ -431,7 +439,7 @@ impl<'cl> TypeChecker<'cl> {
                 let type_ = self
                     .environment
                     .lookup_id(iden.id)
-                    .ok_or(TypecheckError::UndefinedIdentifier(iden))?;
+                    .ok_or(TypecheckError::UndefinedVariableIdentifier(iden))?;
                 (type_, ClauseCase::Identifier(iden))
             }
             ClauseCase::Group(inner) => {
@@ -624,11 +632,11 @@ impl<'cl> TypeChecker<'cl> {
         let struct_type_id = self
             .environment
             .lookup_type_id_from_id(iden.id)
-            .ok_or(TypecheckError::UndefinedIdentifier(iden))?;
+            .ok_or(TypecheckError::UndefinedVariableIdentifier(iden))?;
         let type_ = self
             .environment
             .lookup_type(struct_type_id)
-            .ok_or(TypecheckError::TypeIsNotDeclared(struct_type_id))?;
+            .ok_or(TypecheckError::TypeIsNotDeclaredInternal(struct_type_id))?;
 
         match type_ {
             Type::Struct(struct_type) => {
@@ -680,12 +688,13 @@ impl<'cl> TypeChecker<'cl> {
                 .params
                 .iter()
                 .map(|p| {
-                    p.explicit_type
+                    Ok(p.explicit_type
                         .as_ref()
                         .map(|n| this.extract_type_node_id(n))
-                        .unwrap_or(TypeId::ANY)
+                        .transpose()?
+                        .unwrap_or(TypeId::ANY))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, TypecheckError>>()?;
 
             if let Some(iden) = &this.current_declaration_id {
                 // Pre-declare the enclosing name as a function in the body's scope
@@ -708,7 +717,8 @@ impl<'cl> TypeChecker<'cl> {
             let explicit_return_type = node
                 .return_type
                 .as_ref()
-                .map(|n| this.extract_type_node_id(n));
+                .map(|n| this.extract_type_node_id(n))
+                .transpose()?;
 
             let return_type = match explicit_return_type {
                 // inferred type got from the computed body
@@ -802,7 +812,7 @@ impl<'cl> TypeChecker<'cl> {
         let caller_type = self
             .environment
             .lookup_type(caller_type_id)
-            .ok_or(TypecheckError::TypeIsNotDeclared(caller_type_id))?;
+            .ok_or(TypecheckError::TypeIsNotDeclaredInternal(caller_type_id))?;
         let (param_type_ids, variadic_type_id, return_type_id) = match caller_type {
             Type::Function {
                 params,
@@ -1208,7 +1218,10 @@ mod tests {
     #[test]
     fn identifier_undefined_errors() {
         let err = typecheck_str("x;").unwrap_err();
-        assert!(matches!(err, TypecheckError::UndefinedIdentifier(_)));
+        assert!(matches!(
+            err,
+            TypecheckError::UndefinedVariableIdentifier(_)
+        ));
     }
 
     #[test]
@@ -1248,7 +1261,10 @@ mod tests {
     #[test]
     fn reassign_undefined_errors() {
         let err = typecheck_str("x = 5;").unwrap_err();
-        assert!(matches!(err, TypecheckError::UndefinedIdentifier(_)));
+        assert!(matches!(
+            err,
+            TypecheckError::UndefinedVariableIdentifier(_)
+        ));
     }
 
     #[test]
@@ -1287,7 +1303,7 @@ mod tests {
     fn struct_literal_undeclared_name_errors() {
         let err = typecheck_str("var p = Foo { x = 1 };").unwrap_err();
         assert!(
-            matches!(err, TypecheckError::UndefinedIdentifier(_)),
+            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
             "expected UndefinedIdentifier, got {err:?}"
         );
     }

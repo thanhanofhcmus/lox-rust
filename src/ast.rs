@@ -11,7 +11,7 @@ pub struct AST<T> {
 pub enum TypeNode {
     BuiltIn(TypeId),
     Array(Box<TypeNode>),
-    // Identifier(IdentifierNode),
+    Named(Identifier),
     Map {
         key: Box<TypeNode>,
         value: Box<TypeNode>,

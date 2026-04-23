@@ -40,14 +40,17 @@ pub enum TypecheckError {
     #[error("The type `{0:?}` is not struct and used in struct literal")]
     TypeIdNotStructInLiteral(TypeId),
 
-    #[error("Undefined name: '{:?}' is not defined in this scope.", _0.id)]
-    UndefinedIdentifier(Identifier),
+    #[error("Variable name: '{:?}' is not defined in this scope.", _0.id)]
+    UndefinedVariableIdentifier(Identifier),
+
+    #[error("Type name: '{:?}' is not defined in this scope.", _0.id)]
+    UndefinedTypeIdentifier(Identifier),
 
     #[error("Name collision: '{:?}' is already declared in this scope.", _0.id)]
     DuplicateDeclaration(Identifier),
 
     #[error("Internal: Type with id {0:?} should have been declared but not found")]
-    TypeIsNotDeclared(TypeId),
+    TypeIsNotDeclaredInternal(TypeId),
 
     #[error("The type `{0:?}` is not a struct")]
     TypeIsNotStruct(TypeId),
@@ -176,9 +179,16 @@ impl TypecheckError {
                 interner.generate_readable_name(sb, *actual)
             ),
 
-            Self::UndefinedIdentifier(node) => {
+            Self::UndefinedVariableIdentifier(node) => {
                 format!(
-                    "The identifier '{}' is not defined in the current scope.",
+                    "The variable '{}' is not defined in the visible scope.",
+                    sb.get_or_unknown(node.id),
+                )
+            }
+
+            Self::UndefinedTypeIdentifier(node) => {
+                format!(
+                    "The type '{}' is not defined in the visible scope.",
                     sb.get_or_unknown(node.id),
                 )
             }
@@ -190,8 +200,8 @@ impl TypecheckError {
                 )
             }
 
-            Self::TypeIsNotDeclared(type_id) => format!(
-                "Type with id {} should have been declared but not found.",
+            Self::TypeIsNotDeclaredInternal(type_id) => format!(
+                "Type with id {} should have been declared but not found. This is an internal error.",
                 interner.generate_readable_name(sb, *type_id),
             ),
 
@@ -230,7 +240,8 @@ impl TypecheckError {
     fn get_source_start(&self, input: &str) -> (usize, usize) {
         match self {
             Self::ExplicitTypeMismatch(node, _, _)
-            | Self::UndefinedIdentifier(node)
+            | Self::UndefinedVariableIdentifier(node)
+            | Self::UndefinedTypeIdentifier(node)
             | Self::DuplicateDeclaration(node)
             | Self::StructFieldNotExist(_, node)
             | Self::DuplicateStructLiteralField(node) => node.span.to_start_row_col(input),

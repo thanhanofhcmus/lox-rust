@@ -107,13 +107,17 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
 
     let type_item = *state.get_curr()?;
     state.advance();
+
+    if type_item.token == Token::Identifier {
+        return Ok(TypeNode::Named(state.create_identifier(type_item)));
+    }
+
     // for a simple case we we can work out the type right a way
     let type_id = match type_item.token {
         Token::TypeAny => TypeId::ANY,
         Token::TypeBool => TypeId::BOOL,
         Token::TypeNumber => TypeId::NUMBER,
         Token::TypeStr => TypeId::STR,
-        // Token::Identifier => Typed::Name(...)
         _ => {
             return Err(ParseError::UnexpectedToken(
                 type_item.token,

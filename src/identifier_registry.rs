@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{id::Id, span::Span};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identifier {
     pub span: Span,
     pub id: Id,
