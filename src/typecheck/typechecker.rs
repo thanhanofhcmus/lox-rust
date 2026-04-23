@@ -203,9 +203,9 @@ impl<'cl> TypeChecker<'cl> {
                     follows.push(ChainStep::Subscription(typed_clause));
                     next
                 }
-                ChainStep::Member(field_iden) => {
-                    let next = self.resolve_member_result_type(running_type_id, *field_iden)?;
-                    follows.push(ChainStep::Member(*field_iden));
+                ChainStep::Member(member) => {
+                    let next = self.resolve_member_result_type(running_type_id, *member)?;
+                    follows.push(ChainStep::Member(*member));
                     next
                 }
             };
@@ -257,7 +257,7 @@ impl<'cl> TypeChecker<'cl> {
     fn resolve_member_result_type(
         &self,
         object_type_id: TypeId,
-        field: Identifier,
+        member: MemberNode,
     ) -> Result<TypeId, TypecheckError> {
         if object_type_id == TypeId::ANY {
             return Ok(TypeId::ANY);
@@ -266,16 +266,30 @@ impl<'cl> TypeChecker<'cl> {
             .environment
             .lookup_type(object_type_id)
             .ok_or(TypecheckError::TypeIsNotDeclaredInternal(object_type_id))?;
-        let struct_type = match object_type {
-            Type::Struct(struct_type) => struct_type,
-            _ => return Err(TypecheckError::TypeIsNotStruct(object_type_id)),
-        };
-        struct_type
-            .fields
-            .iter()
-            .find(|f| f.id == field.id)
-            .map(|f| f.type_)
-            .ok_or(TypecheckError::StructFieldNotExist(object_type_id, field))
+        match member {
+            MemberNode::StructField(field) => match object_type {
+                Type::Struct(struct_type) => struct_type
+                    .fields
+                    .iter()
+                    .find(|f| f.id == field.id)
+                    .map(|f| f.type_)
+                    .ok_or(TypecheckError::StructFieldNotExist(object_type_id, field)),
+                _ => Err(TypecheckError::TypeIsNotStruct(object_type_id)),
+            },
+            MemberNode::TupleIndex(idx) => match object_type {
+                Type::Tuple {
+                    members: tuple_members,
+                } => tuple_members
+                    .get(idx)
+                    .copied()
+                    .ok_or(TypecheckError::TupleIndexOutOfBound(
+                        object_type_id,
+                        tuple_members.len(),
+                        idx,
+                    )),
+                _ => Err(TypecheckError::TypeIsNotStruct(object_type_id)),
+            },
+        }
     }
 
     fn convert_expr(
@@ -776,12 +790,12 @@ impl<'cl> TypeChecker<'cl> {
         node: MemberAccessNode<()>,
     ) -> Result<(TypeId, MemberAccessNode<TypeId>), TypecheckError> {
         let object = self.convert_clause(*node.object)?;
-        let field_type_id = self.resolve_member_result_type(object.extra, node.field)?;
+        let member_type_id = self.resolve_member_result_type(object.extra, node.member)?;
         Ok((
-            field_type_id,
+            member_type_id,
             MemberAccessNode {
                 object: Box::new(object),
-                field: node.field,
+                member: node.member,
             },
         ))
     }

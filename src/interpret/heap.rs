@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    ast::ChainStep,
+    ast::{ChainStep, MemberNode},
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
@@ -78,18 +78,20 @@ impl GcObject {
                 }
                 _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
             },
-            ChainStep::Member(field_iden) => match self {
-                GcObject::Struct(struct_) => {
-                    let field = struct_
-                        .fields
-                        .get(&field_iden.id)
-                        .ok_or(InterpretError::StructFieldNotFound(struct_.id, field_iden))?;
-                    Ok(field.value)
-                }
-                _ => Err(InterpretError::GcObjectNotStruct(
-                    self.get_kind(),
-                    field_iden,
-                )),
+            ChainStep::Member(MemberNode::StructField(field)) => match self {
+                GcObject::Struct(struct_) => struct_
+                    .fields
+                    .get(&field.id)
+                    .map(|f| f.value)
+                    .ok_or(InterpretError::StructFieldNotFound(struct_.id, field)),
+                _ => Err(InterpretError::GcObjectNotStruct(self.get_kind(), field)),
+            },
+            ChainStep::Member(MemberNode::TupleIndex(idx)) => match self {
+                GcObject::Tuple(Tuple { members }) => members
+                    .get(idx)
+                    .copied()
+                    .ok_or(InterpretError::TupleIndexOutOfBound(members.len(), idx)),
+                _ => Err(InterpretError::GcObjectNotTuple(self.get_kind(), idx)),
             },
         }
     }
@@ -114,7 +116,7 @@ impl GcObject {
                 }
                 _ => Err(InterpretError::GcObjectUnIndexable(self.get_kind())),
             },
-            ChainStep::Member(field_iden) => match self {
+            ChainStep::Member(MemberNode::StructField(field_iden)) => match self {
                 GcObject::Struct(struct_) => {
                     let field = struct_
                         .fields
@@ -126,6 +128,13 @@ impl GcObject {
                     self.get_kind(),
                     field_iden,
                 )),
+            },
+            ChainStep::Member(MemberNode::TupleIndex(idx)) => match self {
+                GcObject::Tuple(Tuple { members }) => match members.get_mut(idx) {
+                    Some(v) => Ok(std::mem::replace(v, new_value)),
+                    None => Err(InterpretError::TupleIndexOutOfBound(members.len(), idx)),
+                },
+                _ => Err(InterpretError::GcObjectNotTuple(self.get_kind(), idx)),
             },
         }
     }

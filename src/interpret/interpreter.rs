@@ -553,16 +553,8 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         &mut self,
         node: &MemberAccessNode<TypeId>,
     ) -> Result<Value, InterpretError> {
-        let object = self.interpret_clause_expr(&node.object)?;
-        let Value::Struct(handle) = object else {
-            return Err(InterpretError::MemberAccessOnNonStruct(object, node.field));
-        };
-        let struct_ = self.environment.get_struct(handle)?;
-        let field = struct_
-            .fields
-            .get(&node.field.id)
-            .ok_or(InterpretError::StructFieldNotFound(struct_.id, node.field))?;
-        Ok(field.value)
+        let value = self.interpret_clause_expr(&node.object)?;
+        value.get_by_chain_step(ChainStep::Member(node.member), self.environment)
     }
 
     fn interpret_fn_call(&mut self, node: &FnCallNode<TypeId>) -> Result<Value, InterpretError> {

@@ -222,13 +222,11 @@ impl Value {
         }
     }
 
-    // TODO: support tuple
     pub fn get_by_chain_step(
         &self,
         step: ChainStep<Value>,
         env: &Environment,
     ) -> Result<Value, InterpretError> {
-        // all the 2 types array and map that have the index method also have to get the value through a handle
         let Some(handle) = self.get_handle() else {
             return Err(InterpretError::ValueUnIndexable(*self));
         };

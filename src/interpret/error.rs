@@ -50,15 +50,18 @@ pub enum InterpretError {
     #[error("Callable `{0:?}` received argument `{1:?}` but expected type {2}")]
     WrongArgumentType(Value, Value, &'static str),
 
+    // Fix this error to include structs and tuple
     #[error("Value `{0:?}` is not of the type array or map, hence not indexable")]
     ValueUnIndexable(Value),
 
+    // Fix this error to include structs and tuple
     #[error("Value `{0:?}` is can not be used as key for array or map")]
     ValueCannotBeUsedAsKey(Value),
 
     #[error("Value `{0:?}` is not of the type non-negative integer")]
     ValueMustBeUsize(Value),
 
+    // TODO: add GcHandle to error to know which array is out of bound
     #[error("Array has length `{0}` but received index `{1}`")]
     ArrayOutOfBound(usize, usize),
 
@@ -104,6 +107,9 @@ pub enum InterpretError {
     #[error("GcObject with type `{}` is not a struct; cannot access member `{1:?}`", .0.type_name())]
     GcObjectNotStruct(GcKind, Identifier),
 
+    #[error("GcObject with type `{}` is not a tuple; cannot access member `{1}`", .0.type_name())]
+    GcObjectNotTuple(GcKind, usize),
+
     #[error("String with Id `{:?}` does not exist in the heap interner", .0)]
     StringNotFoundOnHeap(StrId),
 
@@ -119,11 +125,11 @@ pub enum InterpretError {
     #[error("Assertion failed: {0}")]
     AssertionFailed(String),
 
-    #[error("Value `{0:?}` is not a struct; cannot access member `{1:?}`")]
-    MemberAccessOnNonStruct(Value, Identifier),
-
     #[error("Struct value does not have field `{0:?}`")]
     StructFieldNotFound(Id, Identifier),
+
+    #[error("Tuple have `{0}` members and cannot be indexed with member {1}")]
+    TupleIndexOutOfBound(usize, usize),
 }
 
 impl InterpretError {
@@ -253,9 +259,16 @@ impl InterpretError {
             }
             Self::GcObjectNotStruct(kind, iden) => {
                 format!(
-                    "Internal error: GC object of type `{}` is not a struct; cannot access member '{}'.",
+                    "GC object of type `{}` is not a struct; cannot access member '{}'.",
                     kind.type_name(),
                     sb.get_or_unknown(iden.id)
+                )
+            }
+            Self::GcObjectNotTuple(kind, idx) => {
+                format!(
+                    "GC object of type `{}` is not a tuple; cannot access member at index '{}'.",
+                    kind.type_name(),
+                    idx
                 )
             }
             Self::StringNotFoundOnHeap(id) => {
@@ -277,18 +290,15 @@ impl InterpretError {
             Self::AssertionFailed(msg) => {
                 format!("Assertion failed: {msg}")
             }
-            Self::MemberAccessOnNonStruct(val, iden) => {
-                format!(
-                    "`{val:?}` is not a struct; cannot access member '{}'.",
-                    sb.get_or_unknown(iden.id)
-                )
-            }
             Self::StructFieldNotFound(id, iden) => {
                 format!(
                     "Value {} does not have a field named '{}'.",
                     sb.get_or_unknown(*id),
                     sb.get_or_unknown(iden.id)
                 )
+            }
+            Self::TupleIndexOutOfBound(len, index) => {
+                format!("Index {index} is out of bounds: the Tuple has {len} members.")
             }
         }
     }

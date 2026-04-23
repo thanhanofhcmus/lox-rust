@@ -422,14 +422,32 @@ fn parse_pratt_infix(
         // Struct/Tuple member access
         Token::Dot => {
             state.consume_token(li.token)?;
-            let field_li = state.consume_token(Token::Identifier)?;
-            let field = state.create_identifier(field_li);
-            Ok(ClauseNode::new(ClauseCase::MemberAccess(
-                MemberAccessNode {
-                    object: Box::new(lhs),
-                    field,
-                },
-            )))
+            let member_li = *state.get_curr()?;
+            state.advance();
+            match member_li.token {
+                Token::Identifier => {
+                    let field_iden = state.create_identifier(member_li);
+                    Ok(ClauseNode::new(ClauseCase::MemberAccess(
+                        MemberAccessNode {
+                            object: Box::new(lhs),
+                            member: MemberNode::StructField(field_iden),
+                        },
+                    )))
+                }
+                Token::WholeNumber => {
+                    let source = member_li.span.str_from_source(state.get_input());
+                    let index = source
+                        .parse::<usize>()
+                        .map_err(|_| ParseError::ParseToNumber(member_li.span))?;
+                    Ok(ClauseNode::new(ClauseCase::MemberAccess(
+                        MemberAccessNode {
+                            object: Box::new(lhs),
+                            member: MemberNode::TupleIndex(index),
+                        },
+                    )))
+                }
+                _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
+            }
         }
         // Subscription call
         Token::LSquareParen => {
@@ -544,6 +562,7 @@ fn parse_raw_value_node(state: &mut Context) -> Result<RawValueNode<()>, ParseEr
         Token::Nil
         | Token::True
         | Token::False
+        | Token::WholeNumber
         | Token::Number
         | Token::String
         | Token::RawString => parse_scalar_node(state).map(RawValueNode::Scalar),
@@ -568,7 +587,7 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
         Token::Nil => next(ScalarNode::Nil),
         Token::True => next(ScalarNode::Bool(true)),
         Token::False => next(ScalarNode::Bool(false)),
-        Token::Number => parse_number(state),
+        Token::Number | Token::WholeNumber => parse_number(state),
         Token::String | Token::RawString => parse_string(state),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
     }
@@ -745,7 +764,8 @@ fn parse_fn_param(state: &mut Context) -> Result<FnParamNode, ParseError> {
 }
 
 fn parse_number(state: &mut Context) -> Result<ScalarNode, ParseError> {
-    let li = state.consume_token(Token::Number)?;
+    let li = *state.get_curr()?;
+    state.advance();
     let source = li.span.str_from_source(state.get_input());
 
     if let Ok(num) = source.parse::<i64>() {
@@ -857,8 +877,8 @@ fn convert_chaining(
                 follows.push(ChainStep::Subscription(*indexee));
                 clause = *indexer;
             }
-            ClauseCase::MemberAccess(MemberAccessNode { object, field }) => {
-                follows.push(ChainStep::Member(field));
+            ClauseCase::MemberAccess(MemberAccessNode { object, member }) => {
+                follows.push(ChainStep::Member(member));
                 clause = *object;
             }
             ClauseCase::Identifier(node) => break node,

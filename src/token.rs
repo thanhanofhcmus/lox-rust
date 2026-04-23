@@ -60,6 +60,7 @@ pub enum Token {
 
     Identifier,
     Number,
+    WholeNumber,
     String,
     RawString,
 

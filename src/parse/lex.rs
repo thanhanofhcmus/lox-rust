@@ -194,7 +194,7 @@ fn lex_number(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
     }
 
     Ok(LexItem::new(
-        Token::Number,
+        if has_parsed_dot { Token::Number } else { Token::WholeNumber },
         Span::new(start_offset, end_offset),
     ))
 }
@@ -478,7 +478,10 @@ mod tests {
 
     #[test]
     fn integer_literal() {
-        assert_eq!(with_text("42"), vec![(Token::Number, "42".to_string())]);
+        assert_eq!(
+            with_text("42"),
+            vec![(Token::WholeNumber, "42".to_string())]
+        );
     }
 
     #[test]
@@ -580,7 +583,7 @@ mod tests {
                 Token::Var,
                 Token::Identifier,
                 Token::Equal,
-                Token::Number,
+                Token::WholeNumber,
                 Token::Semicolon,
             ]
         );

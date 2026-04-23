@@ -54,14 +54,14 @@ pub enum ChainStep<S> {
     /// depending on the phase).
     Subscription(S),
     /// Member step like `p.x`. Payload is the field identifier (Id + span).
-    Member(Identifier),
+    Member(MemberNode),
 }
 
 #[derive(Debug, Clone)]
 pub struct ChainingReassignTargetNode<T> {
     pub base: Identifier,
     /// Steps in source order (outermost-first). For `a[0][1] = x` → `[0, 1]`;
-    /// for `p.x = y` → `[.x]`; for `b.center.x = z` → `[.center, .x]`.
+    /// for `p.x = y` → `[.x]`; for `b.center.0 = z` → `[.center, .0]`.
     pub follows: Vec<ChainStep<ClauseNode<T>>>,
 }
 
@@ -178,10 +178,16 @@ pub struct SubscriptionNode<T> {
     pub indexee: Box<ClauseNode<T>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum MemberNode {
+    StructField(Identifier),
+    TupleIndex(usize),
+}
+
 #[derive(Debug, Clone)]
 pub struct MemberAccessNode<T> {
     pub object: Box<ClauseNode<T>>,
-    pub field: Identifier,
+    pub member: MemberNode,
 }
 
 #[derive(Debug, Clone)]

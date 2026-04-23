@@ -66,6 +66,9 @@ pub enum TypecheckError {
 
     #[error("Duplicate field '{:?}' in struct literal", _0.id)]
     DuplicateStructLiteralField(Identifier),
+
+    #[error("Tuple `{0:?}` has {1} members(s) but index {2} were provided")]
+    TupleIndexOutOfBound(TypeId, usize, usize),
 }
 
 impl TypecheckError {
@@ -233,6 +236,13 @@ impl TypecheckError {
             Self::DuplicateStructLiteralField(node) => format!(
                 "Field '{:?}' is set more than once in this struct literal.",
                 sb.get_or_unknown(node.id),
+            ),
+
+            Self::TupleIndexOutOfBound(struct_type_id, expected, actual) => format!(
+                "Tuple `{}` has {} members(s) but an index at {} were provided.",
+                interner.generate_readable_name(sb, *struct_type_id),
+                expected,
+                actual,
             ),
         }
     }
