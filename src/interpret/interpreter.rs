@@ -542,7 +542,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let field = struct_
             .fields
             .get(&node.field.id)
-            .ok_or(InterpretError::StructFieldNotFound(node.field))?;
+            .ok_or(InterpretError::StructFieldNotFound(struct_.id, node.field))?;
         Ok(field.value)
     }
 

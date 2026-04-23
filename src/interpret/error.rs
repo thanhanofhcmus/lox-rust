@@ -2,6 +2,7 @@ use super::values::Value;
 use thiserror::Error;
 
 use crate::{
+    id::Id,
     identifier_registry::{Identifier, IdentifierRegistry},
     interpret::heap::{GcHandle, GcKind, StrId},
     parse::ParseError,
@@ -119,7 +120,7 @@ pub enum InterpretError {
     MemberAccessOnNonStruct(Value, Identifier),
 
     #[error("Struct value does not have field `{0:?}`")]
-    StructFieldNotFound(Identifier),
+    StructFieldNotFound(Id, Identifier),
 }
 
 impl InterpretError {
@@ -272,9 +273,10 @@ impl InterpretError {
                     sb.get_or_unknown(iden.id)
                 )
             }
-            Self::StructFieldNotFound(iden) => {
+            Self::StructFieldNotFound(id, iden) => {
                 format!(
-                    "Struct value does not have a field named '{}'.",
+                    "Value {} does not have a field named '{}'.",
+                    sb.get_or_unknown(*id),
                     sb.get_or_unknown(iden.id)
                 )
             }
