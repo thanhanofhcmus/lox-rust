@@ -330,21 +330,49 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             body,
         }: &ForNode<TypeId>,
     ) -> Result<ValueReturn, InterpretError> {
-        let arr = self.interpret_and_get_array(collection)?.clone();
-        for collection_value in arr {
-            // collection_value should not be reassignable from the lesser scope
-            self.environment.push_scope(true)?;
-            self.environment
-                .insert_variable_current_scope(iden.id, collection_value);
-            let result = self.interpret_block_node(body);
-            self.environment.pop_scope()?;
+        let collection_value = self.interpret_clause_expr(collection)?;
+        match collection_value {
+            Value::Array(handle) => {
+                let arr = self.environment.get_array(handle)?.clone();
+                for collection_value in arr {
+                    // collection_value should not be reassignable from the lesser scope
+                    self.environment.push_scope(true)?;
+                    self.environment
+                        .insert_variable_current_scope(iden.id, collection_value);
+                    let result = self.interpret_block_node(body);
+                    self.environment.pop_scope()?;
 
-            let value_return = result?;
-            if value_return.should_bubble_up {
-                return Ok(value_return);
+                    let value_return = result?;
+                    if value_return.should_bubble_up {
+                        return Ok(value_return);
+                    }
+                }
+                Ok(ValueReturn::none())
             }
+            Value::Map(handle) => {
+                let map = self.environment.get_map(handle)?.clone();
+                for (map_key, map_value) in map {
+                    // collection_value should not be reassignable from the lesser scope
+                    let collection_value = self.environment.insert_tuple_variable(Tuple {
+                        members: vec![map_key.to_value(), map_value],
+                    });
+                    self.environment.push_scope(true)?;
+                    self.environment
+                        .insert_variable_current_scope(iden.id, collection_value);
+                    let result = self.interpret_block_node(body);
+                    self.environment.pop_scope()?;
+
+                    let value_return = result?;
+                    if value_return.should_bubble_up {
+                        return Ok(value_return);
+                    }
+                }
+                Ok(ValueReturn::none())
+            }
+            _ => Err(InterpretError::ValueCannotBeUsedAsSourceInFor(
+                collection_value,
+            )),
         }
-        Ok(ValueReturn::none())
     }
 
     fn interpret_while_expr(

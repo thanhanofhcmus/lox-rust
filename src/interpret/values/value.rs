@@ -372,6 +372,13 @@ impl MapKey {
         }
     }
 
+    pub fn to_value(self) -> Value {
+        match self {
+            Self::Scalar(v) => Value::Scalar(v),
+            Self::Str(str_id) => Value::Str(str_id),
+        }
+    }
+
     pub fn get_str_id(self) -> Option<StrId> {
         match self {
             Self::Str(str_id) => Some(str_id),

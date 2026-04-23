@@ -80,7 +80,10 @@ pub enum InterpretError {
     #[error("Interpreting module `{0}` in path `{1}` failed with error: {2}")]
     InterpretModuleFailed(String, String, Box<InterpretError>),
 
-    #[error("Value of type `{0:?}` is not serializable")]
+    #[error("Value `{0:?}` cannot be use as for loop source")]
+    ValueCannotBeUsedAsSourceInFor(Value),
+
+    #[error("Value `{0:?}` is not serializable")]
     TypeIsNotSerializable(Value),
 
     #[error("Serialize value `{0:?}` failed with error: {1}")]
@@ -148,6 +151,7 @@ impl InterpretError {
         format!("Runtime Error: {description}\n  --> {source_name}\n")
     }
 
+    // TODO: remove all debug print in here
     fn resolve_description(&self, sb: &IdentifierRegistry) -> String {
         match self {
             Self::ReDeclareVariable(node) => {
@@ -225,6 +229,9 @@ impl InterpretError {
             }
             Self::InterpretModuleFailed(module, path, err) => {
                 format!("Runtime error in module '{module}' at '{path}': {err}.")
+            }
+            Self::ValueCannotBeUsedAsSourceInFor(val) => {
+                format!("Value `{val:?}` cannot be use as for loop source")
             }
             Self::TypeIsNotSerializable(val) => {
                 format!("`{val:?}` cannot be serialized.")

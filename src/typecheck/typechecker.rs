@@ -410,13 +410,12 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    /// Element type for iteration. Maps array/map types to their element
-    /// types; `Any` stays `Any`; anything else defers to runtime as `Any`
-    /// (gradual typing — the runtime will error if the value isn't iterable).
-    fn iterable_element_type(&self, collection_type_id: TypeId) -> TypeId {
+    fn iterable_element_type(&mut self, collection_type_id: TypeId) -> TypeId {
         match self.environment.lookup_type(collection_type_id) {
             Some(Type::Array { elem }) => *elem,
-            Some(Type::Map { value, .. }) => *value,
+            Some(Type::Map { key, value }) => self.environment.declare_type(&Type::Tuple {
+                members: vec![*key, *value],
+            }),
             _ => TypeId::ANY,
         }
     }
