@@ -209,14 +209,15 @@ fn parse_expr_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
     Ok(Statement::Expr(expr))
 }
 
-fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
-    state.consume_token(Token::Var)?;
-    let binding_li = state.get_curr()?;
-    let binding = match binding_li.token {
+fn parse_binding_node(state: &mut Context) -> Result<DeclareBindingNode, ParseError> {
+    let li = state.get_curr()?;
+    match li.token {
         Token::Identifier => {
             // TODO: parse struct deconstruction
             let id_item = state.consume_token(Token::Identifier)?;
-            DeclareBindingNode::Identifier(state.create_identifier(id_item))
+            Ok(DeclareBindingNode::Identifier(
+                state.create_identifier(id_item),
+            ))
         }
         Token::PercentLRoundParen => {
             let members = parse_comma_list(
@@ -225,16 +226,15 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
                 Token::RRoundParen,
                 parse_identifier_node,
             )?;
-            DeclareBindingNode::Tuple { members }
+            Ok(DeclareBindingNode::Tuple { members })
         }
-        _ => {
-            return Err(ParseError::UnexpectedToken(
-                binding_li.token,
-                binding_li.span,
-                None,
-            ));
-        }
-    };
+        _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
+    }
+}
+
+fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
+    state.consume_token(Token::Var)?;
+    let binding = parse_binding_node(state)?;
     let explicit_type = if state.peek(&[Token::Colon]) {
         state.consume_token(Token::Colon)?;
         Some(parse_type_node(state)?)
@@ -305,14 +305,14 @@ fn parse_while(state: &mut Context) -> Result<Expression<()>, ParseError> {
 
 fn parse_for(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::For)?;
-    let iden_li = state.consume_token(Token::Identifier)?;
+    let binding = parse_binding_node(state)?;
     state.consume_token(Token::In)?;
     state.allow_struct_literal = false;
     let collection = parse_clause_node(state)?;
     state.allow_struct_literal = true;
     let body = parse_block_node(state)?;
     Ok(Expression::new(ExprCase::For(ForNode {
-        iden: state.create_identifier(iden_li),
+        binding,
         collection,
         body,
     })))

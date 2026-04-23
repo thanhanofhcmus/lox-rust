@@ -71,6 +71,57 @@ impl<'cl> TypeChecker<'cl> {
         }
     }
 
+    fn convert_binding(
+        &mut self,
+        binding: &DeclareBindingNode,
+        explicit_type_id: Option<TypeId>,
+        actual_type_id: TypeId,
+    ) -> Result<(), TypecheckError> {
+        // 3 sources of truth
+        // var %(a, b, c) : %(any, number, bool) = %("a string", 12, false);
+
+        match binding {
+            DeclareBindingNode::Identifier(iden) => {
+                let type_id = match explicit_type_id {
+                    None => match actual_type_id {
+                        TypeId::ARRAY_UNTYPED => TypeId::ARRAY_ANY,
+                        TypeId::MAP_UNTYPED => TypeId::MAP_ANY_ANY,
+                        v => v,
+                    },
+                    Some(TypeId::ANY) => TypeId::ANY,
+                    Some(v) if v == actual_type_id => v,
+                    Some(v) if v.is_array() && actual_type_id == TypeId::ARRAY_UNTYPED => v,
+                    Some(v) if v.is_map() && actual_type_id == TypeId::MAP_UNTYPED => v,
+                    Some(v) => {
+                        return Err(TypecheckError::ExplicitTypeMismatch(
+                            *iden,
+                            v,
+                            actual_type_id,
+                        ));
+                    }
+                };
+
+                self.environment
+                    // Annotation wins when written (including `Any`); otherwise infer from expr.
+                    .declare_variable_id(iden.id, type_id)
+                    .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
+            }
+            DeclareBindingNode::Tuple { members } => {
+                // check if the descturing works in the right shape
+                // TODO:
+
+                // we only insert the var to make it works for now
+
+                for iden in members {
+                    self.environment
+                        .declare_variable_id(iden.id, TypeId::ANY)
+                        .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn convert_declare_stmt(
         &mut self,
         DeclareStatementNode {
@@ -79,62 +130,17 @@ impl<'cl> TypeChecker<'cl> {
             expr,
         }: DeclareStatementNode<()>,
     ) -> Result<DeclareStatementNode<TypeId>, TypecheckError> {
-        // 3 sources of truth
-        // var %(a, b, c) : %(any, number, bool) = %("a string", 12, false);
-
         let explicit_type_id = type_node
             .as_ref()
             .map(|n| self.extract_type_node_id(n))
             .transpose()?;
-
         let expr = self.convert_expr(expr)?;
-
-        match binding {
-            DeclareBindingNode::Identifier(iden) => {
-                let type_id = match explicit_type_id {
-                    None => match expr.extra {
-                        TypeId::ARRAY_UNTYPED => TypeId::ARRAY_ANY,
-                        TypeId::MAP_UNTYPED => TypeId::MAP_ANY_ANY,
-                        v => v,
-                    },
-                    Some(TypeId::ANY) => TypeId::ANY,
-                    Some(v) if v == expr.extra => v,
-                    Some(v) if v.is_array() && expr.extra == TypeId::ARRAY_UNTYPED => v,
-                    Some(v) if v.is_map() && expr.extra == TypeId::MAP_UNTYPED => v,
-                    Some(v) => {
-                        return Err(TypecheckError::ExplicitTypeMismatch(iden, v, expr.extra));
-                    }
-                };
-
-                self.environment
-                    // Annotation wins when written (including `Any`); otherwise infer from expr.
-                    .declare_variable_id(iden.id, type_id)
-                    .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
-                Ok(DeclareStatementNode {
-                    binding,
-                    explicit_type: type_node,
-                    expr,
-                })
-            }
-            DeclareBindingNode::Tuple { members } => {
-                // check if the descturing works in the right shape
-                // TODO:
-
-                // we only insert the var to make it works for now
-
-                for iden in &members {
-                    self.environment
-                        .declare_variable_id(iden.id, TypeId::ANY)
-                        .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
-                }
-
-                Ok(DeclareStatementNode {
-                    binding: DeclareBindingNode::Tuple { members },
-                    explicit_type: type_node,
-                    expr,
-                })
-            }
-        }
+        self.convert_binding(&binding, explicit_type_id, expr.extra)?;
+        Ok(DeclareStatementNode {
+            binding,
+            explicit_type: type_node,
+            expr,
+        })
     }
 
     fn extract_type_node_id(&mut self, node: &TypeNode) -> Result<TypeId, TypecheckError> {
@@ -421,12 +427,10 @@ impl<'cl> TypeChecker<'cl> {
         let collection = self.convert_clause(node.collection)?;
         let elem_type_id = self.iterable_element_type(collection.extra);
         self.with_scope(|this| {
-            this.environment
-                .declare_variable_id(node.iden.id, elem_type_id)
-                .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
+            this.convert_binding(&node.binding, None, elem_type_id)?;
             let body = this.convert_block(node.body)?;
             Ok(ForNode {
-                iden: node.iden,
+                binding: node.binding,
                 collection,
                 body,
             })

@@ -210,6 +210,27 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(())
     }
 
+    fn interpret_binding(
+        &mut self,
+        binding: &DeclareBindingNode,
+        value: Value,
+    ) -> Result<(), InterpretError> {
+        match binding {
+            DeclareBindingNode::Identifier(iden) => self.insert_variable(*iden, value)?,
+            DeclareBindingNode::Tuple { members } => {
+                let handle = value.get_handle().unwrap();
+                let tuple = self.environment.get_tuple(handle)?;
+                if members.len() != tuple.members.len() {
+                    unimplemented!()
+                }
+                for (iden, value) in members.iter().zip(tuple.members.clone()) {
+                    self.insert_variable(*iden, value)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn interpret_declare_stmt(
         &mut self,
         node: &DeclareStatementNode<TypeId>,
@@ -343,7 +364,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     fn interpret_for_expr(
         &mut self,
         ForNode {
-            iden,
+            binding,
             collection,
             body,
         }: &ForNode<TypeId>,
@@ -355,8 +376,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 for collection_value in arr {
                     // collection_value should not be reassignable from the lesser scope
                     self.environment.push_scope(true)?;
-                    self.environment
-                        .insert_variable_current_scope(iden.id, collection_value);
+                    self.interpret_binding(binding, collection_value)?;
                     let result = self.interpret_block_node(body);
                     self.environment.pop_scope()?;
 
@@ -375,8 +395,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                         members: vec![map_key.to_value(), map_value],
                     });
                     self.environment.push_scope(true)?;
-                    self.environment
-                        .insert_variable_current_scope(iden.id, collection_value);
+                    self.interpret_binding(binding, collection_value)?;
                     let result = self.interpret_block_node(body);
                     self.environment.pop_scope()?;
 

@@ -142,7 +142,7 @@ pub struct ElseIfNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct ForNode<T> {
-    pub iden: Identifier,
+    pub binding: DeclareBindingNode,
     pub collection: ClauseNode<T>,
     pub body: BlockNode<T>,
 }
