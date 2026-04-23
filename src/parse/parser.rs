@@ -211,7 +211,30 @@ fn parse_expr_stmt(state: &mut Context) -> Result<Statement<()>, ParseError> {
 
 fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
     state.consume_token(Token::Var)?;
-    let id_item = state.consume_token(Token::Identifier)?;
+    let binding_li = state.get_curr()?;
+    let binding = match binding_li.token {
+        Token::Identifier => {
+            // TODO: parse struct deconstruction
+            let id_item = state.consume_token(Token::Identifier)?;
+            DeclareBindingNode::Identifier(state.create_identifier(id_item))
+        }
+        Token::PercentLRoundParen => {
+            let members = parse_comma_list(
+                state,
+                Token::PercentLRoundParen,
+                Token::RRoundParen,
+                parse_identifier_node,
+            )?;
+            DeclareBindingNode::Tuple { members }
+        }
+        _ => {
+            return Err(ParseError::UnexpectedToken(
+                binding_li.token,
+                binding_li.span,
+                None,
+            ));
+        }
+    };
     let explicit_type = if state.peek(&[Token::Colon]) {
         state.consume_token(Token::Colon)?;
         Some(parse_type_node(state)?)
@@ -222,7 +245,7 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
     let expr = parse_expr(state)?;
     state.consume_token(Token::Semicolon)?;
     Ok(Statement::Declare(DeclareStatementNode {
-        iden: state.create_identifier(id_item),
+        binding,
         explicit_type,
         expr,
     }))

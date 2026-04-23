@@ -3,25 +3,18 @@ use std::collections::HashSet;
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
-use crate::identifier_registry::Identifier;
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
+// TODO: implement 2 pass type check to help with recursive functions
+
 pub struct TypeChecker<'e> {
     environment: &'e mut Environment,
-
-    // Tracks the identifier of the declaration currently being converted so a
-    // fn literal on the rhs can pre-bind its own name (needed for recursion)
-    // before its body is type-checked. Set/cleared around `convert_declare_stmt`.
-    current_declaration_id: Option<Identifier>,
 }
 
 impl<'cl> TypeChecker<'cl> {
     pub fn new(environment: &'cl mut Environment) -> Self {
-        Self {
-            environment,
-            current_declaration_id: None,
-        }
+        Self { environment }
     }
 
     /// Run `f` with a fresh scope pushed on the environment. The scope is
@@ -59,9 +52,7 @@ impl<'cl> TypeChecker<'cl> {
     ) -> Result<Statement<TypeId>, TypecheckError> {
         match ut_stmt {
             Statement::Declare(node) => {
-                self.current_declaration_id.replace(node.iden);
                 let result = self.convert_declare_stmt(node);
-                self.current_declaration_id.take();
                 Ok(Statement::Declare(result?))
             }
             Statement::StructDecl(node) => {
@@ -83,11 +74,14 @@ impl<'cl> TypeChecker<'cl> {
     fn convert_declare_stmt(
         &mut self,
         DeclareStatementNode {
-            iden,
+            binding,
             explicit_type: type_node,
             expr,
         }: DeclareStatementNode<()>,
     ) -> Result<DeclareStatementNode<TypeId>, TypecheckError> {
+        // 3 sources of truth
+        // var %(a, b, c) : %(any, number, bool) = %("a string", 12, false);
+
         let explicit_type_id = type_node
             .as_ref()
             .map(|n| self.extract_type_node_id(n))
@@ -95,30 +89,52 @@ impl<'cl> TypeChecker<'cl> {
 
         let expr = self.convert_expr(expr)?;
 
-        let type_id = match explicit_type_id {
-            None => match expr.extra {
-                TypeId::ARRAY_UNTYPED => TypeId::ARRAY_ANY,
-                TypeId::MAP_UNTYPED => TypeId::MAP_ANY_ANY,
-                v => v,
-            },
-            Some(TypeId::ANY) => TypeId::ANY,
-            Some(v) if v == expr.extra => v,
-            Some(v) if v.is_array() && expr.extra == TypeId::ARRAY_UNTYPED => v,
-            Some(v) if v.is_map() && expr.extra == TypeId::MAP_UNTYPED => v,
-            Some(v) => {
-                return Err(TypecheckError::ExplicitTypeMismatch(iden, v, expr.extra));
-            }
-        };
+        match binding {
+            DeclareBindingNode::Identifier(iden) => {
+                let type_id = match explicit_type_id {
+                    None => match expr.extra {
+                        TypeId::ARRAY_UNTYPED => TypeId::ARRAY_ANY,
+                        TypeId::MAP_UNTYPED => TypeId::MAP_ANY_ANY,
+                        v => v,
+                    },
+                    Some(TypeId::ANY) => TypeId::ANY,
+                    Some(v) if v == expr.extra => v,
+                    Some(v) if v.is_array() && expr.extra == TypeId::ARRAY_UNTYPED => v,
+                    Some(v) if v.is_map() && expr.extra == TypeId::MAP_UNTYPED => v,
+                    Some(v) => {
+                        return Err(TypecheckError::ExplicitTypeMismatch(iden, v, expr.extra));
+                    }
+                };
 
-        self.environment
-            // Annotation wins when written (including `Any`); otherwise infer from expr.
-            .declare_variable_id(iden.id, type_id)
-            .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
-        Ok(DeclareStatementNode {
-            expr,
-            iden,
-            explicit_type: type_node,
-        })
+                self.environment
+                    // Annotation wins when written (including `Any`); otherwise infer from expr.
+                    .declare_variable_id(iden.id, type_id)
+                    .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
+                Ok(DeclareStatementNode {
+                    binding,
+                    explicit_type: type_node,
+                    expr,
+                })
+            }
+            DeclareBindingNode::Tuple { members } => {
+                // check if the descturing works in the right shape
+                // TODO:
+
+                // we only insert the var to make it works for now
+
+                for iden in &members {
+                    self.environment
+                        .declare_variable_id(iden.id, TypeId::ANY)
+                        .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
+                }
+
+                Ok(DeclareStatementNode {
+                    binding: DeclareBindingNode::Tuple { members },
+                    explicit_type: type_node,
+                    expr,
+                })
+            }
+        }
     }
 
     fn extract_type_node_id(&mut self, node: &TypeNode) -> Result<TypeId, TypecheckError> {
@@ -733,17 +749,6 @@ impl<'cl> TypeChecker<'cl> {
                         .unwrap_or(TypeId::ANY))
                 })
                 .collect::<Result<Vec<_>, TypecheckError>>()?;
-
-            if let Some(iden) = &this.current_declaration_id {
-                // Pre-declare the enclosing name as a function in the body's scope
-                // so recursive self-references type-check. `with_scope` has just
-                // pushed a fresh scope, so a collision here means the param loop
-                // below picked the same name — treat that as a duplicate.
-                let iden = *iden;
-                this.environment
-                    .declare_variable_id(iden.id, TypeId::FUNCTION_ANY)
-                    .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
-            }
 
             for (param, type_id) in node.params.iter().zip(&params_type_ids) {
                 this.environment

@@ -4,7 +4,7 @@ use super::values::Value;
 use crate::ast::*;
 use crate::interpret::heap::GcHandle;
 
-use crate::identifier_registry::IdentifierRegistry;
+use crate::identifier_registry::{Identifier, IdentifierRegistry};
 use crate::interpret::values::{
     Array, BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple,
 };
@@ -196,25 +196,43 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(())
     }
 
-    fn interpret_declare_stmt(
-        &mut self,
-        node: &DeclareStatementNode<TypeId>,
-    ) -> Result<ValueReturn, InterpretError> {
-        let iden = &node.iden;
+    fn insert_variable(&mut self, iden: Identifier, value: Value) -> Result<(), InterpretError> {
         if self
             .environment
             .get_variable_current_scope(iden.id)
             .is_some()
         {
-            return Err(InterpretError::ReDeclareVariable(node.iden));
+            return Err(InterpretError::ReDeclareVariable(iden));
         }
+        _ = self
+            .environment
+            .insert_variable_current_scope(iden.id, value);
+        Ok(())
+    }
+
+    fn interpret_declare_stmt(
+        &mut self,
+        node: &DeclareStatementNode<TypeId>,
+    ) -> Result<ValueReturn, InterpretError> {
         let res = self.interpret_expr(&node.expr)?;
         if res.should_bubble_up {
             return Ok(res);
         }
+        let value = res.get_or_error()?;
 
-        let val = res.get_or_error()?;
-        self.environment.insert_variable_current_scope(iden.id, val);
+        match &node.binding {
+            DeclareBindingNode::Identifier(iden) => self.insert_variable(*iden, value)?,
+            DeclareBindingNode::Tuple { members } => {
+                let handle = value.get_handle().unwrap();
+                let tuple = self.environment.get_tuple(handle)?;
+                if members.len() != tuple.members.len() {
+                    unimplemented!()
+                }
+                for (iden, value) in members.iter().zip(tuple.members.clone()) {
+                    self.insert_variable(*iden, value)?;
+                }
+            }
+        }
         Ok(ValueReturn::none())
     }
 

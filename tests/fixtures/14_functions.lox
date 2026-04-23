@@ -26,15 +26,6 @@ var multiplier = 2;
 var scale = fn(n) n * multiplier;
 assert(scale(5) == 10, "fn reads outer var");
 
-# recursion
-var factorial = fn(n) {
-    if n <= 1 { return 1; }
-    return n * factorial(n - 1);
-};
-assert(factorial(5) == 120, "recursion");
-assert(factorial(0) == 1, "recursion base case (n=0)");
-assert(factorial(1) == 1, "recursion base case (n=1)");
-
 # early return short-circuits
 var early = fn(flag) {
   if flag { return "hit"; }
@@ -59,3 +50,13 @@ assert(not (p1 == assert), "different builtins are not equal");
 # zero-arg function
 var zero = fn() 42;
 assert(zero() == 42, "zero-arg fn");
+
+# recursion
+# This is broken, re-enable after we done the 2 pass typecheck
+var factorial = fn(n) {
+    if n <= 1 { return 1; }
+    return n * factorial(n - 1);
+};
+assert(factorial(5) == 120, "recursion");
+assert(factorial(0) == 1, "recursion base case (n=0)");
+assert(factorial(1) == 1, "recursion base case (n=1)");
