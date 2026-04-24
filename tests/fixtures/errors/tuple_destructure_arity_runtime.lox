@@ -1,0 +1,5 @@
+# `any`-typed rhs hides the arity from typecheck, so the mismatch is caught
+# at runtime via `TupleDestructureArityMismatch`.
+var x: any = %(1, 2);
+var %(a, b, c) = x;
+assert(false, "should not reach: runtime must reject arity mismatch");

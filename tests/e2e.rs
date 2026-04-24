@@ -178,12 +178,28 @@ fn error_tuple_as_map_key_runtime() {
 
 #[test]
 fn error_tuple_destructure_non_tuple() {
+    // Caught at typecheck under the new destructure rules.
     let res = run_fixture("errors/tuple_destructure_non_tuple.lox");
     assert_err_contains(&res, "cannot be destructured as a tuple");
 }
 
 #[test]
 fn error_tuple_destructure_arity() {
+    // Caught at typecheck under the new destructure rules.
     let res = run_fixture("errors/tuple_destructure_arity.lox");
+    assert_err_contains(&res, "destructuring expected");
+}
+
+#[test]
+fn error_tuple_destructure_non_tuple_runtime() {
+    // `any` rhs hides the shape from typecheck; runtime must catch.
+    let res = run_fixture("errors/tuple_destructure_non_tuple_runtime.lox");
+    assert_err_contains(&res, "cannot be destructured as a tuple");
+}
+
+#[test]
+fn error_tuple_destructure_arity_runtime() {
+    // `any` rhs hides the arity from typecheck; runtime must catch.
+    let res = run_fixture("errors/tuple_destructure_arity_runtime.lox");
     assert_err_contains(&res, "destructuring expected");
 }

@@ -69,6 +69,12 @@ pub enum TypecheckError {
 
     #[error("Tuple `{0:?}` has {1} members(s) but index {2} were provided")]
     TupleIndexOutOfBound(TypeId, usize, usize),
+
+    #[error("Type `{0:?}` cannot be destructured as a tuple")]
+    CannotDestructureAsTuple(TypeId),
+
+    #[error("Tuple destructuring expected {expected} member(s) but type has {actual}")]
+    TupleDestructureArityMismatch { expected: usize, actual: usize },
 }
 
 impl TypecheckError {
@@ -244,6 +250,15 @@ impl TypecheckError {
                 expected,
                 actual,
             ),
+
+            Self::CannotDestructureAsTuple(type_id) => format!(
+                "Type `{}` cannot be destructured as a tuple.",
+                interner.generate_readable_name(sb, *type_id),
+            ),
+
+            Self::TupleDestructureArityMismatch { expected, actual } => {
+                format!("Tuple destructuring expected {expected} member(s) but type has {actual}.",)
+            }
         }
     }
 

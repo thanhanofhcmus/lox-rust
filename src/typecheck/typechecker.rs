@@ -92,22 +92,8 @@ impl<'cl> TypeChecker<'cl> {
         match binding {
             DeclareBindingNode::Identifier(iden) => {
                 let type_id = match explicit_type_id {
-                    None => match actual_type_id {
-                        TypeId::ARRAY_UNTYPED => TypeId::ARRAY_ANY,
-                        TypeId::MAP_UNTYPED => TypeId::MAP_ANY_ANY,
-                        v => v,
-                    },
-                    Some(TypeId::ANY) => TypeId::ANY,
-                    Some(v) if v == actual_type_id => v,
-                    Some(v) if v.is_array() && actual_type_id == TypeId::ARRAY_UNTYPED => v,
-                    Some(v) if v.is_map() && actual_type_id == TypeId::MAP_UNTYPED => v,
-                    Some(v) => {
-                        return Err(TypecheckError::ExplicitTypeMismatch(
-                            *iden,
-                            v,
-                            actual_type_id,
-                        ));
-                    }
+                    None => promote_untyped_to_any(actual_type_id),
+                    Some(explicit) => reconcile_single_type(*iden, explicit, actual_type_id)?,
                 };
 
                 self.environment
@@ -116,17 +102,53 @@ impl<'cl> TypeChecker<'cl> {
                     .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
             }
             DeclareBindingNode::Tuple { members } => {
-                // TODO: check that the destructuring matches the right shape
-                // (tuple kind, arity, per-member types). For now we just bind
-                // each member as Any and let the interpreter raise on mismatch.
-                for iden in members {
+                let arity = members.len();
+                let actual_members =
+                    self.resolve_tuple_members_for_destructure(actual_type_id, arity)?;
+                let explicit_members: Option<Vec<TypeId>> = explicit_type_id
+                    .map(|e| self.resolve_tuple_members_for_destructure(e, arity))
+                    .transpose()?;
+
+                for (i, iden) in members.iter().enumerate() {
+                    let actual = actual_members[i];
+                    let type_id = match &explicit_members {
+                        None => promote_untyped_to_any(actual),
+                        Some(exp) => reconcile_single_type(*iden, exp[i], actual)?,
+                    };
                     self.environment
-                        .declare_variable_id(iden.id, TypeId::ANY)
+                        .declare_variable_id(iden.id, type_id)
                         .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
                 }
             }
         }
         Ok(())
+    }
+
+    /// Resolve `type_id` into a per-member list suitable for tuple
+    /// destructuring with the given `arity`. `Any` is permissive (returns a
+    /// vec of `Any`s of the right length, letting the runtime catch the real
+    /// shape). Any other non-tuple type is rejected.
+    fn resolve_tuple_members_for_destructure(
+        &self,
+        type_id: TypeId,
+        arity: usize,
+    ) -> Result<Vec<TypeId>, TypecheckError> {
+        if type_id == TypeId::ANY {
+            return Ok(vec![TypeId::ANY; arity]);
+        }
+        match self.environment.lookup_type(type_id) {
+            Some(Type::Tuple { members }) => {
+                if members.len() != arity {
+                    Err(TypecheckError::TupleDestructureArityMismatch {
+                        expected: arity,
+                        actual: members.len(),
+                    })
+                } else {
+                    Ok(members.clone())
+                }
+            }
+            _ => Err(TypecheckError::CannotDestructureAsTuple(type_id)),
+        }
     }
 
     fn convert_declare_stmt(
@@ -1064,6 +1086,36 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), TypecheckError> 
     }
 }
 
+/// Turn an "untyped" array/map marker (produced by empty literals like `[]`
+/// and `%{}`) into its inhabited `Any`-parameterised form. Concrete types
+/// pass through unchanged.
+fn promote_untyped_to_any(type_id: TypeId) -> TypeId {
+    match type_id {
+        TypeId::ARRAY_UNTYPED => TypeId::ARRAY_ANY,
+        TypeId::MAP_UNTYPED => TypeId::MAP_ANY_ANY,
+        v => v,
+    }
+}
+
+/// Reconcile a single binding's `explicit` annotation with the `actual` rhs
+/// type. `Any` on the annotation side is permissive; concrete annotations
+/// must match (with the `ARRAY_UNTYPED` / `MAP_UNTYPED` relaxation for empty
+/// literals). Used by both the Identifier path and per-member in tuple
+/// destructuring.
+fn reconcile_single_type(
+    iden: Identifier,
+    explicit: TypeId,
+    actual: TypeId,
+) -> Result<TypeId, TypecheckError> {
+    match (explicit, actual) {
+        (TypeId::ANY, _) => Ok(TypeId::ANY),
+        (e, a) if e == a => Ok(e),
+        (e, TypeId::ARRAY_UNTYPED) if e.is_array() => Ok(e),
+        (e, TypeId::MAP_UNTYPED) if e.is_map() => Ok(e),
+        (e, a) => Err(TypecheckError::ExplicitTypeMismatch(iden, e, a)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1406,6 +1458,96 @@ mod tests {
             "var outer = fn() { var inner = fn() { return outer(); }; return inner(); };",
         )
         .unwrap();
+    }
+
+    // ---------- tuple destructuring typecheck ----------
+
+    #[test]
+    fn tuple_destructure_non_tuple_errors() {
+        let err = typecheck_str("var %(a, b) = 42;").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
+            "expected CannotDestructureAsTuple, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn tuple_destructure_wrong_arity_errors() {
+        let err = typecheck_str("var %(a, b, c) = %(1, 2);").unwrap_err();
+        assert!(
+            matches!(
+                err,
+                TypecheckError::TupleDestructureArityMismatch {
+                    expected: 3,
+                    actual: 2,
+                }
+            ),
+            "expected TupleDestructureArityMismatch{{3,2}}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn tuple_destructure_any_is_permissive() {
+        // `any` rhs hides the shape from typecheck; we bind each name as Any
+        // and defer to the runtime.
+        typecheck_str("var x: any = 42; var %(a, b) = x;").unwrap();
+    }
+
+    #[test]
+    fn tuple_destructure_binds_per_member_type() {
+        // `a` gets number, `b` gets str — subsequent annotated uses must
+        // accept them.
+        typecheck_str("var %(a, b) = %(1, \"hi\"); var n: number = a; var s: str = b;").unwrap();
+    }
+
+    #[test]
+    fn tuple_destructure_member_type_mismatch_via_annotation() {
+        // `b` is bound as str from the rhs tuple; a subsequent `number`
+        // annotation on b must fail. (Exercises that the member type really
+        // propagated, since reassignment doesn't check types today.)
+        let err = typecheck_str("var %(a, b) = %(1, \"hi\"); var n: number = b;").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+            "expected ExplicitTypeMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn tuple_destructure_explicit_annotation_matches() {
+        typecheck_str("var %(a, b): %(number, str) = %(1, \"hi\");").unwrap();
+    }
+
+    #[test]
+    fn tuple_destructure_explicit_annotation_wrong_shape_errors() {
+        let err = typecheck_str("var %(a, b): number = %(1, \"hi\");").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
+            "expected CannotDestructureAsTuple, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn tuple_destructure_explicit_annotation_wrong_arity_errors() {
+        let err = typecheck_str("var %(a, b): %(number, str, bool) = %(1, \"hi\");").unwrap_err();
+        assert!(
+            matches!(
+                err,
+                TypecheckError::TupleDestructureArityMismatch {
+                    expected: 2,
+                    actual: 3,
+                }
+            ),
+            "expected TupleDestructureArityMismatch{{2,3}}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn for_loop_tuple_binding_over_array_of_scalars_errors() {
+        let err = typecheck_str("for %(a, b) in [1, 2, 3] { }").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
+            "expected CannotDestructureAsTuple, got {err:?}"
+        );
     }
 
     // ---------- struct declarations & literals ----------

@@ -1,0 +1,6 @@
+# When the rhs is `any`-typed, typecheck can't see the shape and defers the
+# check to the runtime. This exercises the runtime `CannotDestructureAsTuple`
+# path that the static typecheck can't reach.
+var x: any = 42;
+var %(a, b) = x;
+assert(false, "should not reach: runtime must reject destructuring a scalar");
