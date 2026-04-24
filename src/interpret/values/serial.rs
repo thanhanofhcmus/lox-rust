@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::identifier_registry::IdentifierRegistry;
 use crate::interpret::{
     Environment,
     error::InterpretError,
@@ -53,7 +54,11 @@ pub enum SerialValue {
 }
 
 impl SerialValue {
-    pub fn convert_from_value(value: Value, env: &Environment) -> Result<Self, InterpretError> {
+    pub fn convert_from_value(
+        value: Value,
+        env: &Environment,
+        sb: &IdentifierRegistry,
+    ) -> Result<Self, InterpretError> {
         let v = match value {
             Value::Scalar(v) => Self::Scalar(v),
 
@@ -66,7 +71,7 @@ impl SerialValue {
                 let arr = env.get_array(handle)?;
                 let vs = arr
                     .iter()
-                    .map(|v| Self::convert_from_value(*v, env))
+                    .map(|v| Self::convert_from_value(*v, env, sb))
                     .collect::<Result<_, _>>()?;
                 Self::Array(vs)
             }
@@ -76,18 +81,36 @@ impl SerialValue {
                 let mut vsm = BTreeMap::new();
                 for (k, v) in map {
                     let k_sv = SerialMapKey::convert_from_map_key(k, env)?;
-                    let v_sv = SerialValue::convert_from_value(*v, env)?;
+                    let v_sv = SerialValue::convert_from_value(*v, env, sb)?;
                     vsm.insert(k_sv, v_sv);
                 }
                 Self::Map(vsm)
             }
 
-            Value::Struct(_) => {
-                unimplemented!()
+            // Structs serialize as JSON objects. Field iteration order follows
+            // the underlying HashMap; BTreeMap then sorts keys alphabetically
+            // on output, giving a stable JSON shape even if insertion order is
+            // not.
+            Value::Struct(handle) => {
+                let struct_ = env.get_struct(handle)?;
+                let mut vsm = BTreeMap::new();
+                for (field_id, field) in &struct_.fields {
+                    let name = sb.get_or_unknown(*field_id).to_string();
+                    let v_sv = SerialValue::convert_from_value(field.value, env, sb)?;
+                    vsm.insert(SerialMapKey::Str(name), v_sv);
+                }
+                Self::Map(vsm)
             }
 
-            Value::Tuple(_) => {
-                unimplemented!()
+            // Tuples serialize as JSON arrays, preserving member order.
+            Value::Tuple(handle) => {
+                let tuple = env.get_tuple(handle)?;
+                let vs = tuple
+                    .members
+                    .iter()
+                    .map(|v| Self::convert_from_value(*v, env, sb))
+                    .collect::<Result<_, _>>()?;
+                Self::Array(vs)
             }
 
             Value::Unit | Value::Function(_) | Value::BuiltinFunction(_) => {

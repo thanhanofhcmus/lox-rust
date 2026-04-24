@@ -184,7 +184,8 @@ fn to_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interp
     check_min_args(to_json_fn, &args, 1)?;
     let value = args[0];
 
-    let serial_value = SerialValue::convert_from_value(value, ctx.environment)?;
+    let serial_value =
+        SerialValue::convert_from_value(value, ctx.environment, ctx.identifier_registry)?;
 
     let is_print_pretty = get_bool_arg(
         to_json_fn,
