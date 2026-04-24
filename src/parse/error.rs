@@ -98,7 +98,7 @@ impl ParseError {
 /// Helper for constructing expectation messages without first-person pronouns
 fn format_expected(expected: &Option<Token>) -> String {
     match expected {
-        Some(t) => format!("The parser expected the token `{:?}` in this position.", t),
+        Some(t) => format!("The parser expected the token `{}` in this position.", t),
         None => "Verify the syntax conforms to the language grammar.".to_string(),
     }
 }

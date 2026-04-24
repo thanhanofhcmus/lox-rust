@@ -182,17 +182,17 @@ impl InterpretError {
                 )
             }
             Self::UnknownOperation(op) => {
-                format!("The operator `{op:?}` is not recognized.")
+                format!("The operator `{op}` is not recognized.")
             }
             Self::InvalidOperationOnType(op, val) => {
                 format!(
-                    "The operator `{op:?}` cannot be applied to value `{}`.",
+                    "The operator `{op}` cannot be applied to value `{}`.",
                     format_value(*val, env, sb)
                 )
             }
             Self::MismatchType(op, left, right) => {
                 format!(
-                    "The operator `{op:?}` cannot be applied to `{}` and `{}`: type mismatch.",
+                    "The operator `{op}` cannot be applied to `{}` and `{}`: type mismatch.",
                     format_value(*left, env, sb),
                     format_value(*right, env, sb),
                 )

@@ -2,72 +2,125 @@ use derive_more::Display;
 
 #[derive(Clone, Copy, Debug, Display, PartialEq)]
 pub enum Token {
-    PercentLPointParent, // %{
-    PercentLRoundParen,  // %(
+    #[display("%{{")]
+    PercentLPointParent,
+    #[display("%(")]
+    PercentLRoundParen,
 
-    LRoundParen,  // (
-    RRoundParen,  // )
-    LSquareParen, // [
-    RSquareParen, // ]
-    LPointParen,  // {
-    RPointParen,  // }
+    #[display("(")]
+    LRoundParen,
+    #[display(")")]
+    RRoundParen,
+    #[display("[")]
+    LSquareParen,
+    #[display("]")]
+    RSquareParen,
+    #[display("{{")]
+    LPointParen,
+    #[display("}}")]
+    RPointParen,
 
-    Equal, // =
+    #[display("=")]
+    Equal,
 
-    EqualEqual, // ==
-    BangEqual,  // !=
+    #[display("==")]
+    EqualEqual,
+    #[display("!=")]
+    BangEqual,
 
-    Less,         // <
-    LessEqual,    // <=
-    Greater,      // >
-    GreaterEqual, // >=
+    #[display("<")]
+    Less,
+    #[display("<=")]
+    LessEqual,
+    #[display(">")]
+    Greater,
+    #[display(">=")]
+    GreaterEqual,
 
-    Plus,       // +
-    Minus,      // -
-    Star,       // *
-    Slash,      // /
-    Percentage, // %
+    #[display("+")]
+    Plus,
+    #[display("-")]
+    Minus,
+    #[display("*")]
+    Star,
+    #[display("/")]
+    Slash,
+    #[display("%")]
+    Percentage,
 
-    And, // and
-    Or,  // or
-    Not, // not
+    #[display("and")]
+    And,
+    #[display("or")]
+    Or,
+    #[display("not")]
+    Not,
 
-    RThinArrow, // ->
-    RFatArrow,  // =>
+    #[display("->")]
+    RThinArrow,
+    #[display("=>")]
+    RFatArrow,
 
-    True,  // true
-    False, // false
-    Nil,   // nil
+    #[display("true")]
+    True,
+    #[display("false")]
+    False,
+    #[display("nil")]
+    Nil,
 
-    Var,    // var
-    If,     // if
-    Else,   // else
-    While,  // while
-    For,    // for
-    Fn,     // fn
-    Return, // return
-    When,   // when
-    Import, // import
-    As,     // as
-    In,     // in
-    Struct, // struct
+    #[display("var")]
+    Var,
+    #[display("if")]
+    If,
+    #[display("else")]
+    Else,
+    #[display("while")]
+    While,
+    #[display("for")]
+    For,
+    #[display("fn")]
+    Fn,
+    #[display("return")]
+    Return,
+    #[display("when")]
+    When,
+    #[display("import")]
+    Import,
+    #[display("as")]
+    As,
+    #[display("in")]
+    In,
+    #[display("struct")]
+    Struct,
 
-    // Types
+    #[display("any")]
     TypeAny,
+    #[display("bool")]
     TypeBool,
+    #[display("number")]
     TypeNumber,
+    #[display("str")]
     TypeStr,
 
+    #[display("identifier")]
     Identifier,
+    #[display("number literal")]
     Number,
+    #[display("number literal")]
     WholeNumber,
+    #[display("string literal")]
     String,
+    #[display("raw string literal")]
     RawString,
 
-    Dot,       // .
-    Comma,     // ,
-    Colon,     // :
-    Semicolon, // ;
+    #[display(".")]
+    Dot,
+    #[display(",")]
+    Comma,
+    #[display(":")]
+    Colon,
+    #[display(";")]
+    Semicolon,
 
-    Comment, // a whole comment until the newline
+    #[display("comment")]
+    Comment,
 }

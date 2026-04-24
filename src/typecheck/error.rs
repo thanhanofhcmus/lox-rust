@@ -124,8 +124,7 @@ impl TypecheckError {
             ),
 
             Self::BinaryOpTypeMismatch(op, left, right) => format!(
-                "The operator `{:?}` is not defined for `{}` and `{}`.",
-                op,
+                "The operator `{op}` is not defined for `{}` and `{}`.",
                 interner.generate_readable_name(sb, *left),
                 interner.generate_readable_name(sb, *right)
             ),
@@ -177,8 +176,7 @@ impl TypecheckError {
             ),
 
             Self::UnaryOpTypeMismatch(op, type_id) => format!(
-                "The operator `{:?}` cannot be applied to type `{}`.",
-                op,
+                "The operator `{op}` cannot be applied to type `{}`.",
                 interner.generate_readable_name(sb, *type_id)
             ),
 
