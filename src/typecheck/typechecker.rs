@@ -3,18 +3,27 @@ use std::collections::HashSet;
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
+use crate::identifier_registry::Identifier;
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
-// TODO: implement 2 pass type check to help with recursive functions
-
 pub struct TypeChecker<'e> {
     environment: &'e mut Environment,
+
+    /// Set by `convert_declare_stmt` to the lhs name before descending into
+    /// the rhs, and `take`n by `convert_fn_decl` if the rhs is directly an
+    /// fn literal — giving that body (and that body only) visibility of its
+    /// own name for self-recursion. `take` keeps nested fn decls from
+    /// inheriting it.
+    current_declaration_id: Option<Identifier>,
 }
 
 impl<'cl> TypeChecker<'cl> {
     pub fn new(environment: &'cl mut Environment) -> Self {
-        Self { environment }
+        Self {
+            environment,
+            current_declaration_id: None,
+        }
     }
 
     /// Run `f` with a fresh scope pushed on the environment. The scope is
@@ -132,7 +141,17 @@ impl<'cl> TypeChecker<'cl> {
             .as_ref()
             .map(|n| self.extract_type_node_id(n))
             .transpose()?;
-        let expr = self.convert_expr(expr)?;
+
+        // Expose the declared name to a directly-nested fn literal for
+        // self-recursion. Tuple destructuring can't name a single callable,
+        // so only the Identifier case is meaningful.
+        if let DeclareBindingNode::Identifier(iden) = &binding {
+            self.current_declaration_id = Some(*iden);
+        }
+        let expr = self.convert_expr(expr);
+        self.current_declaration_id = None;
+        let expr = expr?;
+
         self.convert_binding(&binding, explicit_type_id, expr.extra)?;
         Ok(DeclareStatementNode {
             binding,
@@ -752,18 +771,34 @@ impl<'cl> TypeChecker<'cl> {
                 })
                 .collect::<Result<Vec<_>, TypecheckError>>()?;
 
-            for (param, type_id) in node.params.iter().zip(&params_type_ids) {
-                this.environment
-                    .declare_variable_id(param.iden.id, *type_id)
-                    .map_err(|_| TypecheckError::DuplicateDeclaration(param.iden))?;
-            }
-            let body = this.convert_block(node.body)?;
-
             let explicit_return_type = node
                 .return_type
                 .as_ref()
                 .map(|n| this.extract_type_node_id(n))
                 .transpose()?;
+
+            for (param, type_id) in node.params.iter().zip(&params_type_ids) {
+                this.environment
+                    .declare_variable_id(param.iden.id, *type_id)
+                    .map_err(|_| TypecheckError::DuplicateDeclaration(param.iden))?;
+            }
+
+            // Self-binding for `var f = fn(...) { ... f(...) ... };`. The name
+            // is pre-declared only inside this fn body's scope, so it cannot
+            // be seen by sibling statements in the enclosing scope. `take`
+            // prevents nested fn literals from inheriting this.
+            if let Some(self_iden) = this.current_declaration_id.take() {
+                let sig = this.environment.declare_type(&Type::Function {
+                    params: params_type_ids.clone(),
+                    variadic: None,
+                    return_: explicit_return_type.unwrap_or(TypeId::ANY),
+                });
+                this.environment
+                    .declare_variable_id(self_iden.id, sig)
+                    .map_err(|_| TypecheckError::DuplicateDeclaration(self_iden))?;
+            }
+
+            let body = this.convert_block(node.body)?;
 
             let return_type = match explicit_return_type {
                 // inferred type got from the computed body
@@ -1329,6 +1364,48 @@ mod tests {
     fn fn_duplicate_param_errors() {
         let err = typecheck_str("var f = fn(x, x) x;").unwrap_err();
         assert!(matches!(err, TypecheckError::DuplicateDeclaration(_)));
+    }
+
+    // ---------- fn self-binding (recursion) ----------
+
+    #[test]
+    fn fn_self_binding_direct_recursion_typechecks() {
+        typecheck_str("var f = fn(n) { if n <= 0 { return 0; } return 1 + f(n - 1); }; f(3);")
+            .unwrap();
+    }
+
+    #[test]
+    fn fn_self_binding_does_not_leak_to_siblings() {
+        // `f` is pre-bound only inside its own body — on the previous line `f`
+        // should still be undefined.
+        let err = typecheck_str("var x = f; var f = fn() 1;").unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
+            "expected UndefinedVariableIdentifier, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn fn_mutual_recursion_is_rejected() {
+        // Self-binding only covers the current fn; `b` is not visible when
+        // converting `a`'s body.
+        let err = typecheck_str("var a = fn() { return b(); }; var b = fn() { return a(); };")
+            .unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
+            "expected UndefinedVariableIdentifier, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn fn_inner_sees_outer_self_binding_via_closure() {
+        // Lexical scoping: inner fn's body walks up the scope stack, so the
+        // outer fn's self-binding is still visible. (This is the normal
+        // closure behavior — not a leak to siblings.)
+        typecheck_str(
+            "var outer = fn() { var inner = fn() { return outer(); }; return inner(); };",
+        )
+        .unwrap();
     }
 
     // ---------- struct declarations & literals ----------

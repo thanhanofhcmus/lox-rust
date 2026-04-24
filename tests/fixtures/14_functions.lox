@@ -52,7 +52,6 @@ var zero = fn() 42;
 assert(zero() == 42, "zero-arg fn");
 
 # recursion
-# This is broken, re-enable after we done the 2 pass typecheck
 var factorial = fn(n) {
     if n <= 1 { return 1; }
     return n * factorial(n - 1);
