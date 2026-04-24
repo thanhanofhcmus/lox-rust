@@ -1,10 +1,12 @@
 ## Todos:
 - Struct destructuring — `var Point { x, y } = p;` (shorthand) and `var Point { x = px, y = py } = p;` (renamed). Open: nominal vs structural, partial destructuring, `Any` rhs.
+- Nested / mixed destructuring — `var %(a, %(b, c)) = …;`, `var %(a, Point { x, y }) = …;`. Queued after struct destructuring lands, so the binding AST and typechecker only grow once.
 - Struct runtime: `Statement::StructDecl` is still a runtime no-op — might stay that way (all work happens in parser+typechecker). Revisit if/when struct methods land.
 - Recursive struct fields — `struct Node { next: Node }`. Needs `TypeInterner` reserve/finalize so field resolution can see the in-progress struct.
 - Mutual recursion between fn declarations — needs a proper per-scope pre-pass (current self-binding covers direct recursion only).
-- Tuple typecheck for destructuring — `convert_binding` tuple arm binds all members as `Any`; should verify the rhs is a tuple, enforce arity, and type each name as the corresponding member type.
-- `SerialValue::from_value` Tuple — currently `unimplemented!()`; serialize as an array (or return `TypeIsNotSerializable`).
+- Reassignment rhs type check — `a = rhs` doesn't verify `rhs`'s type against `a`'s declared type, so `var a: number = 1; a = "oops";` passes typecheck. Affects every reassignment site, not just tuple destructuring.
+- JSON deserialisation for structs / tuples — `from_json` currently decodes into maps / arrays. Reconstructing a typed struct or tuple from JSON would need a schema hint (e.g. `from_json("...", Point)`).
+- Struct display / JSON field order is HashMap-order — alphabetical in JSON only because `BTreeMap` sorts on output. For stable declaration order everywhere, runtime `Struct.fields` needs an ordered map (IndexMap) or to take its order from `StructType.fields`.
 - Module member access (`math::sin`) — uses `::`. Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
 - Type-associated calls (`Car:new()`) — single-colon infix per the same plan doc.
 - Method calls on values (`arr.push(v)`, `m.keys()`) — dot arm in `parse_pratt_infix` needs to branch on trailing `(`. Enables migration of prelude `array_*`/`map_*` to dot methods. See plan doc Phase 1.
@@ -14,7 +16,7 @@
 - Rework module (file loader interface, circular-import detection, deeper resolution chains)
 - Standard library module
 - More docs
-- More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`17` + `errors/`, including struct read/write and lvalue-rejection error fixtures); no heap/GC unit tests, no module/import tests, no fuzzing; no fixtures yet for tuples, named-type annotations, or map-for-with-tuple.
+- More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`18` + `errors/`, including struct read/write, tuple read/write/destructure, tuple-as-map-key rejection, and lvalue rejection); no heap/GC unit tests, no module/import tests, no fuzzing.
 - On-demand parsing
 - Bytecode VM experiment
 - Tree-sitter grammar
@@ -79,3 +81,8 @@
 - [X] Self-binding recursive functions — declared name visible inside its own fn body (not to siblings; no mutual recursion)
 - [X] Dedicated member-access errors — `MemberAccessOnInvalidType` (scalar `.foo`) and `GcObjectNotStructOrTuple` (wrong heap kind), both name "struct or tuple" in the message
 - [X] Tuple destructuring runtime errors — `CannotDestructureAsTuple`, `TupleDestructureArityMismatch` replace the prior `.unwrap()` / `unimplemented!()` panics
+- [X] Tuple destructuring typecheck — `convert_binding` now validates tuple kind, arity, and per-member types against both explicit annotations and the rhs; `Any` rhs stays permissive for runtime check
+- [X] JSON serialisation for structs & tuples — `to_json` renders structs as JSON objects (field names via `IdentifierRegistry`) and tuples as JSON arrays; prior `unimplemented!()` in `SerialValue::convert_from_value` is gone
+- [X] Runtime error rendering via live stores — `InterpretError::resolve_description` now formats values through `DisplayWriter` + `Environment` + `IdentifierRegistry` (no more `Scalar(Number(Integer(42)))`); `Token` renders as its source glyph via per-variant `derive_more::Display` attributes (errors say `+` / `=` / `{` instead of `Plus` / `Equal` / `LPointParen`)
+- [X] Lexer disambiguation for tuple / member access — `p.0.1` lexes as chained tuple indices (Rule X: after a `Dot`, numbers are whole-only); `0.1.2` / `3.14.foo` hard-error at lex (Rule Y); trailing `5.` and leading `.5` are lex errors too
+- [X] Tuple / named-type fixture coverage — `tests/fixtures/18_tuples.lox` + six `errors/tuple_*` fixtures cover construction, typing, destructuring, writes (simple/chained/mixed), map-for-with-tuple, named-type annotations (`struct Box { center: Point }`), and runtime / typecheck rejection paths

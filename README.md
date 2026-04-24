@@ -293,7 +293,21 @@ _dbg_gc_mark_sweep(); # force a GC cycle
 
 ### JSON
 
+`to_json` serialises scalars, strings, arrays, maps (string keys only),
+tuples, and structs. `from_json` decodes scalars, strings, arrays, and
+objects — tuples / structs come back as arrays / maps, so a roundtrip
+through JSON loses the nominal shape.
+
 ```
 var s = to_json(%{"a" => 1, "b" => [2, 3]});
 var v = from_json(s);
+
+# structs serialise as JSON objects (field order is alphabetical)
+struct Point { x: number, y: number }
+var p = Point { x = 1, y = 2 };
+print(to_json(p));                    # {"x":1,"y":2}
+
+# tuples serialise as JSON arrays
+var t = %(1, "hi", true);
+print(to_json(t));                    # [1,"hi",true]
 ```
