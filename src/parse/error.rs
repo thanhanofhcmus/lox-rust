@@ -14,7 +14,7 @@ pub enum ParseError {
     UnexpectedToken(Token, Span, Option<Token>), // Changed Option to String for better custom messaging
 
     #[error("Syntax error: String literal started at position {0} remains unclosed.")]
-    UnclosedString(usize),
+    UnclosedString(Span),
 
     #[error("Numeric conversion failed: The sequence at {0} is not a valid number.")]
     ParseToNumber(Span),
@@ -48,17 +48,15 @@ impl ParseError {
     pub fn get_source_start(&self, input: &str) -> (usize, usize) {
         use ParseError::*;
         match self {
-            UnexpectedCharacter(s) => s.to_start_row_col(input),
-            ImportNotAtTheTop(s) => s.to_start_row_col(input),
-            UnexpectedToken(_, s, _) => s.to_start_row_col(input),
-            UnclosedString(u) => (*u, *u),
-            ParseToNumber(s) => s.to_start_row_col(input),
-            UnexpectedReturn(s) => s.to_start_row_col(input),
-            Eof(_) => (0, 0),
-            Unfinished(_, s) => s.to_start_row_col(input),
-            ReassignRootIsNotAnIdentifier => (0, 0),
-            RecursionLimitExceeded(_) => (0, 0),
-            InvalidMapKeyType(s) => s.to_start_row_col(input),
+            UnexpectedCharacter(s)
+            | ImportNotAtTheTop(s)
+            | UnexpectedToken(_, s, _)
+            | UnclosedString(s)
+            | ParseToNumber(s)
+            | UnexpectedReturn(s)
+            | Unfinished(_, s)
+            | InvalidMapKeyType(s) => s.to_start_row_col(input),
+            Eof(_) | ReassignRootIsNotAnIdentifier | RecursionLimitExceeded(_) => (0, 0),
         }
     }
 

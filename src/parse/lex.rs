@@ -205,17 +205,6 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     Ok(result)
 }
 
-/// Lex a number literal starting at `*offset`. `prev_was_dot` is true iff the
-/// previously-emitted token was `Token::Dot`, i.e. we're in tuple-index
-/// position. In that case we lex only the integer part and leave any trailing
-/// dots for the next call (Rule X — enables `p.0.1` as chained tuple access).
-///
-/// Once a float literal has been started (`has_parsed_dot = true`), a second
-/// `.` immediately after the float is rejected (Rule Y — catches typos like
-/// `0.1.2`).
-///
-/// In non-Rule-X position, a `.` followed by a non-digit (e.g. `5.`) is also
-/// rejected — a standalone trailing dot has no valid interpretation.
 fn lex_number(input: &[u8], offset: &mut usize, prev_was_dot: bool) -> Result<LexItem, ParseError> {
     let start_offset = *offset;
     let mut has_parsed_dot = false;
@@ -226,12 +215,12 @@ fn lex_number(input: &[u8], offset: &mut usize, prev_was_dot: bool) -> Result<Le
             continue;
         }
         if c == b'.' {
-            // Rule X: after a Dot token, never consume another dot — leave it
+            // After a Dot token, never consume another dot — leave it
             // for the next token so `p.0.1` works as chained tuple access.
             if prev_was_dot {
                 break;
             }
-            // Rule Y: a completed float followed by another `.` is a hard
+            // A completed float followed by another `.` is a hard
             // error (e.g. `0.1.2`, `3.14.foo`).
             if has_parsed_dot {
                 return Err(ParseError::UnexpectedCharacter(Span::one(*offset + 1)));
@@ -282,7 +271,7 @@ fn lex_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
                 // After advancing past '\', the next byte must be the escaped
                 // character. If we're at or past input end, the string is unclosed.
                 if *offset >= input.len() {
-                    return Err(ParseError::UnclosedString(start_offset));
+                    return Err(ParseError::UnclosedString(Span::new(start_offset, *offset)));
                 }
 
                 // we skip a single byte since we only handle the case of \"
@@ -298,7 +287,7 @@ fn lex_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
     }
 
     // We hit the end with out hitting the closing '"'
-    Err(ParseError::UnclosedString(start_offset))
+    Err(ParseError::UnclosedString(Span::new(start_offset, *offset)))
 }
 
 fn lex_raw_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
@@ -331,7 +320,7 @@ fn lex_raw_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseErro
     }
 
     // We hit the end with out hitting the closing '"'
-    Err(ParseError::UnclosedString(start_offset))
+    Err(ParseError::UnclosedString(Span::new(start_offset, *offset)))
 }
 
 fn lex_keyword_or_identifier(input: &[u8], offset: &mut usize) -> LexItem {
@@ -550,9 +539,6 @@ mod tests {
 
     #[test]
     fn chained_tuple_access_on_identifier() {
-        // `p.0.1` — identifier, then two integer indices. After a Dot, the
-        // number lexer only takes the whole-number part (Rule X), so `0.1`
-        // does not collapse into a float literal.
         assert_eq!(
             with_text("p.0.1"),
             vec![
@@ -598,8 +584,6 @@ mod tests {
 
     #[test]
     fn float_followed_by_second_dot_errors() {
-        // Rule Y: once we've committed to a float, a second `.` is a typo
-        // (e.g. `0.1.2`, `3.14.foo`, `1.2.3`).
         for input in ["0.1.2", "3.14.foo", "1.2.3"] {
             let err = lex(input).unwrap_err();
             assert!(

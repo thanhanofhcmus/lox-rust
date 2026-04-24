@@ -105,7 +105,7 @@ pub enum Token {
     Identifier,
     #[display("number literal")]
     Number,
-    #[display("number literal")]
+    #[display("whole number literal")]
     WholeNumber,
     #[display("string literal")]
     String,
