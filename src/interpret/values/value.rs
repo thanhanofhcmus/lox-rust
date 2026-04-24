@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::{
     ast::{BlockNode, ChainStep, FnParamNode},
     id::Id,
+    identifier_registry::IdentifierRegistry,
     interpret::{
         Environment,
         error::InterpretError,
@@ -252,14 +253,14 @@ impl Value {
 impl DisplayWriter for Value {
     fn write_display(
         self,
-        ctx: &BorrowContext,
+        env: &Environment,
+        sb: &IdentifierRegistry,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         let convert = |e| InterpretError::WriteValueFailed(self, e);
-        let env = &ctx.environment;
 
         match self {
-            Value::Scalar(v) => v.write_display(ctx, w),
+            Value::Scalar(v) => v.write_display(env, sb, w),
             Value::Unit => write!(w, "()").map_err(convert),
             Value::Str(handle) => {
                 let s = env.get_string(handle)?;
@@ -271,10 +272,10 @@ impl DisplayWriter for Value {
 
                 if let Some((last, rest)) = arr.split_last() {
                     for value in rest {
-                        value.write_display(ctx, w)?;
+                        value.write_display(env, sb, w)?;
                         w.write_all(b", ").map_err(convert)?;
                     }
-                    last.write_display(ctx, w)?;
+                    last.write_display(env, sb, w)?;
                 }
 
                 w.write_all(b"]").map_err(convert)?;
@@ -291,27 +292,27 @@ impl DisplayWriter for Value {
                     // for type string, we want to add quotes ""
                     if let MapKey::Str(_) = first_key {
                         w.write_all(b"\"").map_err(convert)?;
-                        first_key.write_display(ctx, w)?;
+                        first_key.write_display(env, sb, w)?;
                         w.write_all(b"\"").map_err(convert)?;
                     } else {
                         // normal type, normal write
-                        first_key.write_display(ctx, w)?;
+                        first_key.write_display(env, sb, w)?;
                     }
                     write!(w, " => ").map_err(convert)?;
-                    first_value.write_display(ctx, w)?;
+                    first_value.write_display(env, sb, w)?;
 
                     for (k, v) in entries {
                         write!(w, ", ").map_err(convert)?;
                         if let MapKey::Str(_) = k {
                             w.write_all(b"\"").map_err(convert)?;
-                            k.write_display(ctx, w)?;
+                            k.write_display(env, sb, w)?;
                             w.write_all(b"\"").map_err(convert)?;
                         } else {
                             // normal type, normal write
-                            k.write_display(ctx, w)?;
+                            k.write_display(env, sb, w)?;
                         }
                         write!(w, " => ").map_err(convert)?;
-                        v.write_display(ctx, w)?;
+                        v.write_display(env, sb, w)?;
                     }
                 }
                 w.write_all(b"}").map_err(convert)?;
@@ -320,21 +321,16 @@ impl DisplayWriter for Value {
             }
             Value::Struct(handle) => {
                 let struct_ = env.get_struct(handle)?;
-                write!(
-                    w,
-                    "{}{{",
-                    ctx.identifier_registry.get_or_unknown(struct_.id)
-                )
-                .map_err(convert)?;
+                write!(w, "{}{{", sb.get_or_unknown(struct_.id)).map_err(convert)?;
                 let mut entries = struct_.fields.iter();
                 if let Some((field_id, field_value)) = entries.next() {
-                    let field_name = ctx.identifier_registry.get_or_unknown(*field_id);
+                    let field_name = sb.get_or_unknown(*field_id);
                     write!(w, "{} = ", field_name).map_err(convert)?;
-                    field_value.value.write_display(ctx, w)?;
+                    field_value.value.write_display(env, sb, w)?;
                     for (field_id, field_value) in entries {
-                        let field_name = ctx.identifier_registry.get_or_unknown(*field_id);
+                        let field_name = sb.get_or_unknown(*field_id);
                         write!(w, ", {} = ", field_name).map_err(convert)?;
-                        field_value.value.write_display(ctx, w)?;
+                        field_value.value.write_display(env, sb, w)?;
                     }
                 }
                 write!(w, "}}").map_err(convert)?;
@@ -346,10 +342,10 @@ impl DisplayWriter for Value {
 
                 if let Some((last, rest)) = tuple.members.split_last() {
                     for value in rest {
-                        value.write_display(ctx, w)?;
+                        value.write_display(env, sb, w)?;
                         w.write_all(b", ").map_err(convert)?;
                     }
-                    last.write_display(ctx, w)?;
+                    last.write_display(env, sb, w)?;
                 }
 
                 w.write_all(b")").map_err(convert)?;
@@ -395,13 +391,14 @@ impl MapKey {
 impl DisplayWriter for MapKey {
     fn write_display(
         self,
-        ctx: &BorrowContext,
+        env: &Environment,
+        sb: &IdentifierRegistry,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         match self {
-            MapKey::Scalar(v) => v.write_display(ctx, w),
+            MapKey::Scalar(v) => v.write_display(env, sb, w),
             MapKey::Str(str_id) => {
-                let s = ctx.environment.get_string(str_id)?;
+                let s = env.get_string(str_id)?;
                 w.write_all(s.as_bytes())
                     .map_err(|e| InterpretError::WriteValueFailed(Value::Str(str_id), e))
             }

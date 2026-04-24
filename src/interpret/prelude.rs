@@ -117,7 +117,7 @@ fn print_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interpre
             let s = ctx.environment.get_string(str_id)?;
             write!(print_writer, "{}", s).unwrap();
         } else {
-            value.write_display(ctx, &mut *print_writer)?;
+            value.write_display(ctx.environment, ctx.identifier_registry, &mut *print_writer)?;
         }
     }
     writeln!(print_writer).unwrap();
@@ -163,7 +163,7 @@ fn stringify_assert_message(ctx: &BorrowContext, value: Value) -> Result<String,
         return Ok(ctx.environment.get_string(str_id)?.to_string());
     }
     let mut buf: Vec<u8> = Vec::new();
-    value.write_display(ctx, &mut buf)?;
+    value.write_display(ctx.environment, ctx.identifier_registry, &mut buf)?;
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 

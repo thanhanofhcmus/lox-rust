@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+use crate::identifier_registry::IdentifierRegistry;
 use crate::interpret::{
+    Environment,
     error::InterpretError,
-    interpreter::BorrowContext,
     values::{DisplayWriter, Value, number::Number},
 };
 
@@ -23,13 +24,14 @@ pub enum Scalar {
 impl DisplayWriter for Scalar {
     fn write_display(
         self,
-        env: &BorrowContext,
+        env: &Environment,
+        sb: &IdentifierRegistry,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         let convert = |e| InterpretError::WriteValueFailed(Value::Scalar(self), e);
         match self {
             Self::Nil => write!(w, "nil").map_err(convert),
-            Self::Number(v) => v.write_display(env, w),
+            Self::Number(v) => v.write_display(env, sb, w),
             Self::Bool(v) => write!(w, "{}", v).map_err(convert),
         }
     }

@@ -113,7 +113,12 @@ impl RunnerContext {
         interpreter.interpret(&ast).map_err(|err| {
             error!(
                 "Interpreter error:\n{}",
-                err.generate_user_facing_error(source_name, input, &self.identifier_registry)
+                err.generate_user_facing_error(
+                    source_name,
+                    input,
+                    &self.interpret_env,
+                    &self.identifier_registry,
+                )
             );
             Box::new(err) as Box<dyn std::error::Error>
         })?;

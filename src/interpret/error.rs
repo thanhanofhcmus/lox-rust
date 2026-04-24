@@ -5,13 +5,15 @@ use crate::{
     ast::MemberNode,
     id::Id,
     identifier_registry::{Identifier, IdentifierRegistry},
-    interpret::heap::{GcHandle, GcKind, StrId},
+    interpret::{
+        Environment,
+        heap::{GcHandle, GcKind, StrId},
+        values::DisplayWriter,
+    },
     parse::ParseError,
     token::Token,
     typecheck,
 };
-
-// TODO: create a special error reporting function that print to the actual string/array/map value
 
 #[derive(Debug, Error)]
 pub enum InterpretError {
@@ -147,9 +149,10 @@ impl InterpretError {
         &self,
         source_name: Option<&str>,
         input: &str,
+        env: &Environment,
         sb: &IdentifierRegistry,
     ) -> String {
-        let description = self.resolve_description(sb);
+        let description = self.resolve_description(env, sb);
         let source_name = source_name.unwrap_or("");
 
         // Interpret errors don't carry source spans, so show just the message
@@ -158,8 +161,7 @@ impl InterpretError {
         format!("Runtime Error: {description}\n  --> {source_name}\n")
     }
 
-    // TODO: remove all debug print in here
-    fn resolve_description(&self, sb: &IdentifierRegistry) -> String {
+    fn resolve_description(&self, env: &Environment, sb: &IdentifierRegistry) -> String {
         match self {
             Self::ReDeclareVariable(node) => {
                 format!(
@@ -183,42 +185,66 @@ impl InterpretError {
                 format!("The operator `{op:?}` is not recognized.")
             }
             Self::InvalidOperationOnType(op, val) => {
-                format!("The operator `{op:?}` cannot be applied to value `{val:?}`.")
+                format!(
+                    "The operator `{op:?}` cannot be applied to value `{}`.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::MismatchType(op, left, right) => {
                 format!(
-                    "The operator `{op:?}` cannot be applied to `{left:?}` and `{right:?}`: type mismatch."
+                    "The operator `{op:?}` cannot be applied to `{}` and `{}`: type mismatch.",
+                    format_value(*left, env, sb),
+                    format_value(*right, env, sb),
                 )
             }
             Self::ConditionNotBool(val) => {
-                format!("Expected a boolean condition, but got `{val:?}`.")
+                format!(
+                    "Expected a boolean condition, but got `{}`.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::DivideByZero => "Division by zero is not allowed.".to_string(),
             Self::ValueNotCallable(val) => {
-                format!("`{val:?}` is not a function and cannot be called.")
+                format!(
+                    "`{}` is not a function and cannot be called.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::WrongNumberOfArgument(val, expected, actual) => {
-                format!("`{val:?}` expects {expected} argument(s) but received {actual}.")
+                format!(
+                    "`{}` expects {expected} argument(s) but received {actual}.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::WrongNumberOfArgumentAtLeast(val, min, actual) => {
-                format!("`{val:?}` requires at least {min} argument(s) but received {actual}.")
+                format!(
+                    "`{}` requires at least {min} argument(s) but received {actual}.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::WrongArgumentType(callable, arg, expected_type) => {
                 format!(
-                    "`{callable:?}` received argument `{arg:?}` but expected type `{expected_type}`."
+                    "`{}` received argument `{}` but expected type `{expected_type}`.",
+                    format_value(*callable, env, sb),
+                    format_value(*arg, env, sb),
                 )
             }
             Self::ValueUnIndexable(val) => {
                 format!(
-                    "`{val:?}` cannot be indexed with `[…]`; only arrays and maps support subscription."
+                    "`{}` cannot be indexed with `[…]`; only arrays and maps support subscription.",
+                    format_value(*val, env, sb)
                 )
             }
             Self::ValueCannotBeUsedAsKey(val) => {
-                format!("`{val:?}` cannot be used as a key for an array or map.")
+                format!(
+                    "`{}` cannot be used as a key for an array or map.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::ValueMustBeUsize(val) => {
                 format!(
-                    "`{val:?}` is not a non-negative integer; array indices must be non-negative integers."
+                    "`{}` is not a non-negative integer; array indices must be non-negative integers.",
+                    format_value(*val, env, sb)
                 )
             }
             Self::ArrayOutOfBound(len, index) => {
@@ -237,21 +263,36 @@ impl InterpretError {
                 format!("Type error in module '{module}' at '{path}': {err}.")
             }
             Self::InterpretModuleFailed(module, path, err) => {
-                format!("Runtime error in module '{module}' at '{path}': {err}.")
+                format!(
+                    "Runtime error in module '{module}' at '{path}': {}.",
+                    err.resolve_description(env, sb)
+                )
             }
             Self::ValueCannotBeUsedAsSourceInFor(val) => {
-                format!("Value `{val:?}` cannot be use as for loop source")
+                format!(
+                    "Value `{}` cannot be used as a for-loop source",
+                    format_value(*val, env, sb)
+                )
             }
             Self::TypeIsNotSerializable(val) => {
-                format!("`{val:?}` cannot be serialized.")
+                format!("`{}` cannot be serialized.", format_value(*val, env, sb))
             }
             Self::SerializeFailed(val, err) => {
-                format!("Serialization of `{val:?}` failed: {err}.")
+                format!(
+                    "Serialization of `{}` failed: {err}.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::DeserializeFailed(val, err) => {
-                format!("Deserialization of `{val:?}` failed: {err}.")
+                format!(
+                    "Deserialization of `{}` failed: {err}.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::WriteValueFailed(val, err) => {
+                // Avoid calling `format_value` here — WriteValueFailed came from
+                // the display path, so re-entering it would risk a loop if the
+                // heap is in a partial state.
                 format!("Writing `{val:?}` failed: {err}.")
             }
             Self::UseUnitValue => {
@@ -282,7 +323,8 @@ impl InterpretError {
             }
             Self::MemberAccessOnInvalidType(val, member) => {
                 format!(
-                    "`{val:?}` is not a struct or tuple; cannot access member {}.",
+                    "`{}` is not a struct or tuple; cannot access member {}.",
+                    format_value(*val, env, sb),
                     format_member(member, sb),
                 )
             }
@@ -316,7 +358,10 @@ impl InterpretError {
                 format!("Index {index} is out of bounds: the Tuple has {len} members.")
             }
             Self::CannotDestructureAsTuple(val) => {
-                format!("`{val:?}` cannot be destructured as a tuple.")
+                format!(
+                    "`{}` cannot be destructured as a tuple.",
+                    format_value(*val, env, sb)
+                )
             }
             Self::TupleDestructureArityMismatch { expected, actual } => {
                 format!("Tuple destructuring expected {expected} member(s) but value has {actual}.")
@@ -329,5 +374,17 @@ fn format_member(member: &MemberNode, sb: &IdentifierRegistry) -> String {
     match member {
         MemberNode::StructField(iden) => format!("'.{}'", sb.get_or_unknown(iden.id)),
         MemberNode::TupleIndex(idx) => format!("'.{idx}'"),
+    }
+}
+
+/// Render a `Value` as the string a user would see in the source — via the
+/// same `DisplayWriter` path the interpreter uses for `print`. Falls back to
+/// the derived `Debug` representation if display fails (e.g. a stale heap
+/// handle during error teardown), so error formatting never silently panics.
+fn format_value(val: Value, env: &Environment, sb: &IdentifierRegistry) -> String {
+    let mut buf: Vec<u8> = Vec::new();
+    match val.write_display(env, sb, &mut buf) {
+        Ok(()) => String::from_utf8_lossy(&buf).into_owned(),
+        Err(_) => format!("{val:?}"),
     }
 }

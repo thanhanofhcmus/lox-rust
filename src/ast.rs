@@ -41,13 +41,6 @@ pub struct StructDeclNode {
     pub fields: Vec<StructFieldNode>,
 }
 
-// Suport var %(x, y) and Vec3{ x = a, y = _ }
-// #[derive(Debug, Clone)]
-// pub struct StructBindingMemberNode {
-//     pub binding_iden: Identifier,
-//     pub declare_iden: Option<Identifier>,
-// }
-
 #[derive(Debug, Clone)]
 pub enum DeclareBindingNode {
     Identifier(Identifier),

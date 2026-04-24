@@ -4,9 +4,10 @@ use std::{
     ops::{Add, Div, Mul, Rem, Sub},
 };
 
+use crate::identifier_registry::IdentifierRegistry;
 use crate::interpret::{
+    Environment,
     error::InterpretError,
-    interpreter::BorrowContext,
     values::{Value, display_writer::DisplayWriter},
 };
 
@@ -139,7 +140,8 @@ impl std::ops::Neg for Number {
 impl DisplayWriter for Number {
     fn write_display(
         self,
-        _: &BorrowContext,
+        _: &Environment,
+        _: &IdentifierRegistry,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         let result = match self {
