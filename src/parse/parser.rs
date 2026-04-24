@@ -477,7 +477,11 @@ fn parse_pratt_infix(
                         },
                     )))
                 }
-                _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
+                _ => Err(ParseError::UnexpectedToken(
+                    member_li.token,
+                    member_li.span,
+                    None,
+                )),
             }
         }
         // Subscription call
@@ -577,7 +581,6 @@ fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
             ClauseCase::Identifier(node)
         }
     } else if state.peek(&[Token::LRoundParen]) {
-        // conflict
         let node = parse_group(state)?;
         ClauseCase::Group(Box::new(node))
     } else {

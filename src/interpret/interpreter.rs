@@ -218,10 +218,15 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         match binding {
             DeclareBindingNode::Identifier(iden) => self.insert_variable(*iden, value)?,
             DeclareBindingNode::Tuple { members } => {
-                let handle = value.get_handle().unwrap();
+                let Value::Tuple(handle) = value else {
+                    return Err(InterpretError::CannotDestructureAsTuple(value));
+                };
                 let tuple = self.environment.get_tuple(handle)?;
                 if members.len() != tuple.members.len() {
-                    unimplemented!()
+                    return Err(InterpretError::TupleDestructureArityMismatch {
+                        expected: members.len(),
+                        actual: tuple.members.len(),
+                    });
                 }
                 for (iden, value) in members.iter().zip(tuple.members.clone()) {
                     self.insert_variable(*iden, value)?;

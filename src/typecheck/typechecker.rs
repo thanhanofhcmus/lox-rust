@@ -107,11 +107,9 @@ impl<'cl> TypeChecker<'cl> {
                     .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
             }
             DeclareBindingNode::Tuple { members } => {
-                // check if the descturing works in the right shape
-                // TODO:
-
-                // we only insert the var to make it works for now
-
+                // TODO: check that the destructuring matches the right shape
+                // (tuple kind, arity, per-member types). For now we just bind
+                // each member as Any and let the interpreter raise on mismatch.
                 for iden in members {
                     self.environment
                         .declare_variable_id(iden.id, TypeId::ANY)
@@ -690,7 +688,7 @@ impl<'cl> TypeChecker<'cl> {
         let struct_type_id = self
             .environment
             .lookup_type_id_from_id(iden.id)
-            .ok_or(TypecheckError::UndefinedVariableIdentifier(iden))?;
+            .ok_or(TypecheckError::UndefinedTypeIdentifier(iden))?;
         let type_ = self
             .environment
             .lookup_type(struct_type_id)
@@ -1350,8 +1348,8 @@ mod tests {
     fn struct_literal_undeclared_name_errors() {
         let err = typecheck_str("var p = Foo { x = 1 };").unwrap_err();
         assert!(
-            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
-            "expected UndefinedIdentifier, got {err:?}"
+            matches!(err, TypecheckError::UndefinedTypeIdentifier(_)),
+            "expected UndefinedTypeIdentifier, got {err:?}"
         );
     }
 

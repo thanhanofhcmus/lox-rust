@@ -161,9 +161,9 @@ impl TypeInterner {
             }
             Type::Array { .. } => (1, TypeId::CATEGORY_ARRAY),
             Type::Map { .. } => (2, TypeId::CATEGORY_MAP),
-            Type::Tuple { .. } => (2, TypeId::CATEGORY_TUPLE),
-            Type::Function { .. } => (3, TypeId::CATEGORY_FUNCTION),
-            Type::Struct { .. } => (4, TypeId::CATEGORY_STRUCT),
+            Type::Tuple { .. } => (3, TypeId::CATEGORY_TUPLE),
+            Type::Function { .. } => (4, TypeId::CATEGORY_FUNCTION),
+            Type::Struct { .. } => (5, TypeId::CATEGORY_STRUCT),
         };
 
         let id_payload = self.counters[index];

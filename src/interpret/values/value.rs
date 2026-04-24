@@ -59,7 +59,7 @@ pub enum Value {
     #[debug("Map({:?})", _0)]
     Map(GcHandle),
 
-    #[debug("Struct({:?})", _0)]
+    #[debug("Tuple({:?})", _0)]
     Tuple(GcHandle),
 
     #[debug("Struct({:?})", _0)]
@@ -228,7 +228,12 @@ impl Value {
         env: &Environment,
     ) -> Result<Value, InterpretError> {
         let Some(handle) = self.get_handle() else {
-            return Err(InterpretError::ValueUnIndexable(*self));
+            return Err(match step {
+                ChainStep::Member(member) => {
+                    InterpretError::MemberAccessOnInvalidType(*self, member)
+                }
+                ChainStep::Subscription(_) => InterpretError::ValueUnIndexable(*self),
+            });
         };
         env.heap
             .get_object(handle)

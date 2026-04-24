@@ -84,14 +84,20 @@ impl GcObject {
                     .get(&field.id)
                     .map(|f| f.value)
                     .ok_or(InterpretError::StructFieldNotFound(struct_.id, field)),
-                _ => Err(InterpretError::GcObjectNotStruct(self.get_kind(), field)),
+                _ => Err(InterpretError::GcObjectNotStructOrTuple(
+                    self.get_kind(),
+                    MemberNode::StructField(field),
+                )),
             },
             ChainStep::Member(MemberNode::TupleIndex(idx)) => match self {
                 GcObject::Tuple(Tuple { members }) => members
                     .get(idx)
                     .copied()
                     .ok_or(InterpretError::TupleIndexOutOfBound(members.len(), idx)),
-                _ => Err(InterpretError::GcObjectNotTuple(self.get_kind(), idx)),
+                _ => Err(InterpretError::GcObjectNotStructOrTuple(
+                    self.get_kind(),
+                    MemberNode::TupleIndex(idx),
+                )),
             },
         }
     }
@@ -124,9 +130,9 @@ impl GcObject {
                         .ok_or(InterpretError::StructFieldNotFound(struct_.id, field_iden))?;
                     Ok(std::mem::replace(&mut field.value, new_value))
                 }
-                _ => Err(InterpretError::GcObjectNotStruct(
+                _ => Err(InterpretError::GcObjectNotStructOrTuple(
                     self.get_kind(),
-                    field_iden,
+                    MemberNode::StructField(field_iden),
                 )),
             },
             ChainStep::Member(MemberNode::TupleIndex(idx)) => match self {
@@ -134,7 +140,10 @@ impl GcObject {
                     Some(v) => Ok(std::mem::replace(v, new_value)),
                     None => Err(InterpretError::TupleIndexOutOfBound(members.len(), idx)),
                 },
-                _ => Err(InterpretError::GcObjectNotTuple(self.get_kind(), idx)),
+                _ => Err(InterpretError::GcObjectNotStructOrTuple(
+                    self.get_kind(),
+                    MemberNode::TupleIndex(idx),
+                )),
             },
         }
     }
@@ -329,7 +338,8 @@ impl Heap {
                 }
             }
             GcObject::Tuple(tuple) => {
-                // have to use clone here since we are modifying the backing GC object
+                // clone members to release the borrow on self.slots
+                // before recursing (same reason Array/Map/Struct arms clone)
                 for value in tuple.members.clone() {
                     self.shallow_dispose_value(value);
                 }

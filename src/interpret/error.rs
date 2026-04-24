@@ -2,6 +2,7 @@ use super::values::Value;
 use thiserror::Error;
 
 use crate::{
+    ast::MemberNode,
     id::Id,
     identifier_registry::{Identifier, IdentifierRegistry},
     interpret::heap::{GcHandle, GcKind, StrId},
@@ -50,12 +51,12 @@ pub enum InterpretError {
     #[error("Callable `{0:?}` received argument `{1:?}` but expected type {2}")]
     WrongArgumentType(Value, Value, &'static str),
 
-    // Fix this error to include structs and tuple
-    #[error("Value `{0:?}` is not of the type array or map, hence not indexable")]
+    #[error(
+        "Value `{0:?}` cannot be indexed with `[…]`; only arrays and maps support subscription"
+    )]
     ValueUnIndexable(Value),
 
-    // Fix this error to include structs and tuple
-    #[error("Value `{0:?}` is can not be used as key for array or map")]
+    #[error("Value `{0:?}` cannot be used as a key for an array or map")]
     ValueCannotBeUsedAsKey(Value),
 
     #[error("Value `{0:?}` is not of the type non-negative integer")]
@@ -107,11 +108,11 @@ pub enum InterpretError {
     #[error("GcObject with type `{}` is not indexable", .0.type_name())]
     GcObjectUnIndexable(GcKind),
 
-    #[error("GcObject with type `{}` is not a struct; cannot access member `{1:?}`", .0.type_name())]
-    GcObjectNotStruct(GcKind, Identifier),
+    #[error("GcObject with type `{}` is not a struct or tuple; cannot access member `{1:?}`", .0.type_name())]
+    GcObjectNotStructOrTuple(GcKind, MemberNode),
 
-    #[error("GcObject with type `{}` is not a tuple; cannot access member `{1}`", .0.type_name())]
-    GcObjectNotTuple(GcKind, usize),
+    #[error("Value `{0:?}` is not a struct or tuple; cannot access member `{1:?}`")]
+    MemberAccessOnInvalidType(Value, MemberNode),
 
     #[error("String with Id `{:?}` does not exist in the heap interner", .0)]
     StringNotFoundOnHeap(StrId),
@@ -133,6 +134,12 @@ pub enum InterpretError {
 
     #[error("Tuple have `{0}` members and cannot be indexed with member {1}")]
     TupleIndexOutOfBound(usize, usize),
+
+    #[error("Value `{0:?}` cannot be destructured as a tuple")]
+    CannotDestructureAsTuple(Value),
+
+    #[error("Tuple destructuring expected {expected} member(s) but value has {actual}")]
+    TupleDestructureArityMismatch { expected: usize, actual: usize },
 }
 
 impl InterpretError {
@@ -202,7 +209,9 @@ impl InterpretError {
                 )
             }
             Self::ValueUnIndexable(val) => {
-                format!("`{val:?}` is not an array or map and cannot be indexed.")
+                format!(
+                    "`{val:?}` cannot be indexed with `[…]`; only arrays and maps support subscription."
+                )
             }
             Self::ValueCannotBeUsedAsKey(val) => {
                 format!("`{val:?}` cannot be used as a key for an array or map.")
@@ -264,18 +273,17 @@ impl InterpretError {
                     kind.type_name()
                 )
             }
-            Self::GcObjectNotStruct(kind, iden) => {
+            Self::GcObjectNotStructOrTuple(kind, member) => {
                 format!(
-                    "GC object of type `{}` is not a struct; cannot access member '{}'.",
+                    "GC object of type `{}` is not a struct or tuple; cannot access member {}.",
                     kind.type_name(),
-                    sb.get_or_unknown(iden.id)
+                    format_member(member, sb),
                 )
             }
-            Self::GcObjectNotTuple(kind, idx) => {
+            Self::MemberAccessOnInvalidType(val, member) => {
                 format!(
-                    "GC object of type `{}` is not a tuple; cannot access member at index '{}'.",
-                    kind.type_name(),
-                    idx
+                    "`{val:?}` is not a struct or tuple; cannot access member {}.",
+                    format_member(member, sb),
                 )
             }
             Self::StringNotFoundOnHeap(id) => {
@@ -307,6 +315,19 @@ impl InterpretError {
             Self::TupleIndexOutOfBound(len, index) => {
                 format!("Index {index} is out of bounds: the Tuple has {len} members.")
             }
+            Self::CannotDestructureAsTuple(val) => {
+                format!("`{val:?}` cannot be destructured as a tuple.")
+            }
+            Self::TupleDestructureArityMismatch { expected, actual } => {
+                format!("Tuple destructuring expected {expected} member(s) but value has {actual}.")
+            }
         }
+    }
+}
+
+fn format_member(member: &MemberNode, sb: &IdentifierRegistry) -> String {
+    match member {
+        MemberNode::StructField(iden) => format!("'.{}'", sb.get_or_unknown(iden.id)),
+        MemberNode::TupleIndex(idx) => format!("'.{idx}'"),
     }
 }

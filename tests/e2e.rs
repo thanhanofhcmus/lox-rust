@@ -132,7 +132,7 @@ fn error_member_access_on_non_struct() {
 #[test]
 fn error_member_access_any_runtime() {
     let res = run_fixture("errors/member_access_any_runtime.lox");
-    assert_err_contains(&res, "is not a struct");
+    assert_err_contains(&res, "not a struct or tuple");
 }
 
 #[test]
