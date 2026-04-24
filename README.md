@@ -130,11 +130,17 @@ while t > 0 {
 }
 ```
 
-`for ... in` walks arrays (and anything array-shaped at runtime):
+`for ... in` walks arrays and maps. Map iteration yields each entry as a
+`%(key, value)` tuple, which you can destructure inline:
 
 ```
 for x in [1, 2, 3] {
   print(x);
+}
+
+for %(k, v) in %{"alice" => 10, "bob" => 7} {
+  print(k);
+  print(v);
 }
 ```
 
@@ -181,6 +187,26 @@ scores["carol"] = 12;         # subscript assignment works on maps too
 
 Map builtins: `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`.
 
+### Tuples
+
+Tuples are heterogeneous, fixed-size, indexed by position. Literal syntax is
+`%( ... )` and members are accessed with `.N`.
+
+```
+var pair = %(1, "hello");
+print(pair.0);                        # 1
+print(pair.1);                        # "hello"
+
+# optional type annotation
+var coord: %(number, number) = %(3, 4);
+
+# destructuring in a declaration
+var %(a, b) = pair;
+print(a);                             # 1
+```
+
+Tuples also drive map `for` iteration (see above): `for %(k, v) in map { ... }`.
+
 ### Functions
 
 Functions are first-class values. Two body forms:
@@ -197,7 +223,18 @@ var sub: fn = fn(a: number, b: number) -> number { return a - b; };
 
 print(add(2, 3));
 print(inc(10));
+
+# a function's own name is visible inside its body, so direct recursion works
+var fact = fn(n) {
+  if n <= 1 { return 1; }
+  return n * fact(n - 1);
+};
+print(fact(5));                       # 120
 ```
+
+The self-binding only covers the declared name inside the fn's own body — it
+does **not** leak to sibling statements, and mutual recursion
+(`var a = fn() b(); var b = fn() a();`) is not supported.
 
 ### Structs
 
@@ -213,20 +250,19 @@ print(p.y);
 
 # field write works too, including chained and mixed chains
 p.x = 99;
-struct Box { center: any }
+struct Box { center: Point }          # struct names work as type annotations
 var b = Box { center = Point { x = 10, y = 20 } };
-b.center.x = 42;       # chained write: struct.field.field
+b.center.x = 42;                      # chained write: struct.field.field
 
-struct Bag { items: any }
+struct Bag { items: [number] }
 var bag = Bag { items = [10, 20, 30] };
-print(bag.items[1]);   # mixed chain read: struct field -> array index
-bag.items[0] = 99;     # mixed chain write
+print(bag.items[1]);                  # mixed chain read: struct field -> array index
+bag.items[0] = 99;                    # mixed chain write
 ```
 
-> Known limitation:
-> - User-defined struct names are **not yet valid in type annotations**. Built-in
->   types (`any`, `bool`, `number`, `str`) are; for struct-typed fields, use
->   `any` as a placeholder (e.g. `struct Box { center: any }`).
+A struct name is usable as a type annotation once the struct has been declared,
+so forward references (`struct Box { center: Point }` before `struct Point`
+exists) don't work yet.
 
 Struct equality (`==`) is nominal and recursive: two values of the same
 struct type are equal iff every field is equal (recursing through nested

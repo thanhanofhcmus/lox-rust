@@ -1,18 +1,20 @@
 ## Todos:
 - Struct destructuring — `var Point { x, y } = p;` (shorthand) and `var Point { x = px, y = py } = p;` (renamed). Open: nominal vs structural, partial destructuring, `Any` rhs.
 - Struct runtime: `Statement::StructDecl` is still a runtime no-op — might stay that way (all work happens in parser+typechecker). Revisit if/when struct methods land.
-- Module member access (`math::sin`) — uses `::` . Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
+- Recursive struct fields — `struct Node { next: Node }`. Needs `TypeInterner` reserve/finalize so field resolution can see the in-progress struct.
+- Mutual recursion between fn declarations — needs a proper per-scope pre-pass (current self-binding covers direct recursion only).
+- Tuple typecheck for destructuring — `convert_binding` tuple arm binds all members as `Any`; should verify the rhs is a tuple, enforce arity, and type each name as the corresponding member type.
+- `SerialValue::from_value` Tuple — currently `unimplemented!()`; serialize as an array (or return `TypeIsNotSerializable`).
+- Module member access (`math::sin`) — uses `::`. Needs `Token::DoubleColon`, `PathNode`, path branch in `parse_primary`, and a module-value representation. Imports are side-effect-only today.
 - Type-associated calls (`Car:new()`) — single-colon infix per the same plan doc.
 - Method calls on values (`arr.push(v)`, `m.keys()`) — dot arm in `parse_pratt_infix` needs to branch on trailing `(`. Enables migration of prelude `array_*`/`map_*` to dot methods. See plan doc Phase 1.
-- Tuple syntax `var x = %(a, b); print(x.0);`
 - Register imported modules with the typechecker — `convert` passes `imports` through unchanged, so `import "foo" as foo; foo;` fails with `UndefinedIdentifier`.
 - Formatted strings
-- Map comprehension (`%{ k => v for (k, v) in map }`), using tuple symtax
-- Map for loop (`for %(k, v) in map { ... }`), using tuple syntax
-- Rework module (fil(e loader interface, circular-import detection, deeper resolution chains)
+- Map comprehension (`%{ k => v for %(k, v) in map }`).
+- Rework module (file loader interface, circular-import detection, deeper resolution chains)
 - Standard library module
 - More docs
-- More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`17` + `errors/`, including struct read/write and lvalue-rejection error fixtures); no heap/GC unit tests, no module/import tests, no fuzzing.
+- More tests & fuzzing — e2e fixtures exist (`tests/fixtures/01`..`17` + `errors/`, including struct read/write and lvalue-rejection error fixtures); no heap/GC unit tests, no module/import tests, no fuzzing; no fixtures yet for tuples, named-type annotations, or map-for-with-tuple.
 - On-demand parsing
 - Bytecode VM experiment
 - Tree-sitter grammar
@@ -71,3 +73,9 @@
 - [X] Parser recursion depth limit — `MAX_RECURSION_DEPTH = 256` + `RecursionLimitExceeded`
 - [X] `span.rs` `to_start_row_col()` — counts Unicode scalar values, resets col on newline
 - [X] `parse/lex.rs` `lex_string` escape-end check — uses `*offset >= input.len()`
+- [X] Tuple syntax — literals `%(a, b)`, type annotations `%(number, str)`, indexed access `x.0`, destructuring in `var` and `for`
+- [X] Map `for` iteration — `for %(k, v) in map { ... }` via a `%(key, value)` tuple per entry
+- [X] Named type annotations — struct names are usable as types once declared (e.g. `struct Box { center: Point }`)
+- [X] Self-binding recursive functions — declared name visible inside its own fn body (not to siblings; no mutual recursion)
+- [X] Dedicated member-access errors — `MemberAccessOnInvalidType` (scalar `.foo`) and `GcObjectNotStructOrTuple` (wrong heap kind), both name "struct or tuple" in the message
+- [X] Tuple destructuring runtime errors — `CannotDestructureAsTuple`, `TupleDestructureArityMismatch` replace the prior `.unwrap()` / `unimplemented!()` panics
