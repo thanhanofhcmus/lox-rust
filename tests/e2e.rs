@@ -97,6 +97,11 @@ fn structs() {
     assert_ok(&run_fixture("17_structs.lox"));
 }
 
+#[test]
+fn tuples() {
+    assert_ok(&run_fixture("18_tuples.lox"));
+}
+
 // ---------- negative-path: must exit non-zero with a specific message ----------
 
 #[test]
@@ -145,4 +150,40 @@ fn error_fn_call_lvalue() {
 fn error_struct_field_write_readonly() {
     let res = run_fixture("errors/struct_field_write_readonly.lox");
     assert_err_contains(&res, "read-only");
+}
+
+#[test]
+fn error_tuple_index_oob_static() {
+    let res = run_fixture("errors/tuple_index_oob_static.lox");
+    assert_err_contains(&res, "index at 5");
+}
+
+#[test]
+fn error_tuple_index_oob_runtime() {
+    let res = run_fixture("errors/tuple_index_oob_runtime.lox");
+    assert_err_contains(&res, "out of bounds");
+}
+
+#[test]
+fn error_tuple_as_map_key_annotation() {
+    let res = run_fixture("errors/tuple_as_map_key_annotation.lox");
+    assert_err_contains(&res, "InvalidMapKeyType");
+}
+
+#[test]
+fn error_tuple_as_map_key_runtime() {
+    let res = run_fixture("errors/tuple_as_map_key_runtime.lox");
+    assert_err_contains(&res, "cannot be used as a key");
+}
+
+#[test]
+fn error_tuple_destructure_non_tuple() {
+    let res = run_fixture("errors/tuple_destructure_non_tuple.lox");
+    assert_err_contains(&res, "cannot be destructured as a tuple");
+}
+
+#[test]
+fn error_tuple_destructure_arity() {
+    let res = run_fixture("errors/tuple_destructure_arity.lox");
+    assert_err_contains(&res, "destructuring expected");
 }

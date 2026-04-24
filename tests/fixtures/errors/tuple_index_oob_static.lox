@@ -1,0 +1,5 @@
+# Static (literal-index) out-of-bounds on a known tuple type is caught at
+# typecheck time — no runtime needed.
+var t = %(1, 2);
+var x = t.5;
+assert(false, "should not reach: typecheck must have errored on tuple index 5");

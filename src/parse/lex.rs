@@ -59,6 +59,26 @@ fn is_next_char(input: &[u8], curr_offset: usize, expect: u8) -> bool {
         .unwrap_or(false)
 }
 
+/// A token that can legally precede `.member` (i.e. a value-producing token).
+/// Used to reject leading-dot floats like `.5`: a `.` followed by a digit is
+/// only member access if the previous token could produce a value.
+fn is_value_token(t: Token) -> bool {
+    matches!(
+        t,
+        Token::Identifier
+            | Token::WholeNumber
+            | Token::Number
+            | Token::String
+            | Token::RawString
+            | Token::True
+            | Token::False
+            | Token::Nil
+            | Token::RRoundParen
+            | Token::RSquareParen
+            | Token::RPointParen
+    )
+}
+
 pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     let mut curr_offset = 0;
     let mut result = vec![];
@@ -86,7 +106,19 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             b']' => result.push(tok_one(Token::RSquareParen)),
             b'{' => result.push(tok_one(Token::LPointParen)),
             b'}' => result.push(tok_one(Token::RPointParen)),
-            b'.' => result.push(tok_one(Token::Dot)),
+            b'.' => {
+                // Reject leading-dot floats like `.5` — a `.` directly
+                // followed by a digit is only member access if the previous
+                // emitted token can produce a value.
+                let next_is_digit = utf8_bytes
+                    .get(curr_offset + 1)
+                    .is_some_and(|n| n.is_ascii_digit());
+                let prev_is_value = result.last().is_some_and(|li| is_value_token(li.token));
+                if next_is_digit && !prev_is_value {
+                    return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
+                }
+                result.push(tok_one(Token::Dot));
+            }
             b',' => result.push(tok_one(Token::Comma)),
             b':' => result.push(tok_one(Token::Colon)),
             b';' => result.push(tok_one(Token::Semicolon)),
@@ -153,7 +185,12 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 result.push(lex_raw_string(utf8_bytes, &mut curr_offset)?)
             }
 
-            v if v.is_ascii_digit() => result.push(lex_number(utf8_bytes, &mut curr_offset)?),
+            v if v.is_ascii_digit() => {
+                let prev_was_dot = result
+                    .last()
+                    .is_some_and(|li| matches!(li.token, Token::Dot));
+                result.push(lex_number(utf8_bytes, &mut curr_offset, prev_was_dot)?);
+            }
             v if is_keyword_or_identifier_char(v) => {
                 result.push(lex_keyword_or_identifier(utf8_bytes, &mut curr_offset))
             }
@@ -168,34 +205,56 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
     Ok(result)
 }
 
-fn lex_number(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
+/// Lex a number literal starting at `*offset`. `prev_was_dot` is true iff the
+/// previously-emitted token was `Token::Dot`, i.e. we're in tuple-index
+/// position. In that case we lex only the integer part and leave any trailing
+/// dots for the next call (Rule X — enables `p.0.1` as chained tuple access).
+///
+/// Once a float literal has been started (`has_parsed_dot = true`), a second
+/// `.` immediately after the float is rejected (Rule Y — catches typos like
+/// `0.1.2`).
+///
+/// In non-Rule-X position, a `.` followed by a non-digit (e.g. `5.`) is also
+/// rejected — a standalone trailing dot has no valid interpretation.
+fn lex_number(input: &[u8], offset: &mut usize, prev_was_dot: bool) -> Result<LexItem, ParseError> {
     let start_offset = *offset;
     let mut has_parsed_dot = false;
 
     while let Some(&c) = input.get(*offset + 1) {
-        if !(c.is_ascii_digit() || c == b'.') {
-            break;
+        if c.is_ascii_digit() {
+            *offset += 1;
+            continue;
         }
         if c == b'.' {
-            if has_parsed_dot {
-                return Err(ParseError::UnexpectedCharacter(Span::one(*offset)));
+            // Rule X: after a Dot token, never consume another dot — leave it
+            // for the next token so `p.0.1` works as chained tuple access.
+            if prev_was_dot {
+                break;
             }
-            has_parsed_dot = true
+            // Rule Y: a completed float followed by another `.` is a hard
+            // error (e.g. `0.1.2`, `3.14.foo`).
+            if has_parsed_dot {
+                return Err(ParseError::UnexpectedCharacter(Span::one(*offset + 1)));
+            }
+            // Float literals require at least one digit after the decimal;
+            // `5.` with no digit after has no valid interpretation here.
+            match input.get(*offset + 2) {
+                Some(next) if next.is_ascii_digit() => {
+                    has_parsed_dot = true;
+                    *offset += 1;
+                    continue;
+                }
+                _ => {
+                    return Err(ParseError::UnexpectedCharacter(Span::one(*offset + 1)));
+                }
+            }
         }
-        *offset += 1;
-    }
-
-    // check if the last thing we parsed is a dot
-    let end_offset = *offset;
-    if let Some(&c) = input.get(end_offset)
-        && c == b'.'
-    {
-        return Err(ParseError::UnexpectedCharacter(Span::one(end_offset)));
+        break;
     }
 
     Ok(LexItem::new(
         if has_parsed_dot { Token::Number } else { Token::WholeNumber },
-        Span::new(start_offset, end_offset),
+        Span::new(start_offset, *offset),
     ))
 }
 
@@ -490,15 +549,90 @@ mod tests {
     }
 
     #[test]
-    fn number_with_multiple_dots_errors() {
-        let err = lex("1.2.3").unwrap_err();
-        assert!(matches!(err, ParseError::UnexpectedCharacter(_)));
+    fn chained_tuple_access_on_identifier() {
+        // `p.0.1` — identifier, then two integer indices. After a Dot, the
+        // number lexer only takes the whole-number part (Rule X), so `0.1`
+        // does not collapse into a float literal.
+        assert_eq!(
+            with_text("p.0.1"),
+            vec![
+                (Token::Identifier, "p".to_string()),
+                (Token::Dot, ".".to_string()),
+                (Token::WholeNumber, "0".to_string()),
+                (Token::Dot, ".".to_string()),
+                (Token::WholeNumber, "1".to_string()),
+            ]
+        );
     }
 
     #[test]
-    fn number_trailing_dot_errors() {
-        let err = lex("5.").unwrap_err();
-        assert!(matches!(err, ParseError::UnexpectedCharacter(_)));
+    fn tuple_access_allows_whitespace_between_dot_and_index() {
+        // Whitespace is fine between the base, the dot, and the index. The
+        // number itself still cannot span whitespace.
+        assert_eq!(
+            with_text("p . 0 . 1"),
+            vec![
+                (Token::Identifier, "p".to_string()),
+                (Token::Dot, ".".to_string()),
+                (Token::WholeNumber, "0".to_string()),
+                (Token::Dot, ".".to_string()),
+                (Token::WholeNumber, "1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn member_access_after_group_close() {
+        // `).` is member access — Dot is legal after a value-producing token.
+        assert_eq!(
+            with_text("(3.14).x"),
+            vec![
+                (Token::LRoundParen, "(".to_string()),
+                (Token::Number, "3.14".to_string()),
+                (Token::RRoundParen, ")".to_string()),
+                (Token::Dot, ".".to_string()),
+                (Token::Identifier, "x".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn float_followed_by_second_dot_errors() {
+        // Rule Y: once we've committed to a float, a second `.` is a typo
+        // (e.g. `0.1.2`, `3.14.foo`, `1.2.3`).
+        for input in ["0.1.2", "3.14.foo", "1.2.3"] {
+            let err = lex(input).unwrap_err();
+            assert!(
+                matches!(err, ParseError::UnexpectedCharacter(_)),
+                "expected UnexpectedCharacter for {input:?}, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn trailing_dot_on_number_errors() {
+        // A standalone trailing dot like `5.` or `var x = 5.;` has no valid
+        // interpretation.
+        for input in ["5.", "var x = 5.;"] {
+            let err = lex(input).unwrap_err();
+            assert!(
+                matches!(err, ParseError::UnexpectedCharacter(_)),
+                "expected UnexpectedCharacter for {input:?}, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn leading_dot_float_errors() {
+        // `.5` is not a leading-dot float; the lexer rejects `.digit` when
+        // not preceded by a value-producing token.
+        for input in [".5", "var x = .5;", "1 + .5"] {
+            let err = lex(input).unwrap_err();
+            assert!(
+                matches!(err, ParseError::UnexpectedCharacter(_)),
+                "expected UnexpectedCharacter for {input:?}, got {err:?}"
+            );
+        }
     }
 
     // ---------- strings ----------

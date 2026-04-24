@@ -1,0 +1,4 @@
+# Map type annotations restrict the key type to scalar built-ins. A tuple is
+# not a valid key shape and must be rejected at parse time.
+var m: %{ %(number, number) => str };
+assert(false, "should not reach: parser must reject tuple as map key type");

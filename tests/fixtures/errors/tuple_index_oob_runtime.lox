@@ -1,0 +1,4 @@
+# Tuple typed as `any` defers bounds checking to the runtime.
+var t: any = %(1, 2);
+var x = t.5;
+assert(false, "should not reach: runtime must have errored on tuple index 5");

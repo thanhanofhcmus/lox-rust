@@ -1,0 +1,92 @@
+# ---------- Tuples: construction, access, destructuring, equality, writes ----------
+
+# construction + indexed access
+var pair = %(1, "hi");
+assert(pair.0 == 1, "tuple index .0");
+assert(pair.1 == "hi", "tuple index .1");
+
+# type annotation
+var coord: %(number, number) = %(3, 4);
+assert(coord.0 + coord.1 == 7, "annotated tuple works");
+
+# heterogeneous members
+var mix = %(1, "hello", true, nil);
+assert(mix.0 == 1 and mix.1 == "hello" and mix.2 == true and mix.3 == nil, "heterogeneous tuple");
+
+# single-element tuple
+var one = %(42);
+assert(one.0 == 42, "1-tuple");
+
+# nested tuples
+var nested = %(%(1, 2), %(3, 4));
+assert(nested.0.0 == 1, "nested tuple .0.0");
+assert(nested.0.1 == 2, "nested tuple .0.1");
+assert(nested.1.0 == 3, "nested tuple .1.0");
+assert(nested.1.1 == 4, "nested tuple .1.1");
+
+# whitespace around the dot is allowed; numbers themselves cannot span it
+var ws = %(%(1, 2), 3);
+assert(ws . 0 . 0 == 1, "whitespace around dot and index");
+
+# destructuring in a declaration
+var %(a, b) = pair;
+assert(a == 1 and b == "hi", "destructure var");
+
+# destructuring in a for-loop over an array of tuples
+var sum = 0;
+for %(k, v) in [%(1, 10), %(2, 20), %(3, 30)] {
+    sum = sum + k + v;
+}
+assert(sum == 66, "for over array of tuples with destructuring");
+
+# map iteration yields tuples (key, value)
+var m = %{ "a" => 1, "b" => 2, "c" => 3 };
+var count = 0;
+for %(k, v) in m {
+    count = count + v;
+}
+assert(count == 6, "for over map with tuple destructuring");
+
+# equality: same shape + values → true
+assert(%(1, "x") == %(1, "x"), "tuple eq: same");
+assert(not (%(1, "x") == %(1, "y")), "tuple neq: different value");
+assert(not (%(1, "x") == %(1, "x", true)), "tuple neq: different arity");
+
+# nested equality
+assert(%(%(1, 2), 3) == %(%(1, 2), 3), "nested tuple eq");
+assert(not (%(%(1, 2), 3) == %(%(1, 9), 3)), "nested tuple neq");
+
+# member write: simple
+var w = %(1, 2, 3);
+w.0 = 99;
+assert(w.0 == 99 and w.1 == 2 and w.2 == 3, "tuple member write");
+
+# member write: chained tuple
+var cw = %(%(1, 2), 3);
+cw.0.1 = 77;
+assert(cw.0.0 == 1 and cw.0.1 == 77 and cw.1 == 3, "chained tuple member write");
+
+# member write: tuple holding an array, then subscript write
+var mixed_ta = %([10, 20, 30], "tag");
+mixed_ta.0[1] = 88;
+assert(mixed_ta.0[0] == 10 and mixed_ta.0[1] == 88 and mixed_ta.0[2] == 30, "tuple-of-array write");
+assert(mixed_ta.1 == "tag", "tuple-of-array write preserves other member");
+
+# member write: struct holding a tuple
+struct Box { inner: any, label: str }
+var bx = Box { inner = %(5, 6, 7), label = "b" };
+bx.inner.0 = 50;
+assert(bx.inner.0 == 50 and bx.inner.1 == 6 and bx.inner.2 == 7, "struct->tuple member write");
+
+# array holding tuples; subscript-then-index-then-write chain
+var arr_of_tuples = [%(1, 2), %(3, 4)];
+arr_of_tuples[1].0 = 30;
+assert(arr_of_tuples[0].0 == 1, "array-of-tuples: unchanged element");
+assert(arr_of_tuples[1].0 == 30 and arr_of_tuples[1].1 == 4, "array-of-tuples: written element");
+
+# static out-of-bounds is caught at typecheck (see errors/tuple_index_oob_static.lox).
+# This file asserts the in-bounds cases compile and run correctly.
+
+# (3.14).to_string() shape — floats still work inside groups and tuples
+var f = %(3.14, 2.71);
+assert(f.0 == 3.14 and f.1 == 2.71, "float members in tuples");

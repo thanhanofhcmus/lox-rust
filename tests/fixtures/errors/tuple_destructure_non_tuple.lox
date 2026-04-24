@@ -1,0 +1,4 @@
+# Destructuring a non-tuple value must raise a clean runtime error rather
+# than panic.
+var %(a, b) = 42;
+assert(false, "should not reach: runtime must reject destructuring a scalar");

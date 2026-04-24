@@ -1,0 +1,7 @@
+# Using a tuple as a map key at runtime must be rejected. An inferred /
+# `any`-typed map still accepts any key shape at typecheck, but the runtime
+# MapKey conversion only allows scalars or strings.
+var m = %{};
+var k: any = %(1, 2);
+m[k] = "oops";
+assert(false, "should not reach: runtime must reject tuple as map key");

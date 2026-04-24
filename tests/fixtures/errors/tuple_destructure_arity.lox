@@ -1,0 +1,3 @@
+# Destructuring arity mismatch must raise a clean runtime error.
+var %(a, b, c) = %(1, 2);
+assert(false, "should not reach: runtime must reject destructuring arity mismatch");
