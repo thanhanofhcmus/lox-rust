@@ -116,7 +116,7 @@ pub enum ExprCase<T> {
     Block(BlockNode<T>),
     IfChain(IfChainNode<T>),
     While(WhileNode<T>),
-    For(ForNode<T>),
+    For(ForStatementNode<T>),
     Return(Option<Box<Expression<T>>>),
 }
 
@@ -134,11 +134,14 @@ pub struct ElseIfNode<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ForNode<T> {
+pub struct ForNode<B, T> {
     pub binding: DeclareBindingNode,
     pub collection: ClauseNode<T>,
-    pub body: BlockNode<T>,
+    pub filter: Option<ClauseNode<T>>,
+    pub body: B,
 }
+
+pub type ForStatementNode<T> = ForNode<BlockNode<T>, T>;
 
 #[derive(Debug, Clone)]
 pub struct WhileNode<T> {
@@ -270,13 +273,15 @@ pub struct ArrayRepeatNode<T> {
     pub repeat: ClauseNode<T>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ArrayForComprehensionNode<T> {
-    pub iden: Identifier,
-    pub collection: ClauseNode<T>,
-    pub transformer: ClauseNode<T>,
-    pub filter: Option<ClauseNode<T>>,
-}
+// #[derive(Debug, Clone)]
+// pub struct ArrayForComprehensionNode<T> {
+//     pub iden: Identifier,
+//     pub collection: ClauseNode<T>,
+//     pub filter: Option<ClauseNode<T>>,
+//     pub transformer: ClauseNode<T>,
+// }
+
+pub type ArrayForComprehensionNode<T> = ForNode<ClauseNode<T>, T>;
 
 #[derive(Debug, Clone)]
 pub struct FnParamNode {

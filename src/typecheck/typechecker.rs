@@ -462,14 +462,18 @@ impl<'cl> TypeChecker<'cl> {
         Ok(WhileNode { cond, body })
     }
 
-    fn convert_for(&mut self, node: ForNode<()>) -> Result<ForNode<TypeId>, TypecheckError> {
+    fn convert_for(
+        &mut self,
+        node: ForStatementNode<()>,
+    ) -> Result<ForStatementNode<TypeId>, TypecheckError> {
         let collection = self.convert_clause(node.collection)?;
         let elem_type_id = self.iterable_element_type(collection.extra);
         self.with_scope(|this| {
             this.convert_binding(&node.binding, None, elem_type_id)?;
             let body = this.convert_block(node.body)?;
-            Ok(ForNode {
+            Ok(ForStatementNode {
                 binding: node.binding,
+                filter: None,
                 collection,
                 body,
             })
@@ -625,31 +629,29 @@ impl<'cl> TypeChecker<'cl> {
             }
             ArrayLiteralNode::ForComprehension(comp) => {
                 let ArrayForComprehensionNode {
-                    iden,
+                    binding,
                     collection,
-                    transformer,
+                    body,
                     filter,
                 } = *comp;
                 let collection = self.convert_clause(collection)?;
                 let elem_type_id = self.iterable_element_type(collection.extra);
                 self.with_scope(|this| {
-                    this.environment
-                        .declare_variable_id(iden.id, elem_type_id)
-                        .map_err(|_| TypecheckError::DuplicateDeclaration(iden))?;
-                    let transformer = this.convert_clause(transformer)?;
+                    this.convert_binding(&binding, None, elem_type_id)?;
+                    let body = this.convert_clause(body)?;
                     let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
                     if let Some(f) = &filter {
                         require_type(TypeId::BOOL, f.extra)?;
                     }
-                    let type_id = this.environment.declare_type(&Type::Array {
-                        elem: transformer.extra,
-                    });
+                    let type_id = this
+                        .environment
+                        .declare_type(&Type::Array { elem: body.extra });
                     Ok((
                         type_id,
                         ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehensionNode {
-                            iden,
+                            binding,
                             collection,
-                            transformer,
+                            body,
                             filter,
                         })),
                     ))

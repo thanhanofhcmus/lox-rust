@@ -311,9 +311,10 @@ fn parse_for(state: &mut Context) -> Result<Expression<()>, ParseError> {
     let collection = parse_clause_node(state)?;
     state.allow_struct_literal = true;
     let body = parse_block_node(state)?;
-    Ok(Expression::new(ExprCase::For(ForNode {
+    Ok(Expression::new(ExprCase::For(ForStatementNode {
         binding,
         collection,
+        filter: None,
         body,
     })))
 }
@@ -682,11 +683,9 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
     } else if state.peek_2_token(&[Token::For]) {
         state.consume_token(Token::LSquareParen)?;
         state.consume_token(Token::For)?;
-        let iden_li = state.consume_token(Token::Identifier)?;
-
+        let binding = parse_binding_node(state)?;
         state.consume_token(Token::In)?;
         let collection = parse_clause_node(state)?;
-
         let filter = if state.peek(&[Token::If]) {
             state.consume_token(Token::If)?;
             let clause = parse_clause_node(state)?;
@@ -694,17 +693,14 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
         } else {
             None
         };
-
         state.consume_token(Token::Colon)?;
-
-        let transformer = parse_clause_node(state)?;
+        let body = parse_clause_node(state)?;
         state.consume_token(Token::RSquareParen)?;
-
         Ok(ArrayLiteralNode::ForComprehension(Box::new(
             ArrayForComprehensionNode {
-                iden: state.create_identifier(iden_li),
+                binding,
                 collection,
-                transformer,
+                body,
                 filter,
             },
         )))

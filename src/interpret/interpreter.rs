@@ -310,7 +310,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             ExprCase::Clause(node) => self.interpret_clause_expr(node).map(ValueReturn::new),
             ExprCase::Block(node) => self.interpret_block_node(node),
             ExprCase::While(node) => self.interpret_while_expr(node),
-            ExprCase::For(node) => self.interpret_for_expr(node),
+            ExprCase::For(node) => self.interpret_for_stmt(node),
             ExprCase::IfChain(node) => self.interpret_if_chain_expr(node),
         }
     }
@@ -353,13 +353,14 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
     }
 
-    fn interpret_for_expr(
+    fn interpret_for_stmt(
         &mut self,
-        ForNode {
+        ForStatementNode {
             binding,
             collection,
+            filter: _,
             body,
-        }: &ForNode<TypeId>,
+        }: &ForStatementNode<TypeId>,
     ) -> Result<ValueReturn, InterpretError> {
         let collection_value = self.interpret_clause_expr(collection)?;
         match collection_value {
@@ -518,8 +519,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 for collection_value in collection_arr {
                     // collection_value should not be reassignable from the lesser scope
                     self.environment.push_scope(true)?;
-                    self.environment
-                        .insert_variable_current_scope(node.iden.id, collection_value);
+                    self.interpret_binding(&node.binding, collection_value)?;
                     let result = self.interpret_array_literal_comprehension_inner(node);
                     self.environment.pop_scope()?;
                     let value = result?;
@@ -542,7 +542,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         {
             return Ok(None);
         }
-        let value = self.interpret_clause_expr(&node.transformer)?;
+        let value = self.interpret_clause_expr(&node.body)?;
         Ok(Some(value))
     }
 

@@ -189,7 +189,7 @@ impl TypeInterner {
         self.id_to_type_id.get(&id).copied()
     }
 
-    pub fn generate_readable_name(&self, sb: &IdentifierRegistry, id: TypeId) -> String {
+    pub fn generate_readable_name(&self, ir: &IdentifierRegistry, id: TypeId) -> String {
         match self.get_type(id) {
             Some(Type::Any) => "any".into(),
             Some(Type::Bool) => "bool".into(),
@@ -197,30 +197,30 @@ impl TypeInterner {
             Some(Type::Str) => "string".into(),
             Some(Type::Unit) => "unit".into(),
             Some(Type::Nil) => "nil".into(),
-            Some(Type::Array { elem }) => format!("[{}]", self.generate_readable_name(sb, *elem)),
+            Some(Type::Array { elem }) => format!("[{}]", self.generate_readable_name(ir, *elem)),
             Some(Type::Map { key, value }) => {
                 format!(
                     "%{{{} => {}}}",
-                    self.generate_readable_name(sb, *key),
-                    self.generate_readable_name(sb, *value)
+                    self.generate_readable_name(ir, *key),
+                    self.generate_readable_name(ir, *value)
                 )
             }
             Some(Type::Tuple { members }) => {
                 let names = members
                     .iter()
-                    .map(|m| self.generate_readable_name(sb, *m))
+                    .map(|m| self.generate_readable_name(ir, *m))
                     .collect::<Vec<String>>();
                 format!("%({})", names.join(", "))
             }
             Some(Type::Struct(StructType { id, fields })) => {
-                let name = sb.get_or_unknown(*id);
+                let name = ir.get_or_unknown(*id);
                 let fields: Vec<String> = fields
                     .iter()
                     .map(|field| {
                         format!(
                             "{}: {}",
-                            sb.get_or_unknown(field.id),
-                            self.generate_readable_name(sb, field.type_)
+                            ir.get_or_unknown(field.id),
+                            self.generate_readable_name(ir, field.type_)
                         )
                     })
                     .collect();
@@ -233,18 +233,18 @@ impl TypeInterner {
             }) => {
                 let mut p: Vec<String> = params
                     .iter()
-                    .map(|&i| self.generate_readable_name(sb, i))
+                    .map(|&i| self.generate_readable_name(ir, i))
                     .collect();
                 if let Some(variadic_type) = variadic {
                     p.push(format!(
                         "{} ...",
-                        self.generate_readable_name(sb, *variadic_type)
+                        self.generate_readable_name(ir, *variadic_type)
                     ))
                 }
                 format!(
                     "fn({}) -> {}",
                     p.join(", "),
-                    self.generate_readable_name(sb, *return_)
+                    self.generate_readable_name(ir, *return_)
                 )
             }
             None => format!("Unknown(#{})", id.0),

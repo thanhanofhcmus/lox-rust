@@ -57,7 +57,7 @@ impl SerialValue {
     pub fn convert_from_value(
         value: Value,
         env: &Environment,
-        sb: &IdentifierRegistry,
+        ir: &IdentifierRegistry,
     ) -> Result<Self, InterpretError> {
         let v = match value {
             Value::Scalar(v) => Self::Scalar(v),
@@ -71,7 +71,7 @@ impl SerialValue {
                 let arr = env.get_array(handle)?;
                 let vs = arr
                     .iter()
-                    .map(|v| Self::convert_from_value(*v, env, sb))
+                    .map(|v| Self::convert_from_value(*v, env, ir))
                     .collect::<Result<_, _>>()?;
                 Self::Array(vs)
             }
@@ -81,7 +81,7 @@ impl SerialValue {
                 let mut vsm = BTreeMap::new();
                 for (k, v) in map {
                     let k_sv = SerialMapKey::convert_from_map_key(k, env)?;
-                    let v_sv = SerialValue::convert_from_value(*v, env, sb)?;
+                    let v_sv = SerialValue::convert_from_value(*v, env, ir)?;
                     vsm.insert(k_sv, v_sv);
                 }
                 Self::Map(vsm)
@@ -95,8 +95,8 @@ impl SerialValue {
                 let struct_ = env.get_struct(handle)?;
                 let mut vsm = BTreeMap::new();
                 for (field_id, field) in &struct_.fields {
-                    let name = sb.get_or_unknown(*field_id).to_string();
-                    let v_sv = SerialValue::convert_from_value(field.value, env, sb)?;
+                    let name = ir.get_or_unknown(*field_id).to_string();
+                    let v_sv = SerialValue::convert_from_value(field.value, env, ir)?;
                     vsm.insert(SerialMapKey::Str(name), v_sv);
                 }
                 Self::Map(vsm)
@@ -108,7 +108,7 @@ impl SerialValue {
                 let vs = tuple
                     .members
                     .iter()
-                    .map(|v| Self::convert_from_value(*v, env, sb))
+                    .map(|v| Self::convert_from_value(*v, env, ir))
                     .collect::<Result<_, _>>()?;
                 Self::Array(vs)
             }

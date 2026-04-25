@@ -25,13 +25,13 @@ impl DisplayWriter for Scalar {
     fn write_display(
         self,
         env: &Environment,
-        sb: &IdentifierRegistry,
+        ir: &IdentifierRegistry,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError> {
         let convert = |e| InterpretError::WriteValueFailed(Value::Scalar(self), e);
         match self {
             Self::Nil => write!(w, "nil").map_err(convert),
-            Self::Number(v) => v.write_display(env, sb, w),
+            Self::Number(v) => v.write_display(env, ir, w),
             Self::Bool(v) => write!(w, "{}", v).map_err(convert),
         }
     }
