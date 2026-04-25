@@ -164,6 +164,9 @@ impl Environment {
     /// existing type if `id` is already bound *in the same scope*. Shadowing
     /// a binding from an outer scope is allowed and is not an error.
     pub fn declare_variable_id(&mut self, id: Id, type_id: TypeId) -> Result<(), TypeId> {
+        if id == Id::UNDERSCORE {
+            return Ok(());
+        }
         let scope = self.scopes.last_mut().expect("at least one scope");
         use std::collections::hash_map::Entry;
         match scope.entry(id) {
@@ -194,6 +197,9 @@ impl Environment {
     }
 
     pub fn associate_id_with_type(&mut self, id: Id, type_id: TypeId) {
+        if id == Id::UNDERSCORE {
+            return;
+        }
         self.type_interner.associate_id_with_type(id, type_id);
     }
 

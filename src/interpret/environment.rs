@@ -97,7 +97,6 @@ impl Module {
     }
 }
 
-const CURRENT_MODULE_NAME: &str = "__current__";
 const SCOPE_SIZE_LIMIT: usize = 100;
 
 #[derive(derive_more::Debug)]
@@ -139,7 +138,7 @@ macro_rules! decl_gc_type_methods {
 
 impl Environment {
     pub fn new() -> Self {
-        let current_module_id = Id::new(CURRENT_MODULE_NAME);
+        let current_module_id = Id::CURRENT;
 
         let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
 
@@ -249,7 +248,11 @@ impl Environment {
         None
     }
 
-    pub fn insert_variable_current_scope(&mut self, id: Id, value: Value) -> Option<Value> {
+    pub fn insert_variable(&mut self, id: Id, value: Value) -> Option<Value> {
+        // underscore does not hold an old value
+        if id == Id::UNDERSCORE {
+            return None;
+        }
         let old_value = self
             .scope_stack
             .get_current_mut()
@@ -258,8 +261,11 @@ impl Environment {
         old_value
     }
 
-    pub fn replace_variable_function_scope(&mut self, id: impl Into<Id>, value: Value) -> bool {
-        let id = id.into();
+    pub fn replace_variable(&mut self, id: Id, value: Value) -> bool {
+        // underscore does not hold an old value
+        if id == Id::UNDERSCORE {
+            return false;
+        }
         for scope in self.scope_stack.iter_outward_mut() {
             if scope.is_readonly {
                 continue;
@@ -383,7 +389,7 @@ mod tests {
 
         let mut env = make_env();
         let id = Id::new("x");
-        env.insert_variable_current_scope(id, Value::Scalar(Scalar::Bool(true)));
+        env.insert_variable(id, Value::Scalar(Scalar::Bool(true)));
         env.push_scope(false).unwrap();
 
         // Variable is not in the inner scope's own slot.
@@ -400,11 +406,11 @@ mod tests {
 
         let mut env = make_env();
         let id = Id::new("x");
-        env.insert_variable_current_scope(id, Value::Scalar(Scalar::Bool(false)));
+        env.insert_variable(id, Value::Scalar(Scalar::Bool(false)));
 
         // Push a readonly scope on top — replace must skip it and update the outer scope.
         env.push_scope(true).unwrap();
-        let found = env.replace_variable_function_scope(id, Value::Scalar(Scalar::Bool(true)));
+        let found = env.replace_variable(id, Value::Scalar(Scalar::Bool(true)));
         assert!(found);
 
         env.pop_scope().unwrap();

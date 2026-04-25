@@ -1,4 +1,4 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::Hash;
 
 const DEBUG_NAME_SIZE: usize = 16;
 
@@ -10,11 +10,22 @@ pub struct Id {
     name: [u8; DEBUG_NAME_SIZE],
 }
 
+macro_rules! id {
+    ($s:literal) => {
+        Id {
+            hash: fnv1a_hash($s.as_bytes()),
+            #[cfg(debug_assertions)]
+            name: make_name($s.as_bytes()),
+        }
+    };
+}
+
 impl Id {
+    pub const UNDERSCORE: Self = id!("_");
+    pub const CURRENT: Self = id!("__current__");
+
     pub fn new(name: &str) -> Self {
-        let mut hasher = DefaultHasher::new();
-        name.hash(&mut hasher);
-        let hash = hasher.finish();
+        let hash = fnv1a_hash(name.as_bytes());
 
         #[cfg(debug_assertions)]
         let name_bytes = {
@@ -45,6 +56,27 @@ impl Id {
             format!(", \"{s}\"")
         }
     }
+}
+
+const fn fnv1a_hash(s: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    let mut i = 0;
+    while i < s.len() {
+        hash ^= s[i] as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+        i += 1;
+    }
+    hash
+}
+
+const fn make_name(s: &[u8]) -> [u8; DEBUG_NAME_SIZE] {
+    let mut buf = [0u8; DEBUG_NAME_SIZE];
+    let mut i = 0;
+    while i < s.len() && i < DEBUG_NAME_SIZE {
+        buf[i] = s[i];
+        i += 1;
+    }
+    buf
 }
 
 #[cfg(test)]

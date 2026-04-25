@@ -215,9 +215,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         {
             return Err(InterpretError::ReDeclareVariable(iden));
         }
-        _ = self
-            .environment
-            .insert_variable_current_scope(iden.id, value);
+        _ = self.environment.insert_variable(iden.id, value);
         Ok(())
     }
 
@@ -303,12 +301,11 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                     chain,
                     reassigning_value,
                 )?;
-                self.environment
-                    .replace_variable_function_scope(iden.id, new_root_value)
+                self.environment.replace_variable(iden.id, new_root_value)
             }
             None => self
                 .environment
-                .replace_variable_function_scope(iden.id, reassigning_value),
+                .replace_variable(iden.id, reassigning_value),
         };
 
         Ok(ValueReturn::none())
@@ -736,8 +733,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
         let result = self.with_scope(true, |this| {
             params.iter().zip(args_values).for_each(|(param, arg_res)| {
-                this.environment
-                    .insert_variable_current_scope(param.iden.id, arg_res);
+                this.environment.insert_variable(param.iden.id, arg_res);
             });
             this.interpret_block_node(&body)
         });
