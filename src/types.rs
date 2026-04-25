@@ -150,9 +150,9 @@ impl TypeInterner {
         }
     }
 
-    pub fn intern_type(&mut self, type_: &Type) -> TypeId {
+    pub fn intern_type(&mut self, type_: &Type) -> (TypeId, bool) {
         if let Some(type_id) = self.type_to_id.get(type_) {
-            return *type_id;
+            return (*type_id, true);
         }
 
         let (index, category) = match type_ {
@@ -174,7 +174,7 @@ impl TypeInterner {
         self.type_to_id.insert(type_.clone(), type_id);
         self.id_to_type.insert(type_id, type_.clone());
 
-        type_id
+        (type_id, false)
     }
 
     pub fn get_type(&self, type_id: TypeId) -> Option<&Type> {

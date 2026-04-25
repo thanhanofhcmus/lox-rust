@@ -15,11 +15,12 @@ pub enum TypecheckError {
     TypeIsNotCallable(TypeId),
     WrongNumberOfArgument(TypeId, usize, usize),
     WrongArgumentTypes(TypeId, Vec<(usize, TypeId, TypeId)>),
-    ExpectedType(TypeId, TypeId),
-    TypeIdNotStructInLiteral(TypeId),
+    UnexpectedType(TypeId, TypeId),
+    TypeNotStructInLiteral(TypeId),
     UndefinedVariableIdentifier(Identifier),
     UndefinedTypeIdentifier(Identifier),
-    DuplicateDeclaration(Identifier),
+    DuplicateVariableDeclaration(Identifier),
+    DuplicateTypeDeclaration(Identifier, TypeId),
     TypeIsNotDeclaredInternal(TypeId),
     TypeIsNotStruct(TypeId),
     StructFieldCountMismatch(TypeId, usize, usize),
@@ -132,7 +133,7 @@ impl TypecheckError {
                 )
             }
 
-            Self::TypeIdNotStructInLiteral(type_id) => format!(
+            Self::TypeNotStructInLiteral(type_id) => format!(
                 "The type `{}` used in a struct literal is not a struct type.",
                 interner.generate_readable_name(ir, *type_id),
             ),
@@ -142,7 +143,7 @@ impl TypecheckError {
                 interner.generate_readable_name(ir, *type_id)
             ),
 
-            Self::ExpectedType(expected, actual) => format!(
+            Self::UnexpectedType(expected, actual) => format!(
                 "Expected type `{}`, but found `{}`.",
                 interner.generate_readable_name(ir, *expected),
                 interner.generate_readable_name(ir, *actual)
@@ -162,10 +163,18 @@ impl TypecheckError {
                 )
             }
 
-            Self::DuplicateDeclaration(node) => {
+            Self::DuplicateVariableDeclaration(node) => {
                 format!(
-                    "The identifier '{}' has already been declared.",
+                    "The variable '{}' has already been declared.",
                     ir.get_or_unknown(node.id),
+                )
+            }
+
+            Self::DuplicateTypeDeclaration(iden, type_id) => {
+                format!(
+                    "The name '{}' has already been declared with type `{}`.",
+                    ir.get_or_unknown(iden.id),
+                    interner.generate_readable_name(ir, *type_id),
                 )
             }
 
@@ -227,7 +236,7 @@ impl TypecheckError {
             Self::ExplicitTypeMismatch(node, _, _)
             | Self::UndefinedVariableIdentifier(node)
             | Self::UndefinedTypeIdentifier(node)
-            | Self::DuplicateDeclaration(node)
+            | Self::DuplicateVariableDeclaration(node)
             | Self::StructFieldNotExist(_, node)
             | Self::DuplicateStructLiteralField(node) => Some(node.span.to_start_row_col(input)),
             _ => None,

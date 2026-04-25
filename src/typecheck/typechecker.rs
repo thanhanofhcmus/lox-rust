@@ -99,7 +99,7 @@ impl<'cl> TypeChecker<'cl> {
                 self.environment
                     // Annotation wins when written (including `Any`); otherwise infer from expr.
                     .declare_variable_id(iden.id, type_id)
-                    .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
+                    .map_err(|_| TypecheckError::DuplicateVariableDeclaration(*iden))?;
             }
             DeclareBindingNode::Tuple { members } => {
                 let arity = members.len();
@@ -117,7 +117,7 @@ impl<'cl> TypeChecker<'cl> {
                     };
                     self.environment
                         .declare_variable_id(iden.id, type_id)
-                        .map_err(|_| TypecheckError::DuplicateDeclaration(*iden))?;
+                        .map_err(|_| TypecheckError::DuplicateVariableDeclaration(*iden))?;
                 }
             }
         }
@@ -234,15 +234,17 @@ impl<'cl> TypeChecker<'cl> {
             })
             .collect::<Result<Vec<_>, TypecheckError>>()?;
 
-        let type_id = self.environment.declare_type(&Type::Struct(StructType {
-            id: node.iden.id,
-            fields,
-        }));
+        let (type_id, has_already_been_declared) =
+            self.environment
+                .declare_type_with_check(&Type::Struct(StructType {
+                    id: node.iden.id,
+                    fields,
+                }));
+        if has_already_been_declared {
+            return Err(TypecheckError::DuplicateTypeDeclaration(node.iden, type_id));
+        }
         self.environment
             .associate_id_with_type(node.iden.id, type_id);
-        self.environment
-            .declare_variable_id(node.iden.id, type_id)
-            .map_err(|_| TypecheckError::DuplicateDeclaration(node.iden))?;
         Ok(node)
     }
 
@@ -799,7 +801,7 @@ impl<'cl> TypeChecker<'cl> {
                 }
             }
             Type::Any => {} // ignore, runtime check
-            _ => return Err(TypecheckError::TypeIdNotStructInLiteral(struct_type_id)),
+            _ => return Err(TypecheckError::TypeNotStructInLiteral(struct_type_id)),
         }
 
         Ok((struct_type_id, StructLiteralNode { iden, fields }))
@@ -834,7 +836,7 @@ impl<'cl> TypeChecker<'cl> {
             for (param, type_id) in node.params.iter().zip(&params_type_ids) {
                 this.environment
                     .declare_variable_id(param.iden.id, *type_id)
-                    .map_err(|_| TypecheckError::DuplicateDeclaration(param.iden))?;
+                    .map_err(|_| TypecheckError::DuplicateVariableDeclaration(param.iden))?;
             }
 
             // Self-binding for `var f = fn(...) { ... f(...) ... };`. The name
@@ -849,7 +851,7 @@ impl<'cl> TypeChecker<'cl> {
                 });
                 this.environment
                     .declare_variable_id(self_iden.id, sig)
-                    .map_err(|_| TypecheckError::DuplicateDeclaration(self_iden))?;
+                    .map_err(|_| TypecheckError::DuplicateVariableDeclaration(self_iden))?;
             }
 
             let body = this.convert_block(node.body)?;
@@ -1113,7 +1115,7 @@ fn require_type(expected: TypeId, actual: TypeId) -> Result<(), TypecheckError> 
     if actual == TypeId::ANY || actual == expected {
         Ok(())
     } else {
-        Err(TypecheckError::ExpectedType(expected, actual))
+        Err(TypecheckError::UnexpectedType(expected, actual))
     }
 }
 
@@ -1222,7 +1224,7 @@ mod tests {
     #[test]
     fn require_type_mismatch_errors() {
         let err = require_type(TypeId::NUMBER, TypeId::BOOL).unwrap_err();
-        assert!(matches!(err, TypecheckError::ExpectedType(_, _)));
+        assert!(matches!(err, TypecheckError::UnexpectedType(_, _)));
     }
 
     // ---------- Environment ----------
@@ -1438,13 +1440,19 @@ mod tests {
     #[test]
     fn duplicate_var_in_same_scope_errors() {
         let err = typecheck_str("var x = 1; var x = 2;").unwrap_err();
-        assert!(matches!(err, TypecheckError::DuplicateDeclaration(_)));
+        assert!(matches!(
+            err,
+            TypecheckError::DuplicateVariableDeclaration(_)
+        ));
     }
 
     #[test]
     fn fn_duplicate_param_errors() {
         let err = typecheck_str("var f = fn(x, x) x;").unwrap_err();
-        assert!(matches!(err, TypecheckError::DuplicateDeclaration(_)));
+        assert!(matches!(
+            err,
+            TypecheckError::DuplicateVariableDeclaration(_)
+        ));
     }
 
     // ---------- fn self-binding (recursion) ----------

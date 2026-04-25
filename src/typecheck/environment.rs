@@ -136,7 +136,7 @@ impl Environment {
 
         for &name in BUILTIN_NAMES {
             let type_ = get_builtin_fn_type(name);
-            let type_id = type_interner.intern_type(&type_);
+            let type_id = type_interner.intern_type(&type_).0;
             builtins.insert(Id::new(name), type_id);
         }
 
@@ -179,7 +179,13 @@ impl Environment {
         self.scopes.iter().rev().find_map(|s| s.get(&id)).copied()
     }
 
+    /// Return only the TypeId
     pub fn declare_type(&mut self, type_: &Type) -> TypeId {
+        self.declare_type_with_check(type_).0
+    }
+
+    /// Return the TypeId and if the type has already been declared before
+    pub fn declare_type_with_check(&mut self, type_: &Type) -> (TypeId, bool) {
         self.type_interner.intern_type(type_)
     }
 
