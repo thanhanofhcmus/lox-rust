@@ -7,4 +7,5 @@ mod prelude;
 mod values;
 
 pub use environment::Environment;
+pub use error::InterpretError;
 pub use interpreter::Interpreter;

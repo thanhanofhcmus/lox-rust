@@ -14,9 +14,24 @@ use std::{cell::RefCell, env, rc::Rc};
 
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
+use thiserror::Error;
 
-use crate::{ast::AST, identifier_registry::IdentifierRegistry};
+use crate::{
+    ast::AST, identifier_registry::IdentifierRegistry, interpret::InterpretError,
+    parse::ParseError, typecheck::TypecheckError,
+};
 
+#[derive(Debug, Error, derive_more::Display)]
+enum Error {
+    #[display("Parse Error")]
+    Parse(ParseError),
+    #[display("Typecheck Error")]
+    Typecheck(TypecheckError),
+    #[display("Interpret Error")]
+    Interpret(InterpretError),
+}
+
+type RunResult = Result<(), Error>;
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
 /// Encapsulates the runtime environment to avoid duplicating setup across modes.
@@ -42,7 +57,7 @@ impl RunnerContext {
         input: &str,
         source_name: Option<&str>,
         is_in_repl: bool,
-    ) -> Result<AST<()>, Box<dyn std::error::Error>> {
+    ) -> Result<AST<()>, Error> {
         trace!("Lexing start");
 
         let tokens = parse::lex(input).map_err(|err| {
@@ -50,7 +65,7 @@ impl RunnerContext {
                 "Lex error:\n{}",
                 err.generate_user_facing_error(source_name, input)
             );
-            Box::new(err) as Box<dyn std::error::Error>
+            Error::Parse(err)
         })?;
 
         debug!("Lexing done, with tokens:");
@@ -70,7 +85,7 @@ impl RunnerContext {
                     "Parse error:\n{}",
                     err.generate_user_facing_error(source_name, input)
                 );
-                Box::new(err) as Box<dyn std::error::Error>
+                Error::Parse(err)
             },
         )?;
 
@@ -80,7 +95,7 @@ impl RunnerContext {
         Ok(ast)
     }
 
-    fn run_stmt(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> DynResult {
+    fn run_stmt(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> RunResult {
         let ast = self.lex_and_parse(input, source_name, is_in_repl)?;
 
         debug!("type checking start");
@@ -95,7 +110,7 @@ impl RunnerContext {
                     self.typecheck_env.get_type_interner()
                 )
             );
-            Box::new(err) as Box<dyn std::error::Error>
+            Error::Typecheck(err)
         })?;
         debug!("type checking done");
 
@@ -118,9 +133,10 @@ impl RunnerContext {
                     input,
                     &self.interpret_env,
                     &self.identifier_registry,
+                    self.typecheck_env.get_type_interner(),
                 )
             );
-            Box::new(err) as Box<dyn std::error::Error>
+            Error::Interpret(err)
         })?;
         debug!("interpreting done");
 
@@ -194,12 +210,14 @@ fn main() -> DynResult {
 fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
     info!("Running in Prompt mode");
     ctx.run_stmt(line, None, false)
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
 fn run_file(ctx: &mut RunnerContext, file_path: &str) -> DynResult {
     info!("Read from file: {}", file_path);
     let contents = std::fs::read_to_string(file_path)?;
     ctx.run_stmt(&contents, Some(file_path), false)
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
 fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynResult {

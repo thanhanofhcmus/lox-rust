@@ -1,5 +1,4 @@
 use super::values::Value;
-use thiserror::Error;
 
 use crate::{
     ast::MemberNode,
@@ -13,134 +12,52 @@ use crate::{
     parse::ParseError,
     token::Token,
     typecheck,
+    types::TypeInterner,
 };
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum InterpretError {
-    #[error("Variable of name `{0:?}` has been declared before")]
     ReDeclareVariable(Identifier),
-
-    #[error("Variable of name `{0:?}` has not been declared but get re-assigned")]
     NotFoundVariable(Identifier),
-
-    #[error("Variable of name `{0:?}` is readonly in this scope")]
     VariableReadOnly(Identifier),
-
-    #[error("Unknown operator `{0}`")]
     UnknownOperation(Token),
-
-    #[error("Value `{1:?}` does not accept operator `{0}`")]
     InvalidOperationOnType(Token, Value),
-
-    #[error("Type `{1:?}` and type `{2:?}` cannot perform operation `{0}`")]
     MismatchType(Token, Value, Value),
-
-    #[error("Condition evaluated to `{0:?}` which is not a boolean value")]
     ConditionNotBool(Value),
-
-    #[error("Divide by 0")]
     DivideByZero,
-
-    #[error("Value `{0:?}` is not a callable")]
     ValueNotCallable(Value),
-
-    #[error("Callable `{0:?}` accepts {1} number of arguments but received {2}")]
     WrongNumberOfArgument(Value, usize, usize),
-
-    #[error("Callable `{0:?}` requires at least {1} argument(s) but received {2}")]
     WrongNumberOfArgumentAtLeast(Value, usize, usize),
-
-    #[error("Callable `{0:?}` received argument `{1:?}` but expected type {2}")]
     WrongArgumentType(Value, Value, &'static str),
-
-    #[error(
-        "Value `{0:?}` cannot be indexed with `[…]`; only arrays and maps support subscription"
-    )]
     ValueUnIndexable(Value),
-
-    #[error("Value `{0:?}` cannot be used as a key for an array or map")]
     ValueCannotBeUsedAsKey(Value),
-
-    #[error("Value `{0:?}` is not of the type non-negative integer")]
     ValueMustBeUsize(Value),
-
     // TODO: add GcHandle to error to know which array is out of bound
-    #[error("Array has length `{0}` but received index `{1}`")]
     ArrayOutOfBound(usize, usize),
-
-    #[error("Module `{0}` cannot be found in path `{1}`")]
     ModuleNotFoundInPath(String, String),
-
-    #[error("Reading module `{0}` in path `{1}` failed with error: {2}")]
     ReadModuleFailed(String, String, std::io::Error),
-
-    #[error("Parsing module `{0}` in path `{1}` failed with error: {2}")]
     ParseModuleFailed(String, String, ParseError),
-
-    #[error("Type-checking module `{0}` in path `{1}` failed with error: {2}")]
     TypeCheckModuleFailed(String, String, typecheck::TypecheckError),
-
-    #[error("Interpreting module `{0}` in path `{1}` failed with error: {2}")]
     InterpretModuleFailed(String, String, Box<InterpretError>),
-
-    #[error("Value `{0:?}` cannot be use as for loop source")]
     ValueCannotBeUsedAsSourceInFor(Value),
-
-    #[error("Value `{0:?}` is not serializable")]
     TypeIsNotSerializable(Value),
-
-    #[error("Serialize value `{0:?}` failed with error: {1}")]
     SerializeFailed(Value, String),
-
-    #[error("Deserialize value `{0:?}` failed with error: {1}")]
     DeserializeFailed(Value, String),
-
-    #[error("Write value `{0:?}` failed with error: {1}")]
     WriteValueFailed(Value, std::io::Error),
-
-    #[error("Value of type unit `()` should not be used")]
     UseUnitValue,
-
-    #[error("GcObject `{0:?}` did not exist in the heap")]
     GcObjectNotFound(GcHandle),
-
-    #[error("GcObject `{0:?}` has type `{}` but expected type `{}`", .1.type_name(), .2.type_name())]
     GcObjectWrongType(GcHandle, GcKind, GcKind),
-
-    #[error("GcObject with type `{}` is not indexable", .0.type_name())]
     GcObjectUnIndexable(GcKind),
-
-    #[error("GcObject with type `{}` is not a struct or tuple; cannot access member `{1:?}`", .0.type_name())]
     GcObjectNotStructOrTuple(GcKind, MemberNode),
-
-    #[error("Value `{0:?}` is not a struct or tuple; cannot access member `{1:?}`")]
     MemberAccessOnInvalidType(Value, MemberNode),
-
-    #[error("String with Id `{:?}` does not exist in the heap interner", .0)]
     StringNotFoundOnHeap(StrId),
-
-    #[error("Scope depth limit ({0}) exceeded")]
     ScopeOverflow(usize),
-
-    #[error("Scope underflow: attempted to pop the last scope")]
     ScopeUnderflow,
-
-    #[error("Internal: module evaluation left the scope stack unbalanced (expected 1, got {0})")]
     ModuleScopeStackUnbalanced(usize),
-
-    #[error("Assertion failed: {0}")]
     AssertionFailed(String),
-
-    #[error("Struct value does not have field `{0:?}`")]
     StructFieldNotFound(Id, Identifier),
-
-    #[error("Tuple have `{0}` members and cannot be indexed with member {1}")]
     TupleIndexOutOfBound(usize, usize),
-
-    #[error("Value `{0:?}` cannot be destructured as a tuple")]
     CannotDestructureAsTuple(Value),
-
-    #[error("Tuple destructuring expected {expected} member(s) but value has {actual}")]
     TupleDestructureArityMismatch { expected: usize, actual: usize },
 }
 
@@ -151,17 +68,25 @@ impl InterpretError {
         input: &str,
         env: &Environment,
         ir: &IdentifierRegistry,
+        interner: &TypeInterner,
     ) -> String {
-        let description = self.resolve_description(env, ir);
-        let source_name = source_name.unwrap_or("");
+        let description = self.resolve_description(env, ir, interner);
+        let source_name = source_name
+            .map(|s| format!("\n  --> {s}\n"))
+            .unwrap_or("".to_string());
 
         // Interpret errors don't carry source spans, so show just the message
         // unless a future variant adds span support
         let _ = input;
-        format!("Runtime Error: {description}\n  --> {source_name}\n")
+        format!("Runtime Error: {description}{source_name}")
     }
 
-    fn resolve_description(&self, env: &Environment, ir: &IdentifierRegistry) -> String {
+    fn resolve_description(
+        &self,
+        env: &Environment,
+        ir: &IdentifierRegistry,
+        interner: &TypeInterner,
+    ) -> String {
         match self {
             Self::ReDeclareVariable(node) => {
                 format!(
@@ -260,12 +185,15 @@ impl InterpretError {
                 format!("Failed to parse module '{module}' at '{path}': {err}.")
             }
             Self::TypeCheckModuleFailed(module, path, err) => {
-                format!("Type error in module '{module}' at '{path}': {err}.")
+                format!(
+                    "Type error in module '{module}' at '{path}': {}.",
+                    err.resolve_description(ir, interner),
+                )
             }
             Self::InterpretModuleFailed(module, path, err) => {
                 format!(
                     "Runtime error in module '{module}' at '{path}': {}.",
-                    err.resolve_description(env, ir)
+                    err.resolve_description(env, ir, interner)
                 )
             }
             Self::ValueCannotBeUsedAsSourceInFor(val) => {

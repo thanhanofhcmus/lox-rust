@@ -1,82 +1,33 @@
-use thiserror::Error;
-
 use crate::{
     identifier_registry::{Identifier, IdentifierRegistry},
     token::Token,
     types::{TypeId, TypeInterner},
 };
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum TypecheckError {
-    #[error(
-        "Type mismatch in declaration of '{:?}': assigned value does not match specified type."
-        , _0.id)]
     ExplicitTypeMismatch(Identifier, TypeId, TypeId),
-
-    #[error("Function return type mismatch.")]
     ExplicitFnReturnTypeMismatch(TypeId, TypeId),
-
-    #[error("Binary operator `{0:?}` cannot be applied to types `{1:?}` and `{2:?}`.")]
     BinaryOpTypeMismatch(Token, TypeId, TypeId),
-
-    #[error("Unary operator `{0:?}` cannot be applied to type `{1:?}`.")]
     UnaryOpTypeMismatch(Token, TypeId),
-
-    #[error("The type `{0:?}` cannot be indexed by the type`{1:?}`.")]
     IndexOpTypeMismatch(TypeId, TypeId),
-
-    #[error("The type `{0:?}` cannot be used as map key")]
     TypeCannotBeUsedAsMapKey(TypeId),
-
-    #[error("The type `{0:?}` is not a callable")]
     TypeIsNotCallable(TypeId),
-
-    #[error("Callable `{0:?}` accepts {1} number of arguments but received {2}")]
     WrongNumberOfArgument(TypeId, usize, usize),
-
-    #[error("Callable `{0:?}` received wrong argument types {1:?}")]
     WrongArgumentTypes(TypeId, Vec<(usize, TypeId, TypeId)>),
-
-    #[error("Expected type `{0:?}`, but found `{1:?}`.")]
     ExpectedType(TypeId, TypeId),
-
-    #[error("The type `{0:?}` is not struct and used in struct literal")]
     TypeIdNotStructInLiteral(TypeId),
-
-    #[error("Variable name: '{:?}' is not defined in this scope.", _0.id)]
     UndefinedVariableIdentifier(Identifier),
-
-    #[error("Type name: '{:?}' is not defined in this scope.", _0.id)]
     UndefinedTypeIdentifier(Identifier),
-
-    #[error("Name collision: '{:?}' is already declared in this scope.", _0.id)]
     DuplicateDeclaration(Identifier),
-
-    #[error("Internal: Type with id {0:?} should have been declared but not found")]
     TypeIsNotDeclaredInternal(TypeId),
-
-    #[error("The type `{0:?}` is not a struct")]
     TypeIsNotStruct(TypeId),
-
-    #[error("Struct `{0:?}` expects {1} field(s) but {2} were provided")]
     StructFieldCountMismatch(TypeId, usize, usize),
-
-    #[error("Struct `{0:?}` has no field '{:?}'", _1.id)]
     StructFieldNotExist(TypeId, Identifier),
-
-    #[error("Field of struct `{0:?}` expects type `{1:?}` but got `{2:?}`")]
     StructFieldTypeMismatch(TypeId, TypeId, TypeId),
-
-    #[error("Duplicate field '{:?}' in struct literal", _0.id)]
     DuplicateStructLiteralField(Identifier),
-
-    #[error("Tuple `{0:?}` has {1} members(s) but index {2} were provided")]
     TupleIndexOutOfBound(TypeId, usize, usize),
-
-    #[error("Type `{0:?}` cannot be destructured as a tuple")]
     CannotDestructureAsTuple(TypeId),
-
-    #[error("Tuple destructuring expected {expected} member(s) but type has {actual}")]
     TupleDestructureArityMismatch { expected: usize, actual: usize },
 }
 
@@ -88,28 +39,31 @@ impl TypecheckError {
         ir: &IdentifierRegistry,
         interner: &TypeInterner,
     ) -> String {
-        let (line, col) = self.get_source_start(input);
+        let line_position = if let Some((line, col)) = self.get_source_start(input) {
+            let source_name = source_name.map(|v| v.to_string()).unwrap_or_default();
+            let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
+            let line_label = line.to_string();
+            let gutter = " ".repeat(line_label.len());
+            let pointer = " ".repeat(col.saturating_sub(1));
+            format!(
+                "\n
+                 --> {source_name}:{line}:{col}\n\
+                 {gutter} |\n\
+                 {line_label} | {source_line}\n\
+                 {gutter} | {pointer}^--- here"
+            )
+        } else {
+            "".to_string()
+        };
 
         // Resolve the technical error into a readable description
         let description = self.resolve_description(ir, interner);
 
-        let source_name = source_name.map(|v| v.to_string()).unwrap_or_default();
-        let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
-        let line_label = line.to_string();
-        let gutter = " ".repeat(line_label.len());
-        let pointer = " ".repeat(col.saturating_sub(1));
-
-        format!(
-            "Type Error: {description}\n\
-               --> {source_name}:{line}:{col}\n\
-             {gutter} |\n\
-             {line_label} | {source_line}\n\
-             {gutter} | {pointer}^--- here"
-        )
+        format!("Type Error: {description}{line_position}")
     }
 
     /// Internal helper to turn TypeIds into names like "Array<Number>"
-    fn resolve_description(&self, ir: &IdentifierRegistry, interner: &TypeInterner) -> String {
+    pub fn resolve_description(&self, ir: &IdentifierRegistry, interner: &TypeInterner) -> String {
         match self {
             Self::ExplicitTypeMismatch(node, declared, actual) => {
                 format!(
@@ -268,16 +222,15 @@ impl TypecheckError {
         }
     }
 
-    fn get_source_start(&self, input: &str) -> (usize, usize) {
+    fn get_source_start(&self, input: &str) -> Option<(usize, usize)> {
         match self {
             Self::ExplicitTypeMismatch(node, _, _)
             | Self::UndefinedVariableIdentifier(node)
             | Self::UndefinedTypeIdentifier(node)
             | Self::DuplicateDeclaration(node)
             | Self::StructFieldNotExist(_, node)
-            | Self::DuplicateStructLiteralField(node) => node.span.to_start_row_col(input),
-            // Default to start of file if the variant doesn't carry a specific span
-            _ => (1, 1),
+            | Self::DuplicateStructLiteralField(node) => Some(node.span.to_start_row_col(input)),
+            _ => None,
         }
     }
 }
