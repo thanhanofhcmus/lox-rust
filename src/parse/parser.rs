@@ -666,6 +666,27 @@ fn parse_group(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     Ok(node)
 }
 
+fn parse_for_comprehension_for_part(state: &mut Context) -> Result<ForNode<(), ()>, ParseError> {
+    state.consume_token(Token::For)?;
+    let binding = parse_binding_node(state)?;
+    state.consume_token(Token::In)?;
+    let collection = parse_clause_node(state)?;
+    let filter = if state.peek(&[Token::If]) {
+        state.consume_token(Token::If)?;
+        let clause = parse_clause_node(state)?;
+        Some(clause)
+    } else {
+        None
+    };
+    state.consume_token(Token::Colon)?;
+    Ok(ForNode {
+        binding,
+        collection,
+        filter,
+        body: (),
+    })
+}
+
 fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>, ParseError> {
     // [:1 : 2 ]
     if state.peek_2_token(&[Token::Colon]) {
@@ -682,26 +703,15 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
     // [for a in b: c]
     } else if state.peek_2_token(&[Token::For]) {
         state.consume_token(Token::LSquareParen)?;
-        state.consume_token(Token::For)?;
-        let binding = parse_binding_node(state)?;
-        state.consume_token(Token::In)?;
-        let collection = parse_clause_node(state)?;
-        let filter = if state.peek(&[Token::If]) {
-            state.consume_token(Token::If)?;
-            let clause = parse_clause_node(state)?;
-            Some(clause)
-        } else {
-            None
-        };
-        state.consume_token(Token::Colon)?;
+        let for_part = parse_for_comprehension_for_part(state)?;
         let body = parse_clause_node(state)?;
         state.consume_token(Token::RSquareParen)?;
         Ok(ArrayLiteralNode::ForComprehension(Box::new(
             ArrayForComprehensionNode {
-                binding,
-                collection,
+                binding: for_part.binding,
+                collection: for_part.collection,
+                filter: for_part.filter,
                 body,
-                filter,
             },
         )))
     } else {
@@ -716,13 +726,33 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
 }
 
 fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode<()>, ParseError> {
-    let nodes = parse_comma_list(
-        state,
-        Token::PercentLPointParent,
-        Token::RPointParen,
-        parse_map_literal_element_node,
-    )?;
-    Ok(MapLiteralNode { nodes })
+    if state.peek_2_token(&[Token::For]) {
+        state.consume_token(Token::PercentLPointParent)?;
+        let for_part = parse_for_comprehension_for_part(state)?;
+        let key_body = parse_clause_node(state)?;
+        state.consume_token(Token::RFatArrow)?;
+        let value_body = parse_clause_node(state)?;
+        state.consume_token(Token::RPointParen)?;
+        Ok(MapLiteralNode::ForComprehension(Box::new(
+            MapForComprehensionNode {
+                binding: for_part.binding,
+                collection: for_part.collection,
+                filter: for_part.filter,
+                body: MapForComprehensionBodyNode {
+                    key: key_body,
+                    value: value_body,
+                },
+            },
+        )))
+    } else {
+        let nodes = parse_comma_list(
+            state,
+            Token::PercentLPointParent,
+            Token::RPointParen,
+            parse_map_literal_element_node,
+        )?;
+        Ok(MapLiteralNode::List(nodes))
+    }
 }
 
 fn parse_tuple_literal_node(state: &mut Context) -> Result<TupleLiteralNode<()>, ParseError> {
@@ -737,11 +767,11 @@ fn parse_tuple_literal_node(state: &mut Context) -> Result<TupleLiteralNode<()>,
 
 fn parse_map_literal_element_node(
     state: &mut Context,
-) -> Result<MapLiteralElementNode<()>, ParseError> {
+) -> Result<MapLiteralKVElemNode<()>, ParseError> {
     let key = parse_scalar_node(state)?;
     state.consume_token(Token::RFatArrow)?;
     let value = parse_clause_node(state)?;
-    Ok(MapLiteralElementNode { key, value })
+    Ok(MapLiteralKVElemNode { key, value })
 }
 
 fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError> {
@@ -1038,8 +1068,8 @@ mod tests {
     fn parse_empty_map_literal() {
         let ast = parse_str("%{};");
         match first_clause(&ast) {
-            ClauseCase::RawValue(RawValueNode::MapLiteral(m)) => {
-                assert_eq!(m.nodes.len(), 0);
+            ClauseCase::RawValue(RawValueNode::MapLiteral(MapLiteralNode::List(kvs))) => {
+                assert_eq!(kvs.len(), 0);
             }
             other => panic!("expected MapLiteral, got {other:?}"),
         }
@@ -1049,8 +1079,8 @@ mod tests {
     fn parse_map_literal_with_entries() {
         let ast = parse_str("%{\"a\" => 1, \"b\" => 2};");
         match first_clause(&ast) {
-            ClauseCase::RawValue(RawValueNode::MapLiteral(m)) => {
-                assert_eq!(m.nodes.len(), 2);
+            ClauseCase::RawValue(RawValueNode::MapLiteral(MapLiteralNode::List(kvs))) => {
+                assert_eq!(kvs.len(), 2);
             }
             other => panic!("expected MapLiteral, got {other:?}"),
         }

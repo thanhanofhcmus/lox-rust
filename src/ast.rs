@@ -228,7 +228,7 @@ pub enum ScalarNode {
         span: Span,
         is_raw: bool,
     },
-    /// Store the actual string, for REPL intepreter
+    /// Store the actual string, for REPL interpreter
     LiteralStr(String),
 }
 
@@ -248,18 +248,6 @@ pub struct StructLiteralNode<T> {
     pub iden: Identifier,
     pub fields: Vec<StructLiteralFieldNode<T>>,
 }
-
-#[derive(Debug, Clone)]
-pub struct MapLiteralNode<T> {
-    pub nodes: Vec<MapLiteralElementNode<T>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MapLiteralElementNode<T> {
-    pub key: ScalarNode,
-    pub value: ClauseNode<T>,
-}
-
 #[derive(Debug, Clone)]
 pub enum ArrayLiteralNode<T> {
     List(Vec<ClauseNode<T>>),
@@ -273,15 +261,27 @@ pub struct ArrayRepeatNode<T> {
     pub repeat: ClauseNode<T>,
 }
 
-// #[derive(Debug, Clone)]
-// pub struct ArrayForComprehensionNode<T> {
-//     pub iden: Identifier,
-//     pub collection: ClauseNode<T>,
-//     pub filter: Option<ClauseNode<T>>,
-//     pub transformer: ClauseNode<T>,
-// }
-
 pub type ArrayForComprehensionNode<T> = ForNode<ClauseNode<T>, T>;
+
+#[derive(Debug, Clone)]
+pub struct MapForComprehensionBodyNode<T> {
+    pub key: ClauseNode<T>,
+    pub value: ClauseNode<T>,
+}
+
+pub type MapForComprehensionNode<T> = ForNode<MapForComprehensionBodyNode<T>, T>;
+
+#[derive(Debug, Clone)]
+pub enum MapLiteralNode<T> {
+    List(Vec<MapLiteralKVElemNode<T>>),
+    ForComprehension(Box<MapForComprehensionNode<T>>),
+}
+
+#[derive(Debug, Clone)]
+pub struct MapLiteralKVElemNode<T> {
+    pub key: ScalarNode,
+    pub value: ClauseNode<T>,
+}
 
 #[derive(Debug, Clone)]
 pub struct FnParamNode {

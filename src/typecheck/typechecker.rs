@@ -286,9 +286,7 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    /// Resolve the element / value type produced by a subscription against an
-    /// indexer type. Used by both the read path (`convert_subscription`) and
-    /// the reassign path (`convert_reassign_target`).
+    /// Resolve the element/value type produced by a subscription against an indexer type.
     fn resolve_subscription_result_type(
         &self,
         indexer_type_id: TypeId,
@@ -302,14 +300,8 @@ impl<'cl> TypeChecker<'cl> {
             Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => {
                 Ok(*elem)
             }
-            Type::Map { key, value }
-                if (*key == indexee_type_id)
-                    || (*key == TypeId::ANY
-                        && matches!(
-                            indexee_type_id,
-                            TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
-                        )) =>
-            {
+            Type::Map { key, value } if (*key == indexee_type_id) || (*key == TypeId::ANY) => {
+                require_map_key_type(indexee_type_id)?;
                 Ok(*value)
             }
             Type::Any => Ok(TypeId::ANY),
@@ -320,8 +312,7 @@ impl<'cl> TypeChecker<'cl> {
         }
     }
 
-    /// Resolve the declared type of a struct field. Used by both the read path
-    /// (`convert_member_access`) and the reassign path (`convert_reassign_target`).
+    /// Resolve the declared type of a struct field and tuple index
     fn resolve_member_result_type(
         &self,
         object_type_id: TypeId,
@@ -595,8 +586,7 @@ impl<'cl> TypeChecker<'cl> {
         }
     }
 
-    /// Typecheck an array literal and return the array's *element type* alongside
-    /// the converted node. The caller wraps it in `Type::Array(...)`.
+    /// Typecheck an array literal and return the array's *element type* alongside the converted node
     fn convert_array_literal(
         &mut self,
         arr: ArrayLiteralNode<()>,
@@ -636,26 +626,26 @@ impl<'cl> TypeChecker<'cl> {
                 } = *comp;
                 let collection = self.convert_clause(collection)?;
                 let elem_type_id = self.iterable_element_type(collection.extra);
-                self.with_scope(|this| {
+                let (body, filter) = self.with_scope(|this| {
                     this.convert_binding(&binding, None, elem_type_id)?;
-                    let body = this.convert_clause(body)?;
                     let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
                     if let Some(f) = &filter {
                         require_type(TypeId::BOOL, f.extra)?;
                     }
-                    let type_id = this
-                        .environment
-                        .declare_type(&Type::Array { elem: body.extra });
-                    Ok((
-                        type_id,
-                        ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehensionNode {
-                            binding,
-                            collection,
-                            body,
-                            filter,
-                        })),
-                    ))
-                })
+                    this.convert_clause(body).map(|b| (b, filter))
+                })?;
+                let type_id = self
+                    .environment
+                    .declare_type(&Type::Array { elem: body.extra });
+                Ok((
+                    type_id,
+                    ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehensionNode {
+                        binding,
+                        collection,
+                        body,
+                        filter,
+                    })),
+                ))
             }
         }
     }
@@ -664,29 +654,69 @@ impl<'cl> TypeChecker<'cl> {
         &mut self,
         map: MapLiteralNode<()>,
     ) -> Result<(TypeId, MapLiteralNode<TypeId>), TypecheckError> {
-        let mut nodes = Vec::with_capacity(map.nodes.len());
-        for elem in map.nodes {
-            let value = self.convert_clause(elem.value)?;
-            nodes.push(MapLiteralElementNode {
-                key: elem.key,
-                value,
-            });
+        match map {
+            MapLiteralNode::List(elems) => {
+                let mut nodes = Vec::with_capacity(elems.len());
+                for elem in elems {
+                    let value = self.convert_clause(elem.value)?;
+                    nodes.push(MapLiteralKVElemNode {
+                        key: elem.key,
+                        value,
+                    });
+                }
+
+                let type_id = if nodes.is_empty() {
+                    TypeId::MAP_UNTYPED
+                } else {
+                    let key_types: Vec<_> = nodes
+                        .iter()
+                        .map(|n| get_scalar_node_type_id(&n.key))
+                        .collect();
+                    self.environment.declare_type(&Type::Map {
+                        key: unify_types(&key_types),
+                        value: unify_types(nodes.iter().map(|n| &n.value.extra)),
+                    })
+                };
+
+                Ok((type_id, MapLiteralNode::List(nodes)))
+            }
+            MapLiteralNode::ForComprehension(comp) => {
+                // TODO: dedup with array comprehension
+                let MapForComprehensionNode {
+                    binding,
+                    collection,
+                    body,
+                    filter,
+                } = *comp;
+                let collection = self.convert_clause(collection)?;
+                let elem_type_id = self.iterable_element_type(collection.extra);
+                let (body, filter) = self.with_scope(|this| {
+                    this.convert_binding(&binding, None, elem_type_id)?;
+                    let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
+                    if let Some(f) = &filter {
+                        require_type(TypeId::BOOL, f.extra)?;
+                    }
+                    let key = this.convert_clause(body.key)?;
+                    require_map_key_type(key.extra)?;
+                    let value = this.convert_clause(body.value)?;
+
+                    Ok((MapForComprehensionBodyNode { key, value }, filter))
+                })?;
+                let type_id = self.environment.declare_type(&Type::Map {
+                    key: body.key.extra,
+                    value: body.value.extra,
+                });
+                Ok((
+                    type_id,
+                    MapLiteralNode::ForComprehension(Box::new(MapForComprehensionNode {
+                        binding,
+                        collection,
+                        body,
+                        filter,
+                    })),
+                ))
+            }
         }
-
-        let type_id = if nodes.is_empty() {
-            TypeId::MAP_UNTYPED
-        } else {
-            let key_types: Vec<_> = nodes
-                .iter()
-                .map(|n| get_scalar_node_type_id(&n.key))
-                .collect();
-            self.environment.declare_type(&Type::Map {
-                key: unify_types(&key_types),
-                value: unify_types(nodes.iter().map(|n| &n.value.extra)),
-            })
-        };
-
-        Ok((type_id, MapLiteralNode { nodes }))
     }
 
     fn convert_tuple_literal(
@@ -1023,12 +1053,6 @@ impl<'cl> TypeChecker<'cl> {
         }
     }
 
-    /// Compute the result type of a unary operator applied to an operand type.
-    ///
-    /// Opinionated choices:
-    /// - `-` (Minus) negates numbers.
-    /// - `not` (Not) inverts Bools.
-    /// - `Any` is permissive: accept and return the op's natural result type.
     fn type_unary_op(&self, op: Token, operand: TypeId) -> Result<TypeId, TypecheckError> {
         use Token::*;
         let any = operand == TypeId::ANY;
@@ -1059,6 +1083,13 @@ fn get_scalar_node_type_id(node: &ScalarNode) -> TypeId {
     }
 }
 
+fn require_map_key_type(type_id: TypeId) -> Result<(), TypecheckError> {
+    match type_id {
+        TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL => Ok(()),
+        _ => Err(TypecheckError::TypeCannotBeUsedAsMapKey(type_id)),
+    }
+}
+
 /// Join multiple types using gradual-typing-friendly unification:
 /// - Skip `Any`s; take the first concrete type seen.
 /// - If another concrete type disagrees, widen to `Any`.
@@ -1078,8 +1109,6 @@ fn unify_types<'a>(type_ids: impl IntoIterator<Item = &'a TypeId>) -> TypeId {
     result.unwrap_or(TypeId::ANY)
 }
 
-/// Assert `actual` is compatible with `expected`. `Any` on the actual side is
-/// permissive (gradual typing).
 fn require_type(expected: TypeId, actual: TypeId) -> Result<(), TypecheckError> {
     if actual == TypeId::ANY || actual == expected {
         Ok(())
@@ -1101,9 +1130,7 @@ fn promote_untyped_to_any(type_id: TypeId) -> TypeId {
 
 /// Reconcile a single binding's `explicit` annotation with the `actual` rhs
 /// type. `Any` on the annotation side is permissive; concrete annotations
-/// must match (with the `ARRAY_UNTYPED` / `MAP_UNTYPED` relaxation for empty
-/// literals). Used by both the Identifier path and per-member in tuple
-/// destructuring.
+/// must match (with the `ARRAY_UNTYPED` / `MAP_UNTYPED` relaxation for empty literals).
 fn reconcile_single_type(
     iden: Identifier,
     explicit: TypeId,

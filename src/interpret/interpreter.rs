@@ -511,7 +511,6 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             }
             ArrayLiteralNode::ForComprehension(node) => {
                 // binding should not be reassignable from the lesser scope
-
                 let col_val = self.interpret_clause_expr(&node.collection)?;
                 let arr = match col_val {
                     Value::Array(handle) => {
@@ -572,14 +571,76 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         &mut self,
         node: &MapLiteralNode<TypeId>,
     ) -> Result<Value, InterpretError> {
-        let mut map = Map::new();
-        for kv in &node.nodes {
-            let raw_key = self.interpret_scalar_expr(&kv.key);
-            let key = MapKey::convert_from_value(raw_key)?;
-            let value = self.interpret_clause_expr(&kv.value)?;
-            map.insert(key, value);
+        match node {
+            MapLiteralNode::List(elems) => {
+                let mut map = Map::new();
+                for kv in elems {
+                    let raw_key = self.interpret_scalar_expr(&kv.key);
+                    let key = MapKey::convert_from_value(raw_key)?;
+                    let value = self.interpret_clause_expr(&kv.value)?;
+                    map.insert(key, value);
+                }
+                Ok(self.environment.insert_map_variable(map))
+            }
+            MapLiteralNode::ForComprehension(node) => {
+                // TODO: dedup with array for comprehension
+                // binding should not be reassignable from the lesser scope
+                let col_val = self.interpret_clause_expr(&node.collection)?;
+                let map = match col_val {
+                    Value::Array(handle) => {
+                        let col_arr = self.environment.get_array(handle)?.clone();
+                        let mut map = Map::new();
+                        for col_val in col_arr {
+                            let value = self.with_scope(true, |this| {
+                                this.interpret_binding(&node.binding, col_val)?;
+                                this.interpret_map_literal_comprehension_inner(node)
+                            })?;
+                            if let Some((map_key, map_value)) = value {
+                                map.insert(map_key, map_value);
+                            }
+                        }
+                        map
+                    }
+                    Value::Map(handle) => {
+                        let col_map = self.environment.get_map(handle)?.clone();
+                        let mut map = Map::new();
+                        for (map_key, map_value) in col_map {
+                            let tuple = self.environment.insert_tuple_variable(Tuple {
+                                members: vec![map_key.to_value(), map_value],
+                            });
+                            let value = self.with_scope(true, |this| {
+                                this.interpret_binding(&node.binding, tuple)?;
+                                this.interpret_map_literal_comprehension_inner(node)
+                            })?;
+                            if let Some((map_key, map_value)) = value {
+                                map.insert(map_key, map_value);
+                            }
+                        }
+                        map
+                    }
+                    _ => {
+                        return Err(InterpretError::ValueCannotBeUsedAsSourceInFor(col_val));
+                    }
+                };
+                Ok(self.environment.insert_map_variable(map))
+            }
         }
-        Ok(self.environment.insert_map_variable(map))
+    }
+
+    fn interpret_map_literal_comprehension_inner(
+        &mut self,
+        node: &MapForComprehensionNode<TypeId>,
+    ) -> Result<Option<(MapKey, Value)>, InterpretError> {
+        // filter
+        if let Some(filter) = &(node.filter)
+            && !(self.is_truthy(filter)?)
+        {
+            return Ok(None);
+        }
+        let raw_key = self.interpret_clause_expr(&node.body.key)?;
+        let map_key = MapKey::convert_from_value(raw_key)?;
+        let map_value = self.interpret_clause_expr(&node.body.value)?;
+        Ok(Some((map_key, map_value)))
     }
 
     fn interpret_tuple_literal(

@@ -12,7 +12,7 @@ pub trait DisplayWriter {
     fn write_display(
         self,
         env: &Environment,
-        sb: &IdentifierRegistry,
+        ir: &IdentifierRegistry,
         w: &mut dyn std::io::Write,
     ) -> Result<(), InterpretError>;
 }
