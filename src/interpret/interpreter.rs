@@ -6,7 +6,7 @@ use crate::interpret::heap::GcHandle;
 
 use crate::identifier_registry::{Identifier, IdentifierRegistry};
 use crate::interpret::values::{
-    Array, BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple,
+    BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple,
 };
 use crate::parse;
 use crate::string_utils;
@@ -97,6 +97,17 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             print_writer,
             strict_assert,
         }
+    }
+
+    fn with_scope<V>(
+        &mut self,
+        is_readonly: bool,
+        f: impl FnOnce(&mut Self) -> Result<V, InterpretError>,
+    ) -> Result<V, InterpretError> {
+        self.environment.push_scope(is_readonly)?;
+        let result = f(self);
+        self.environment.pop_scope()?;
+        result
     }
 
     pub fn interpret(&mut self, ast: &'s AST<TypeId>) -> Result<Value, InterpretError> {
@@ -330,27 +341,18 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         &mut self,
         node: &BlockNode<TypeId>,
     ) -> Result<ValueReturn, InterpretError> {
-        self.environment.push_scope(false)?;
-        let result = self.interpret_block_node_inner(node);
-        self.environment.pop_scope()?;
-        result
-    }
-
-    fn interpret_block_node_inner(
-        &mut self,
-        node: &BlockNode<TypeId>,
-    ) -> Result<ValueReturn, InterpretError> {
-        for stmt in &node.stmts {
-            let res = self.interpret_stmt(stmt)?;
-            if res.should_bubble_up {
-                return Ok(res);
+        self.with_scope(false, |this| {
+            for stmt in &node.stmts {
+                let res = this.interpret_stmt(stmt)?;
+                if res.should_bubble_up {
+                    return Ok(res);
+                }
             }
-        }
-
-        match &node.last_expr {
-            Some(expr) => self.interpret_expr(expr),
-            None => Ok(ValueReturn::none()),
-        }
+            match &node.last_expr {
+                Some(expr) => this.interpret_expr(expr),
+                None => Ok(ValueReturn::none()),
+            }
+        })
     }
 
     fn interpret_for_stmt(
@@ -362,18 +364,17 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             body,
         }: &ForStatementNode<TypeId>,
     ) -> Result<ValueReturn, InterpretError> {
-        let collection_value = self.interpret_clause_expr(collection)?;
-        match collection_value {
+        let col_val = self.interpret_clause_expr(collection)?;
+        // binding should not be reassignable from the lesser scope enforce by self.with_scope(true, ...)
+
+        match col_val {
             Value::Array(handle) => {
                 let arr = self.environment.get_array(handle)?.clone();
-                for collection_value in arr {
-                    // collection_value should not be reassignable from the lesser scope
-                    self.environment.push_scope(true)?;
-                    self.interpret_binding(binding, collection_value)?;
-                    let result = self.interpret_block_node(body);
-                    self.environment.pop_scope()?;
-
-                    let value_return = result?;
+                for item in arr {
+                    let value_return = self.with_scope(true, |this| {
+                        this.interpret_binding(binding, item)?;
+                        this.interpret_block_node(body)
+                    })?;
                     if value_return.should_bubble_up {
                         return Ok(value_return);
                     }
@@ -383,25 +384,20 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             Value::Map(handle) => {
                 let map = self.environment.get_map(handle)?.clone();
                 for (map_key, map_value) in map {
-                    // collection_value should not be reassignable from the lesser scope
-                    let collection_value = self.environment.insert_tuple_variable(Tuple {
-                        members: vec![map_key.to_value(), map_value],
-                    });
-                    self.environment.push_scope(true)?;
-                    self.interpret_binding(binding, collection_value)?;
-                    let result = self.interpret_block_node(body);
-                    self.environment.pop_scope()?;
-
-                    let value_return = result?;
+                    let value_return = self.with_scope(true, |this| {
+                        let tuple = this.environment.insert_tuple_variable(Tuple {
+                            members: vec![map_key.to_value(), map_value],
+                        });
+                        this.interpret_binding(binding, tuple)?;
+                        this.interpret_block_node(body)
+                    })?;
                     if value_return.should_bubble_up {
                         return Ok(value_return);
                     }
                 }
                 Ok(ValueReturn::none())
             }
-            _ => Err(InterpretError::ValueCannotBeUsedAsSourceInFor(
-                collection_value,
-            )),
+            _ => Err(InterpretError::ValueCannotBeUsedAsSourceInFor(col_val)),
         }
     }
 
@@ -514,19 +510,45 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 Ok(self.environment.insert_array_variable(vec![value; repeat]))
             }
             ArrayLiteralNode::ForComprehension(node) => {
-                let collection_arr = self.interpret_and_get_array(&node.collection)?.clone();
-                let mut arr = Vec::with_capacity(collection_arr.len());
-                for collection_value in collection_arr {
-                    // collection_value should not be reassignable from the lesser scope
-                    self.environment.push_scope(true)?;
-                    self.interpret_binding(&node.binding, collection_value)?;
-                    let result = self.interpret_array_literal_comprehension_inner(node);
-                    self.environment.pop_scope()?;
-                    let value = result?;
-                    if let Some(value) = value {
-                        arr.push(value);
+                // binding should not be reassignable from the lesser scope
+
+                let col_val = self.interpret_clause_expr(&node.collection)?;
+                let arr = match col_val {
+                    Value::Array(handle) => {
+                        let col_arr = self.environment.get_array(handle)?.clone();
+                        let mut arr = Vec::with_capacity(col_arr.len());
+                        for col_val in col_arr {
+                            let value = self.with_scope(true, |this| {
+                                this.interpret_binding(&node.binding, col_val)?;
+                                this.interpret_array_literal_comprehension_inner(node)
+                            })?;
+                            if let Some(value) = value {
+                                arr.push(value);
+                            }
+                        }
+                        arr
                     }
-                }
+                    Value::Map(handle) => {
+                        let map = self.environment.get_map(handle)?.clone();
+                        let mut arr = Vec::with_capacity(map.len());
+                        for (map_key, map_value) in map {
+                            let tuple = self.environment.insert_tuple_variable(Tuple {
+                                members: vec![map_key.to_value(), map_value],
+                            });
+                            let value = self.with_scope(true, |this| {
+                                this.interpret_binding(&node.binding, tuple)?;
+                                this.interpret_array_literal_comprehension_inner(node)
+                            })?;
+                            if let Some(value) = value {
+                                arr.push(value);
+                            }
+                        }
+                        arr
+                    }
+                    _ => {
+                        return Err(InterpretError::ValueCannotBeUsedAsSourceInFor(col_val));
+                    }
+                };
                 Ok(self.environment.insert_array_variable(arr))
             }
         }
@@ -646,18 +668,18 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             ));
         }
 
-        // create a new stack for the function call
-        // currently, later args can reference sooner args
-        // TODO: make this go away
-        self.environment.push_scope(true)?;
-        for (param, arg_expr) in params.iter().zip(args.iter()) {
-            let res = self.interpret_expr(arg_expr)?.get_or_error()?;
-            self.environment
-                .insert_variable_current_scope(param.iden.id, res);
-        }
+        let args_values = args
+            .iter()
+            .map(|arg| self.interpret_expr(arg)?.get_or_error())
+            .collect::<Result<Vec<Value>, _>>()?;
 
-        let result = self.interpret_block_node(&body);
-        self.environment.pop_scope()?;
+        let result = self.with_scope(true, |this| {
+            params.iter().zip(args_values).for_each(|(param, arg_res)| {
+                this.environment
+                    .insert_variable_current_scope(param.iden.id, arg_res);
+            });
+            this.interpret_block_node(&body)
+        });
 
         // Convert the ValueReturn back to a raw Value.
         // If it was bubbling, it stops bubbling here because the function has returned.
@@ -777,26 +799,6 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             }
             _ => Err(InterpretError::InvalidOperationOnType(op, lhs)),
         }
-    }
-
-    // Returns a reference into the heap. Callers that need to iterate while
-    // also calling other interpreter methods (which borrow &mut self) must
-    // .clone() the result immediately — the clone is the owned copy that
-    // survives the subsequent mutable borrows.
-    fn interpret_and_get_array(
-        &mut self,
-        clause: &ClauseNode<TypeId>,
-    ) -> Result<&Array, InterpretError> {
-        let collection = self.interpret_clause_expr(clause)?;
-
-        let Value::Array(handle) = collection else {
-            // TODO: Make this error array specific
-            return Err(InterpretError::ValueUnIndexable(collection));
-        };
-
-        // The array here could be from temporary or from an actual value
-        // DO NOT try to decrease ref count here
-        self.environment.get_array(handle)
     }
 
     fn is_truthy(&mut self, expr: &ClauseNode<TypeId>) -> Result<bool, InterpretError> {
