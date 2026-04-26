@@ -162,12 +162,13 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let tokens = parse::lex(&content)
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
-        // TODO: fix should_eval_string
+        // TODO: fix should_eval_string in parser, current always set to true
         let untyped = parse::parse(&content, &tokens, self.identifier_registry, true)
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
+        // we should have a shared type/symbol pool between modules, not creating a new env like this
         let mut tc_env = crate::typecheck::Environment::new();
-        let statement = crate::typecheck::TypeChecker::new(&mut tc_env)
+        let module_ast = crate::typecheck::TypeChecker::new(&mut tc_env)
             .convert(untyped)
             .map_err(|err| {
                 InterpretError::TypeCheckModuleFailed(name.clone(), path.clone(), err)
@@ -189,7 +190,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
         // We treat the module evaluation as a top-level interpret call
         let interpret_result = itp
-            .interpret(&statement)
+            .interpret(&module_ast)
             .map_err(|err| InterpretError::InterpretModuleFailed(name, path, Box::new(err)));
 
         // Always attempt to deinit, even if interpretation failed. Prefer the
@@ -199,7 +200,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
         // TODO: Maybe do something with the return value of a module
         // if that actually make sense
-        _ = interpret_result?;
+        interpret_result?;
         deinit_result?;
 
         // TODO: detect circular dependency

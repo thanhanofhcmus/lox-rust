@@ -22,7 +22,7 @@ use crate::{
 };
 
 #[derive(Debug, Error, derive_more::Display)]
-enum Error {
+enum RunError {
     #[display("Parse Error")]
     Parse(ParseError),
     #[display("Typecheck Error")]
@@ -31,7 +31,7 @@ enum Error {
     Interpret(InterpretError),
 }
 
-type RunResult = Result<(), Error>;
+type RunResult = Result<(), RunError>;
 type DynResult = Result<(), Box<dyn std::error::Error>>;
 
 /// Encapsulates the runtime environment to avoid duplicating setup across modes.
@@ -57,7 +57,7 @@ impl RunnerContext {
         input: &str,
         source_name: Option<&str>,
         is_in_repl: bool,
-    ) -> Result<AST<()>, Error> {
+    ) -> Result<AST<()>, RunError> {
         trace!("Lexing start");
 
         let tokens = parse::lex(input).map_err(|err| {
@@ -65,7 +65,7 @@ impl RunnerContext {
                 "Lex error:\n{}",
                 err.generate_user_facing_error(source_name, input)
             );
-            Error::Parse(err)
+            RunError::Parse(err)
         })?;
 
         debug!("Lexing done, with tokens:");
@@ -85,7 +85,7 @@ impl RunnerContext {
                     "Parse error:\n{}",
                     err.generate_user_facing_error(source_name, input)
                 );
-                Error::Parse(err)
+                RunError::Parse(err)
             },
         )?;
 
@@ -110,7 +110,7 @@ impl RunnerContext {
                     self.typecheck_env.get_type_interner()
                 )
             );
-            Error::Typecheck(err)
+            RunError::Typecheck(err)
         })?;
         debug!("type checking done");
 
@@ -136,7 +136,7 @@ impl RunnerContext {
                     self.typecheck_env.get_type_interner(),
                 )
             );
-            Error::Interpret(err)
+            RunError::Interpret(err)
         })?;
         debug!("interpreting done");
 
@@ -200,11 +200,21 @@ fn main() -> DynResult {
     let config = Config::parse();
     let mut ctx = RunnerContext::new(config.strict_assert);
 
-    match config.mode {
+    let run_result = match config.mode {
         Mode::Repl { initial_line } => run_repl(&mut ctx, initial_line),
         Mode::Prompt { line } => run_prompt(&mut ctx, &line),
         Mode::File { path } => run_file(&mut ctx, &path),
-    }
+    };
+
+    match run_result {
+        Ok(()) => {}
+        Err(error) => match error.downcast::<RunError>() {
+            Ok(_) => {}
+            Err(error) => return Err(error),
+        },
+    };
+
+    Ok(())
 }
 
 fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {

@@ -67,7 +67,7 @@ impl ParseError {
         let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
 
         // Format the visual components
-        let source_name = source_name.map(|v| v.to_string()).unwrap_or_default();
+        let source_name = source_name.map(|v| format!("{}:", v)).unwrap_or_default();
         let line_label = line.to_string();
         let gutter_padding = " ".repeat(line_label.len());
         let pointer_indent = " ".repeat(col.saturating_sub(1));
@@ -76,10 +76,10 @@ impl ParseError {
         let mut output = String::new();
 
         // Header line
-        output.push_str(&format!("Error: {}\n", self));
+        output.push_str(&format!("Parse Error: {}\n", self));
 
         // File location line (clickable in most IDEs)
-        output.push_str(&format!("  --> {}:{}:{}\n", source_name, line, col));
+        output.push_str(&format!("  at {}{}:{}\n", source_name, line, col));
 
         // Code snippet visualization
         output.push_str(&format!("{} |\n", gutter_padding));

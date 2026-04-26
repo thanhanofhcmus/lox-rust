@@ -41,14 +41,14 @@ impl TypecheckError {
         interner: &TypeInterner,
     ) -> String {
         let line_position = if let Some((line, col)) = self.get_source_start(input) {
-            let source_name = source_name.map(|v| v.to_string()).unwrap_or_default();
+            let source_name = source_name.map(|v| format!("{}:", v)).unwrap_or_default();
             let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
             let line_label = line.to_string();
             let gutter = " ".repeat(line_label.len());
             let pointer = " ".repeat(col.saturating_sub(1));
             format!(
                 "\n
-                 --> {source_name}:{line}:{col}\n\
+                 at {source_name}{line}:{col}\n\
                  {gutter} |\n\
                  {line_label} | {source_line}\n\
                  {gutter} | {pointer}^--- here"
@@ -60,7 +60,7 @@ impl TypecheckError {
         // Resolve the technical error into a readable description
         let description = self.resolve_description(ir, interner);
 
-        format!("Type Error: {description}{line_position}")
+        format!("Typecheck Error: {description}{line_position}")
     }
 
     /// Internal helper to turn TypeIds into names like "Array<Number>"
@@ -214,7 +214,7 @@ impl TypecheckError {
             ),
 
             Self::TupleIndexOutOfBound(struct_type_id, expected, actual) => format!(
-                "Tuple `{}` has {} members(s) but an index at {} were provided.",
+                "Tuple `{}` has {} member(s) but an index at {} were provided.",
                 interner.generate_readable_name(ir, *struct_type_id),
                 expected,
                 actual,

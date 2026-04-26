@@ -42,6 +42,8 @@ impl<'cl> TypeChecker<'cl> {
             global_stmts: untyped_global_stmts,
         } = ast;
 
+        // TODO: work on imports
+
         let mut global_stmts = Vec::with_capacity(untyped_global_stmts.len());
 
         for ut_stmt in untyped_global_stmts {

@@ -7,6 +7,13 @@ pub struct AST<T> {
     pub global_stmts: StatementList<T>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ImportNode {
+    pub path: Span,
+    pub package: Identifier,
+    pub iden: Identifier,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeNode {
     BuiltIn(TypeId),
@@ -89,12 +96,6 @@ impl BlockNode<()> {
             last_expr,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ImportNode {
-    pub path: Span,
-    pub iden: Identifier,
 }
 
 #[derive(Debug, Clone)]
