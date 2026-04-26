@@ -2,6 +2,7 @@ use super::environment::Environment;
 use super::error::InterpretError;
 use super::values::Value;
 use crate::ast::*;
+use crate::id::Id;
 use crate::interpret::heap::GcHandle;
 
 use crate::identifier_registry::{Identifier, IdentifierRegistry};
@@ -148,6 +149,10 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
         let name = node.iden.span.string_from_source(self.input);
         let path = node.path.string_from_source(self.input);
+
+        if node.package.id != Id::SELF {
+            unimplemented!()
+        }
 
         // read the file
         // TODO: move file loader to an interface

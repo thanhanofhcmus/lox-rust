@@ -56,13 +56,29 @@ pub fn parse(
 }
 
 fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
+    // an import statement shape
+    // import "self:relative/path/core.lox" as core;
+    // import "std:collection/array" as array;
+    // import "thirdparty:http/request" as request;
+
     state.consume_token(Token::Import)?;
     let path_li = state.consume_token(Token::String)?;
+    let s = path_li.span.str_from_source(state.get_input());
+
+    // TODO: check if colon is at the start, end or not found
+    let colon_pos = s.find(':').unwrap();
+    let package_span = Span::new(path_li.span.start + 1, colon_pos - 1);
+    let path_span = Span::new(colon_pos - 1, path_li.span.end - 1);
+
     state.consume_token(Token::As)?;
     let iden_li = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Semicolon)?;
     Ok(ImportNode {
-        path: Span::new(path_li.span.start + 1, path_li.span.end - 1),
+        package: state.create_identifier(LexItem {
+            span: package_span,
+            token: Token::Identifier,
+        }),
+        path: path_span,
         iden: state.create_identifier(iden_li),
     })
 }
