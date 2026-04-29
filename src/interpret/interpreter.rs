@@ -111,6 +111,54 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         result
     }
 
+    /// Shared comprehension scaffolding: iterate `collection` (array or map),
+    /// for each element push a readonly scope, run the binding, then call
+    /// `on_iter`. Items where `on_iter` returns `None` (e.g. a filter rejects)
+    /// are skipped; the rest are collected. Map iteration synthesizes a
+    /// `%(key, value)` tuple before binding, matching the for-statement path.
+    fn for_comprehension_iter<T>(
+        &mut self,
+        binding: &DeclareBindingNode,
+        collection: &ClauseNode<TypeId>,
+        mut on_iter: impl FnMut(&mut Self) -> Result<Option<T>, InterpretError>,
+    ) -> Result<Vec<T>, InterpretError> {
+        let col_val = self.interpret_clause_expr(collection)?;
+        match col_val {
+            Value::Array(handle) => {
+                let arr = self.environment.get_array(handle)?.clone();
+                let mut out = Vec::with_capacity(arr.len());
+                for item in arr {
+                    let v = self.with_scope(true, |this| {
+                        this.interpret_binding(binding, item)?;
+                        on_iter(this)
+                    })?;
+                    if let Some(v) = v {
+                        out.push(v);
+                    }
+                }
+                Ok(out)
+            }
+            Value::Map(handle) => {
+                let map = self.environment.get_map(handle)?.clone();
+                let mut out = Vec::with_capacity(map.len());
+                for (mk, mv) in map {
+                    let v = self.with_scope(true, |this| {
+                        let tuple = this.environment.insert_tuple_variable(Tuple {
+                            members: vec![mk.to_value(), mv],
+                        });
+                        this.interpret_binding(binding, tuple)?;
+                        on_iter(this)
+                    })?;
+                    if let Some(v) = v {
+                        out.push(v);
+                    }
+                }
+                Ok(out)
+            }
+            _ => Err(InterpretError::ValueCannotBeUsedAsSourceInFor(col_val)),
+        }
+    }
+
     pub fn interpret(&mut self, ast: &'s AST<TypeId>) -> Result<Value, InterpretError> {
         for import in &ast.imports {
             self.interpret_import_stmt(import)?;
@@ -513,44 +561,9 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 Ok(self.environment.insert_array_variable(vec![value; repeat]))
             }
             ArrayLiteralNode::ForComprehension(node) => {
-                // binding should not be reassignable from the lesser scope
-                let col_val = self.interpret_clause_expr(&node.collection)?;
-                let arr = match col_val {
-                    Value::Array(handle) => {
-                        let col_arr = self.environment.get_array(handle)?.clone();
-                        let mut arr = Vec::with_capacity(col_arr.len());
-                        for col_val in col_arr {
-                            let value = self.with_scope(true, |this| {
-                                this.interpret_binding(&node.binding, col_val)?;
-                                this.interpret_array_literal_comprehension_inner(node)
-                            })?;
-                            if let Some(value) = value {
-                                arr.push(value);
-                            }
-                        }
-                        arr
-                    }
-                    Value::Map(handle) => {
-                        let map = self.environment.get_map(handle)?.clone();
-                        let mut arr = Vec::with_capacity(map.len());
-                        for (map_key, map_value) in map {
-                            let tuple = self.environment.insert_tuple_variable(Tuple {
-                                members: vec![map_key.to_value(), map_value],
-                            });
-                            let value = self.with_scope(true, |this| {
-                                this.interpret_binding(&node.binding, tuple)?;
-                                this.interpret_array_literal_comprehension_inner(node)
-                            })?;
-                            if let Some(value) = value {
-                                arr.push(value);
-                            }
-                        }
-                        arr
-                    }
-                    _ => {
-                        return Err(InterpretError::ValueCannotBeUsedAsSourceInFor(col_val));
-                    }
-                };
+                let arr = self.for_comprehension_iter(&node.binding, &node.collection, |this| {
+                    this.interpret_array_literal_comprehension_inner(node)
+                })?;
                 Ok(self.environment.insert_array_variable(arr))
             }
         }
@@ -586,45 +599,14 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 Ok(self.environment.insert_map_variable(map))
             }
             MapLiteralNode::ForComprehension(node) => {
-                // TODO: dedup with array for comprehension
-                // binding should not be reassignable from the lesser scope
-                let col_val = self.interpret_clause_expr(&node.collection)?;
-                let map = match col_val {
-                    Value::Array(handle) => {
-                        let col_arr = self.environment.get_array(handle)?.clone();
-                        let mut map = Map::new();
-                        for col_val in col_arr {
-                            let value = self.with_scope(true, |this| {
-                                this.interpret_binding(&node.binding, col_val)?;
-                                this.interpret_map_literal_comprehension_inner(node)
-                            })?;
-                            if let Some((map_key, map_value)) = value {
-                                map.insert(map_key, map_value);
-                            }
-                        }
-                        map
-                    }
-                    Value::Map(handle) => {
-                        let col_map = self.environment.get_map(handle)?.clone();
-                        let mut map = Map::new();
-                        for (map_key, map_value) in col_map {
-                            let tuple = self.environment.insert_tuple_variable(Tuple {
-                                members: vec![map_key.to_value(), map_value],
-                            });
-                            let value = self.with_scope(true, |this| {
-                                this.interpret_binding(&node.binding, tuple)?;
-                                this.interpret_map_literal_comprehension_inner(node)
-                            })?;
-                            if let Some((map_key, map_value)) = value {
-                                map.insert(map_key, map_value);
-                            }
-                        }
-                        map
-                    }
-                    _ => {
-                        return Err(InterpretError::ValueCannotBeUsedAsSourceInFor(col_val));
-                    }
-                };
+                let entries =
+                    self.for_comprehension_iter(&node.binding, &node.collection, |this| {
+                        this.interpret_map_literal_comprehension_inner(node)
+                    })?;
+                let mut map = Map::new();
+                for (k, v) in entries {
+                    map.insert(k, v);
+                }
                 Ok(self.environment.insert_map_variable(map))
             }
         }
