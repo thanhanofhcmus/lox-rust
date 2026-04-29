@@ -324,6 +324,12 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
         let reassigning_value = res.get_or_error()?;
 
+        // `_ = rhs;` discards the value (rhs side effects already ran above).
+        if node.base.id == Id::UNDERSCORE && node.follows.is_empty() {
+            let _ = reassigning_value;
+            return Ok(ValueReturn::none());
+        }
+
         // evaluate subscription index expressions; member steps pass through
         let mut reassign_chain_steps: Vec<ChainStep<Value>> =
             Vec::with_capacity(node.follows.len());
