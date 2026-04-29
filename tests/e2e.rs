@@ -102,6 +102,11 @@ fn tuples() {
     assert_ok(&run_fixture("18_tuples.lox"));
 }
 
+#[test]
+fn underscore() {
+    assert_ok(&run_fixture("19_underscore.lox"));
+}
+
 // ---------- negative-path: must exit non-zero with a specific message ----------
 
 #[test]
@@ -167,7 +172,7 @@ fn error_tuple_index_oob_runtime() {
 #[test]
 fn error_tuple_as_map_key_annotation() {
     let res = run_fixture("errors/tuple_as_map_key_annotation.lox");
-    assert_err_contains(&res, "InvalidMapKeyType");
+    assert_err_contains(&res, "Invalid map key type");
 }
 
 #[test]
