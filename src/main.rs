@@ -21,13 +21,16 @@ use crate::{
     parse::ParseError, typecheck::TypecheckError,
 };
 
-#[derive(Debug, Error, derive_more::Display)]
+/// Internal control-flow signal for "the script failed and the formatted
+/// error was already printed to stderr via `error!(...)`". Display is empty
+/// on purpose — main suppresses it and just exits non-zero.
+#[derive(Debug, Error)]
 enum RunError {
-    #[display("Parse Error")]
+    #[error("")]
     Parse(ParseError),
-    #[display("Typecheck Error")]
+    #[error("")]
     Typecheck(TypecheckError),
-    #[display("Interpret Error")]
+    #[error("")]
     Interpret(InterpretError),
 }
 
@@ -207,14 +210,15 @@ fn main() -> DynResult {
     };
 
     match run_result {
-        Ok(()) => {}
+        Ok(()) => Ok(()),
         Err(error) => match error.downcast::<RunError>() {
-            Ok(_) => {}
-            Err(error) => return Err(error),
+            // Script-level failure — formatted error was already logged.
+            // Suppress the lossy Box<dyn Error> Display and exit non-zero.
+            Ok(_) => std::process::exit(1),
+            // Other (e.g. IO, readline) — let main propagate normally.
+            Err(other) => Err(other),
         },
-    };
-
-    Ok(())
+    }
 }
 
 fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
