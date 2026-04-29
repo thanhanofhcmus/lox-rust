@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
+use crate::id::Id;
 use crate::identifier_registry::Identifier;
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
@@ -218,6 +219,10 @@ impl<'cl> TypeChecker<'cl> {
         &mut self,
         node: StructDeclNode,
     ) -> Result<StructDeclNode, TypecheckError> {
+        if let Some(prior) = self.environment.lookup_type_id_from_id(node.iden.id) {
+            return Err(TypecheckError::DuplicateTypeDeclaration(node.iden, prior));
+        }
+
         let fields = node
             .fields
             .iter()
@@ -228,8 +233,6 @@ impl<'cl> TypeChecker<'cl> {
                     .map(|n| self.extract_type_node_id(n))
                     .transpose()?
                     .unwrap_or(TypeId::ANY);
-                self.environment
-                    .associate_id_with_type(field.iden.id, type_id);
                 Ok(StructField {
                     id: field.iden.id,
                     type_: type_id,
@@ -237,15 +240,10 @@ impl<'cl> TypeChecker<'cl> {
             })
             .collect::<Result<Vec<_>, TypecheckError>>()?;
 
-        let (type_id, has_already_been_declared) =
-            self.environment
-                .declare_type_with_check(&Type::Struct(StructType {
-                    id: node.iden.id,
-                    fields,
-                }));
-        if has_already_been_declared {
-            return Err(TypecheckError::DuplicateTypeDeclaration(node.iden, type_id));
-        }
+        let type_id = self.environment.declare_type(&Type::Struct(StructType {
+            id: node.iden.id,
+            fields,
+        }));
         self.environment
             .associate_id_with_type(node.iden.id, type_id);
         Ok(node)
@@ -255,6 +253,16 @@ impl<'cl> TypeChecker<'cl> {
         &mut self,
         target: ChainingReassignTargetNode<()>,
     ) -> Result<ChainingReassignTargetNode<TypeId>, TypecheckError> {
+        // `_` is a discard target — accept `_ = rhs;` (no chain) at typecheck;
+        // chained writes through `_` (`_.x = …`, `_[0] = …`) still fall
+        // through to the normal undefined-variable path below.
+        if target.base.id == Id::UNDERSCORE && target.follows.is_empty() {
+            return Ok(ChainingReassignTargetNode {
+                base: target.base,
+                follows: Vec::new(),
+            });
+        }
+
         let base_type_id = self
             .environment
             .lookup_id(target.base.id)
@@ -486,6 +494,31 @@ impl<'cl> TypeChecker<'cl> {
         }
     }
 
+    /// Shared scaffolding for `for`-comprehension typechecks. Converts the
+    /// collection, binds the iterator under a fresh scope, validates the
+    /// optional filter as bool, then defers to `body_fn` for the per-shape
+    /// body conversion (single clause for arrays, key+value for maps).
+    fn convert_for_comprehension_pre<R>(
+        &mut self,
+        binding: &DeclareBindingNode,
+        collection: ClauseNode<()>,
+        filter: Option<ClauseNode<()>>,
+        body_fn: impl FnOnce(&mut Self) -> Result<R, TypecheckError>,
+    ) -> Result<(ClauseNode<TypeId>, Option<ClauseNode<TypeId>>, R), TypecheckError> {
+        let collection = self.convert_clause(collection)?;
+        let elem_type_id = self.iterable_element_type(collection.extra);
+        let (filter, body) = self.with_scope(|this| {
+            this.convert_binding(binding, None, elem_type_id)?;
+            let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
+            if let Some(f) = &filter {
+                require_type(TypeId::BOOL, f.extra)?;
+            }
+            let body = body_fn(this)?;
+            Ok((filter, body))
+        })?;
+        Ok((collection, filter, body))
+    }
+
     fn convert_when(&mut self, node: WhenNode<()>) -> Result<WhenNode<TypeId>, TypecheckError> {
         let arms = node
             .arms
@@ -629,16 +662,10 @@ impl<'cl> TypeChecker<'cl> {
                     body,
                     filter,
                 } = *comp;
-                let collection = self.convert_clause(collection)?;
-                let elem_type_id = self.iterable_element_type(collection.extra);
-                let (body, filter) = self.with_scope(|this| {
-                    this.convert_binding(&binding, None, elem_type_id)?;
-                    let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
-                    if let Some(f) = &filter {
-                        require_type(TypeId::BOOL, f.extra)?;
-                    }
-                    this.convert_clause(body).map(|b| (b, filter))
-                })?;
+                let (collection, filter, body) =
+                    self.convert_for_comprehension_pre(&binding, collection, filter, |this| {
+                        this.convert_clause(body)
+                    })?;
                 let type_id = self
                     .environment
                     .declare_type(&Type::Array { elem: body.extra });
@@ -686,27 +713,19 @@ impl<'cl> TypeChecker<'cl> {
                 Ok((type_id, MapLiteralNode::List(nodes)))
             }
             MapLiteralNode::ForComprehension(comp) => {
-                // TODO: dedup with array comprehension
                 let MapForComprehensionNode {
                     binding,
                     collection,
                     body,
                     filter,
                 } = *comp;
-                let collection = self.convert_clause(collection)?;
-                let elem_type_id = self.iterable_element_type(collection.extra);
-                let (body, filter) = self.with_scope(|this| {
-                    this.convert_binding(&binding, None, elem_type_id)?;
-                    let filter = filter.map(|f| this.convert_clause(f)).transpose()?;
-                    if let Some(f) = &filter {
-                        require_type(TypeId::BOOL, f.extra)?;
-                    }
-                    let key = this.convert_clause(body.key)?;
-                    require_map_key_type(key.extra)?;
-                    let value = this.convert_clause(body.value)?;
-
-                    Ok((MapForComprehensionBodyNode { key, value }, filter))
-                })?;
+                let (collection, filter, body) =
+                    self.convert_for_comprehension_pre(&binding, collection, filter, |this| {
+                        let key = this.convert_clause(body.key)?;
+                        require_map_key_type(key.extra)?;
+                        let value = this.convert_clause(body.value)?;
+                        Ok(MapForComprehensionBodyNode { key, value })
+                    })?;
                 let type_id = self.environment.declare_type(&Type::Map {
                     key: body.key.extra,
                     value: body.value.extra,
@@ -1456,6 +1475,28 @@ mod tests {
             err,
             TypecheckError::DuplicateVariableDeclaration(_)
         ));
+    }
+
+    // ---------- underscore wildcard ----------
+
+    #[test]
+    fn underscore_can_be_redeclared() {
+        typecheck_str("var _ = 1; var _ = 2;").unwrap();
+    }
+
+    #[test]
+    fn underscore_destructure_binds_other_members() {
+        typecheck_str("var %(_, b) = %(1, 2); var n: number = b;").unwrap();
+    }
+
+    #[test]
+    fn underscore_for_loop_typechecks() {
+        typecheck_str("for _ in [1, 2, 3] { }").unwrap();
+    }
+
+    #[test]
+    fn underscore_reassign_typechecks() {
+        typecheck_str("_ = 1;").unwrap();
     }
 
     // ---------- fn self-binding (recursion) ----------
