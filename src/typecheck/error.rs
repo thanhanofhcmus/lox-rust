@@ -47,8 +47,7 @@ impl TypecheckError {
             let gutter = " ".repeat(line_label.len());
             let pointer = " ".repeat(col.saturating_sub(1));
             format!(
-                "\n
-                 at {source_name}{line}:{col}\n\
+                "\n  at {source_name}{line}:{col}\n\
                  {gutter} |\n\
                  {line_label} | {source_line}\n\
                  {gutter} | {pointer}^--- here"
@@ -94,7 +93,7 @@ impl TypecheckError {
             ),
 
             Self::TypeCannotBeUsedAsMapKey(type_id) => format!(
-                "The type `{}` is cannot be used as map key.",
+                "The type `{}` cannot be used as a map key.",
                 interner.generate_readable_name(ir, *type_id)
             ),
 
@@ -144,9 +143,9 @@ impl TypecheckError {
             ),
 
             Self::UnexpectedType(expected, actual) => format!(
-                "Expected type `{}`, but found `{}`.",
-                interner.generate_readable_name(ir, *expected),
-                interner.generate_readable_name(ir, *actual)
+                "Unexpected type `{}`, expected `{}`.",
+                interner.generate_readable_name(ir, *actual),
+                interner.generate_readable_name(ir, *expected)
             ),
 
             Self::UndefinedVariableIdentifier(node) => {

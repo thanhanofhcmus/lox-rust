@@ -197,6 +197,7 @@ impl<'cl> TypeChecker<'cl> {
             }
             TypeNode::Map { key, value } => {
                 let key_type_id = self.extract_type_node_id(key)?;
+                require_map_key_type(key_type_id)?;
                 let value_type_id = self.extract_type_node_id(value)?;
                 Ok(self.environment.declare_type(&Type::Map {
                     key: key_type_id,
