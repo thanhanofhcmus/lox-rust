@@ -6,9 +6,7 @@ use crate::id::Id;
 use crate::interpret::heap::GcHandle;
 
 use crate::identifier_registry::{Identifier, IdentifierRegistry};
-use crate::interpret::values::{
-    BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple,
-};
+use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple};
 use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
@@ -212,8 +210,8 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let content = std::fs::read_to_string(file_path)
             .map_err(|err| InterpretError::ReadModuleFailed(name.clone(), path.clone(), err))?;
 
-        let tokens = parse::lex(&content)
-            .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
+        let tokens =
+            parse::lex(&content).map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
         // TODO: fix should_eval_string in parser, current always set to true
         let untyped = parse::parse(&content, &tokens, self.identifier_registry, true)
@@ -223,9 +221,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let mut tc_env = crate::typecheck::Environment::new();
         let module_ast = crate::typecheck::TypeChecker::new(&mut tc_env)
             .convert(untyped)
-            .map_err(|err| {
-                InterpretError::TypeCheckModuleFailed(name.clone(), path.clone(), err)
-            })?;
+            .map_err(|err| InterpretError::TypeCheckModuleFailed(name.clone(), path.clone(), err))?;
 
         // interpret the file
         // we will kind of need to keep track of the current module stack
@@ -262,22 +258,14 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     }
 
     fn insert_variable(&mut self, iden: Identifier, value: Value) -> Result<(), InterpretError> {
-        if self
-            .environment
-            .get_variable_current_scope(iden.id)
-            .is_some()
-        {
+        if self.environment.get_variable_current_scope(iden.id).is_some() {
             return Err(InterpretError::ReDeclareVariable(iden));
         }
         _ = self.environment.insert_variable(iden.id, value);
         Ok(())
     }
 
-    fn interpret_binding(
-        &mut self,
-        binding: &DeclareBindingNode,
-        value: Value,
-    ) -> Result<(), InterpretError> {
+    fn interpret_binding(&mut self, binding: &DeclareBindingNode, value: Value) -> Result<(), InterpretError> {
         match binding {
             DeclareBindingNode::Identifier(iden) => self.insert_variable(*iden, value)?,
             DeclareBindingNode::Tuple { members } => {
@@ -299,10 +287,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(())
     }
 
-    fn interpret_declare_stmt(
-        &mut self,
-        node: &DeclareStatementNode<TypeId>,
-    ) -> Result<ValueReturn, InterpretError> {
+    fn interpret_declare_stmt(&mut self, node: &DeclareStatementNode<TypeId>) -> Result<ValueReturn, InterpretError> {
         let res = self.interpret_expr(&node.expr)?;
         if res.should_bubble_up {
             return Ok(res);
@@ -331,13 +316,10 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
 
         // evaluate subscription index expressions; member steps pass through
-        let mut reassign_chain_steps: Vec<ChainStep<Value>> =
-            Vec::with_capacity(node.follows.len());
+        let mut reassign_chain_steps: Vec<ChainStep<Value>> = Vec::with_capacity(node.follows.len());
         for step in &node.follows {
             let chain_step = match step {
-                ChainStep::Subscription(clause) => {
-                    ChainStep::Subscription(self.interpret_clause_expr(clause)?)
-                }
+                ChainStep::Subscription(clause) => ChainStep::Subscription(self.interpret_clause_expr(clause)?),
                 ChainStep::Member(field_iden) => ChainStep::Member(*field_iden),
             };
             reassign_chain_steps.push(chain_step);
@@ -345,8 +327,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
         let iden = &node.base;
 
-        let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden)
-        else {
+        let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden) else {
             return Err(InterpretError::NotFoundVariable(*iden));
         };
         if is_readonly {
@@ -363,9 +344,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 )?;
                 self.environment.replace_variable(iden.id, new_root_value)
             }
-            None => self
-                .environment
-                .replace_variable(iden.id, reassigning_value),
+            None => self.environment.replace_variable(iden.id, reassigning_value),
         };
 
         Ok(ValueReturn::none())
@@ -394,10 +373,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(ValueReturn::new(value).should_bubble_up())
     }
 
-    fn interpret_block_node(
-        &mut self,
-        node: &BlockNode<TypeId>,
-    ) -> Result<ValueReturn, InterpretError> {
+    fn interpret_block_node(&mut self, node: &BlockNode<TypeId>) -> Result<ValueReturn, InterpretError> {
         self.with_scope(false, |this| {
             for stmt in &node.stmts {
                 let res = this.interpret_stmt(stmt)?;
@@ -477,10 +453,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(ValueReturn::none())
     }
 
-    fn interpret_if_chain_expr(
-        &mut self,
-        node: &IfChainNode<TypeId>,
-    ) -> Result<ValueReturn, InterpretError> {
+    fn interpret_if_chain_expr(&mut self, node: &IfChainNode<TypeId>) -> Result<ValueReturn, InterpretError> {
         if self.is_truthy(&node.if_node.cond)? {
             return self.interpret_block_node(&node.if_node.stmts);
         }
@@ -495,10 +468,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(ValueReturn::none())
     }
 
-    fn interpret_clause_expr(
-        &mut self,
-        node: &ClauseNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_clause_expr(&mut self, node: &ClauseNode<TypeId>) -> Result<Value, InterpretError> {
         match &node.case {
             ClauseCase::Unary(node, op) => self.interpret_unary_op(node, *op),
             ClauseCase::Binary(node) => self.interpret_binary_op(node),
@@ -515,10 +485,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
     }
 
-    fn interpret_raw_value_node(
-        &mut self,
-        node: &RawValueNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_raw_value_node(&mut self, node: &RawValueNode<TypeId>) -> Result<Value, InterpretError> {
         let val = match node {
             RawValueNode::Scalar(node) => self.interpret_scalar_expr(node),
             RawValueNode::ArrayLiteral(node) => self.interpret_array_literal(node)?,
@@ -548,10 +515,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
     }
 
-    fn interpret_array_literal(
-        &mut self,
-        node: &ArrayLiteralNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_array_literal(&mut self, node: &ArrayLiteralNode<TypeId>) -> Result<Value, InterpretError> {
         match node {
             ArrayLiteralNode::List(clauses) => {
                 let mut arr = Vec::with_capacity(clauses.len());
@@ -589,10 +553,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(Some(value))
     }
 
-    fn interpret_map_literal(
-        &mut self,
-        node: &MapLiteralNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_map_literal(&mut self, node: &MapLiteralNode<TypeId>) -> Result<Value, InterpretError> {
         match node {
             MapLiteralNode::List(elems) => {
                 let mut map = Map::new();
@@ -605,10 +566,9 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
                 Ok(self.environment.insert_map_variable(map))
             }
             MapLiteralNode::ForComprehension(node) => {
-                let entries =
-                    self.for_comprehension_iter(&node.binding, &node.collection, |this| {
-                        this.interpret_map_literal_comprehension_inner(node)
-                    })?;
+                let entries = self.for_comprehension_iter(&node.binding, &node.collection, |this| {
+                    this.interpret_map_literal_comprehension_inner(node)
+                })?;
                 let mut map = Map::new();
                 for (k, v) in entries {
                     map.insert(k, v);
@@ -634,10 +594,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(Some((map_key, map_value)))
     }
 
-    fn interpret_tuple_literal(
-        &mut self,
-        node: &TupleLiteralNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_tuple_literal(&mut self, node: &TupleLiteralNode<TypeId>) -> Result<Value, InterpretError> {
         let members = node
             .members
             .iter()
@@ -646,10 +603,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Ok(self.environment.insert_tuple_variable(Tuple { members }))
     }
 
-    fn interpret_struct_literal(
-        &mut self,
-        node: &StructLiteralNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_struct_literal(&mut self, node: &StructLiteralNode<TypeId>) -> Result<Value, InterpretError> {
         let id = node.iden.id;
         // compare field type with actual value
         let mut fields = HashMap::new();
@@ -671,19 +625,13 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }))
     }
 
-    fn interpret_subscription(
-        &mut self,
-        node: &SubscriptionNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_subscription(&mut self, node: &SubscriptionNode<TypeId>) -> Result<Value, InterpretError> {
         let indexer = self.interpret_clause_expr(&node.indexer)?;
         let indexee = self.interpret_clause_expr(&node.indexee)?;
         indexer.get_by_chain_step(ChainStep::Subscription(indexee), self.environment)
     }
 
-    fn interpret_member_access(
-        &mut self,
-        node: &MemberAccessNode<TypeId>,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_member_access(&mut self, node: &MemberAccessNode<TypeId>) -> Result<Value, InterpretError> {
         let value = self.interpret_clause_expr(&node.object)?;
         value.get_by_chain_step(ChainStep::Member(node.member), self.environment)
     }
@@ -692,9 +640,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let value = self.interpret_clause_expr(&node.caller)?;
         match value {
             Value::Function(handle) => self.interpret_normal_fn_call_expr(handle, &node.args),
-            Value::BuiltinFunction(function) => {
-                self.interpret_builtin_fn_call_expr(function, &node.args)
-            }
+            Value::BuiltinFunction(function) => self.interpret_builtin_fn_call_expr(function, &node.args),
             _ => Err(InterpretError::ValueNotCallable(value)),
         }
     }
@@ -755,11 +701,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         function(&mut prelude_context, args)
     }
 
-    fn interpret_unary_op(
-        &mut self,
-        node: &ClauseNode<TypeId>,
-        op: Token,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_unary_op(&mut self, node: &ClauseNode<TypeId>, op: Token) -> Result<Value, InterpretError> {
         let res = self.interpret_clause_expr(node)?;
         match op {
             Token::Not => match res.get_bool() {
@@ -785,9 +727,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         match op {
             Token::Plus => self.interpret_add(lhs_val, rhs_val),
             Token::And | Token::Or => and_or(lhs_val, op, rhs_val),
-            Token::Minus | Token::Star | Token::Slash | Token::Percentage => {
-                binary_number(lhs_val, op, rhs_val)
-            }
+            Token::Minus | Token::Star | Token::Slash | Token::Percentage => binary_number(lhs_val, op, rhs_val),
             Token::EqualEqual | Token::BangEqual => {
                 let cmp = lhs_val.deep_eq(&rhs_val, self.environment)?;
                 let ret = cmp == (op == Token::EqualEqual);
@@ -800,10 +740,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
     }
 
-    fn interpret_when_expr(
-        &mut self,
-        node: &WhenNode<TypeId>,
-    ) -> Result<ValueReturn, InterpretError> {
+    fn interpret_when_expr(&mut self, node: &WhenNode<TypeId>) -> Result<ValueReturn, InterpretError> {
         for WhenArmNode { cond, expr } in &node.arms {
             if self.is_truthy(cond)? {
                 return self.interpret_clause_expr(expr).map(ValueReturn::new);
@@ -814,26 +751,17 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
 
     fn interpret_add(&mut self, lhs: Value, rhs: Value) -> Result<Value, InterpretError> {
         match (lhs, rhs) {
-            (Value::Scalar(Scalar::Number(l)), Value::Scalar(Scalar::Number(r))) => {
-                Ok(Value::make_number(l + r))
-            }
+            (Value::Scalar(Scalar::Number(l)), Value::Scalar(Scalar::Number(r))) => Ok(Value::make_number(l + r)),
             (Value::Str(l_id), Value::Str(r_id)) => {
                 let l_str = self.environment.get_string(l_id)?;
                 let r_str = self.environment.get_string(r_id)?;
-                Ok(self
-                    .environment
-                    .insert_string_variable(l_str.to_owned() + r_str))
+                Ok(self.environment.insert_string_variable(l_str.to_owned() + r_str))
             }
             _ => Err(InterpretError::MismatchType(Token::Plus, lhs, rhs)),
         }
     }
 
-    fn interpret_ordering(
-        &mut self,
-        lhs: Value,
-        op: Token,
-        rhs: Value,
-    ) -> Result<Value, InterpretError> {
+    fn interpret_ordering(&mut self, lhs: Value, op: Token, rhs: Value) -> Result<Value, InterpretError> {
         let from_ord = |o: std::cmp::Ordering| match op {
             Token::Less => Ok(Value::make_bool(o.is_lt())),
             Token::LessEqual => Ok(Value::make_bool(o.is_le())),

@@ -18,10 +18,7 @@ impl Span {
     }
 
     pub fn two(start: usize) -> Self {
-        Span {
-            start,
-            end: start + 1,
-        }
+        Span { start, end: start + 1 }
     }
 
     pub fn str_from_source<'a>(&self, input: &'a str) -> &'a str {

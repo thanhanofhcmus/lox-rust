@@ -25,23 +25,20 @@ pub enum ParseError {
     #[error("Unexpected End of File (EOF): {}", format_expected(.0))]
     Eof(Option<Token>),
 
-    #[error(
-        "Process halted: The parser reached the end of the logic but found trailing tokens starting with `{0}`."
-    )]
+    #[error("Process halted: The parser reached the end of the logic but found trailing tokens starting with `{0}`.")]
     Unfinished(Token, Span),
 
     #[error("Assignment error: The left-hand side of a reassignment must be a valid identifier.")]
     ReassignRootIsNotAnIdentifier,
 
-    #[error(
-        "Parser recursion limit ({0}) exceeded — expression is nested too deeply to parse safely."
-    )]
+    #[error("Parser recursion limit ({0}) exceeded — expression is nested too deeply to parse safely.")]
     RecursionLimitExceeded(usize),
 
-    #[error(
-        "Invalid map key type: only `any`, `bool`, `number`, `str`, and `nil` are allowed as map keys."
-    )]
+    #[error("Invalid map key type: only `any`, `bool`, `number`, `str`, and `nil` are allowed as map keys.")]
     InvalidMapKeyType(Span),
+
+    #[error("Import path must have a package name before a colon")]
+    ImportPathDoesNotHavePackage(Span),
 }
 
 impl ParseError {
@@ -55,6 +52,7 @@ impl ParseError {
             | ParseToNumber(s)
             | UnexpectedReturn(s)
             | Unfinished(_, s)
+            | ImportPathDoesNotHavePackage(s)
             | InvalidMapKeyType(s) => s.to_start_row_col(input),
             Eof(_) | ReassignRootIsNotAnIdentifier | RecursionLimitExceeded(_) => (0, 0),
         }
@@ -84,10 +82,7 @@ impl ParseError {
         // Code snippet visualization
         output.push_str(&format!("{} |\n", gutter_padding));
         output.push_str(&format!("{} | {}\n", line_label, source_line));
-        output.push_str(&format!(
-            "{} | {}{}\n",
-            gutter_padding, pointer_indent, "^--- here"
-        ));
+        output.push_str(&format!("{} | {}{}\n", gutter_padding, pointer_indent, "^--- here"));
 
         output
     }

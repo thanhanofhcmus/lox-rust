@@ -7,9 +7,7 @@ use crate::interpret::{
     values::{DisplayWriter, Value, number::Number},
 };
 
-#[derive(
-    derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Scalar {
     Nil,

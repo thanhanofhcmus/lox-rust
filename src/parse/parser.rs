@@ -47,10 +47,7 @@ pub fn parse(
         global_stmts.push(stmt);
     }
     match state.get_curr() {
-        Err(_) => Ok(AST {
-            imports,
-            global_stmts,
-        }),
+        Err(_) => Ok(AST { imports, global_stmts }),
         Ok(li) => Err(ParseError::Unfinished(li.token, li.span)),
     }
 }
@@ -58,17 +55,25 @@ pub fn parse(
 fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
     // an import statement shape
     // import "self:relative/path/core.lox" as core;
-    // import "std:collection/array" as array;
+    // import "std:collection/array.lox" as array;
     // import "thirdparty:http/request" as request;
 
     state.consume_token(Token::Import)?;
     let path_li = state.consume_token(Token::String)?;
     let s = path_li.span.str_from_source(state.get_input());
 
-    // TODO: check if colon is at the start, end or not found
-    let colon_pos = s.find(':').unwrap();
-    let package_span = Span::new(path_li.span.start + 1, colon_pos - 1);
-    let path_span = Span::new(colon_pos - 1, path_li.span.end - 1);
+    let colon_pos = s
+        .find(':')
+        .ok_or(ParseError::ImportPathDoesNotHavePackage(path_li.span))?;
+
+    let package_start = path_li.span.start + 1;
+    let package_end = package_start + colon_pos;
+
+    let path_start = package_end + 1;
+    let path_end = path_li.span.end - 1;
+
+    let package_span = Span::new(package_start, package_end);
+    let path_span = Span::new(path_start, path_end);
 
     state.consume_token(Token::As)?;
     let iden_li = state.consume_token(Token::Identifier)?;
@@ -126,9 +131,7 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
             let key = parse_type_node(state)?;
             if !matches!(
                 &key,
-                TypeNode::BuiltIn(
-                    TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL
-                )
+                TypeNode::BuiltIn(TypeId::ANY | TypeId::BOOL | TypeId::NUMBER | TypeId::STR | TypeId::NIL)
             ) {
                 return Err(ParseError::InvalidMapKeyType(key_start));
             }
@@ -142,12 +145,7 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
         }
         // Tuple
         Token::PercentLRoundParen => {
-            let members = parse_comma_list(
-                state,
-                Token::PercentLRoundParen,
-                Token::RRoundParen,
-                parse_type_node,
-            )?;
+            let members = parse_comma_list(state, Token::PercentLRoundParen, Token::RRoundParen, parse_type_node)?;
             Ok(TypeNode::Tuple { members })
         }
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
@@ -171,12 +169,7 @@ fn parse_struct_field_node(state: &mut Context) -> Result<StructFieldNode, Parse
 fn parse_struct_decl(state: &mut Context) -> Result<StructDeclNode, ParseError> {
     state.consume_token(Token::Struct)?;
     let li = state.consume_token(Token::Identifier)?;
-    let fields = parse_comma_list(
-        state,
-        Token::LPointParen,
-        Token::RPointParen,
-        parse_struct_field_node,
-    )?;
+    let fields = parse_comma_list(state, Token::LPointParen, Token::RPointParen, parse_struct_field_node)?;
     Ok(StructDeclNode {
         iden: state.create_identifier(li),
         fields,
@@ -231,9 +224,7 @@ fn parse_binding_node(state: &mut Context) -> Result<DeclareBindingNode, ParseEr
         Token::Identifier => {
             // TODO: parse struct deconstruction
             let id_item = state.consume_token(Token::Identifier)?;
-            Ok(DeclareBindingNode::Identifier(
-                state.create_identifier(id_item),
-            ))
+            Ok(DeclareBindingNode::Identifier(state.create_identifier(id_item)))
         }
         Token::PercentLRoundParen => {
             let members = parse_comma_list(
@@ -354,10 +345,7 @@ fn parse_if(state: &mut Context) -> Result<Expression<()>, ParseError> {
             let cond = parse_clause_node(state)?;
             state.allow_struct_literal = true;
             let if_stmts = parse_block_node(state)?;
-            else_if_nodes.push(ElseIfNode {
-                cond,
-                stmts: if_stmts,
-            });
+            else_if_nodes.push(ElseIfNode { cond, stmts: if_stmts });
         } else {
             else_stmts = Some(parse_block_node(state)?);
             break;
@@ -365,10 +353,7 @@ fn parse_if(state: &mut Context) -> Result<Expression<()>, ParseError> {
     }
 
     Ok(Expression::new(ExprCase::IfChain(IfChainNode {
-        if_node: ElseIfNode {
-            cond,
-            stmts: if_stmts,
-        },
+        if_node: ElseIfNode { cond, stmts: if_stmts },
         else_if_nodes,
         else_stmts,
     })))
@@ -376,12 +361,7 @@ fn parse_if(state: &mut Context) -> Result<Expression<()>, ParseError> {
 
 fn parse_when(state: &mut Context) -> Result<Expression<()>, ParseError> {
     state.consume_token(Token::When)?;
-    let arms = parse_comma_list(
-        state,
-        Token::LPointParen,
-        Token::RPointParen,
-        parse_when_arm,
-    )?;
+    let arms = parse_comma_list(state, Token::LPointParen, Token::RPointParen, parse_when_arm)?;
     Ok(Expression::new(ExprCase::When(WhenNode { arms })))
 }
 
@@ -438,10 +418,7 @@ fn parse_pratt(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode<(
     result
 }
 
-fn parse_pratt_inner(
-    state: &mut Context,
-    min_bp: BindingPower,
-) -> Result<ClauseNode<()>, ParseError> {
+fn parse_pratt_inner(state: &mut Context, min_bp: BindingPower) -> Result<ClauseNode<()>, ParseError> {
     let mut lhs = parse_pratt_prefix(state)?;
 
     loop {
@@ -475,30 +452,22 @@ fn parse_pratt_infix(
             match member_li.token {
                 Token::Identifier => {
                     let field_iden = state.create_identifier(member_li);
-                    Ok(ClauseNode::new(ClauseCase::MemberAccess(
-                        MemberAccessNode {
-                            object: Box::new(lhs),
-                            member: MemberNode::StructField(field_iden),
-                        },
-                    )))
+                    Ok(ClauseNode::new(ClauseCase::MemberAccess(MemberAccessNode {
+                        object: Box::new(lhs),
+                        member: MemberNode::StructField(field_iden),
+                    })))
                 }
                 Token::WholeNumber => {
                     let source = member_li.span.str_from_source(state.get_input());
                     let index = source
                         .parse::<usize>()
                         .map_err(|_| ParseError::ParseToNumber(member_li.span))?;
-                    Ok(ClauseNode::new(ClauseCase::MemberAccess(
-                        MemberAccessNode {
-                            object: Box::new(lhs),
-                            member: MemberNode::TupleIndex(index),
-                        },
-                    )))
+                    Ok(ClauseNode::new(ClauseCase::MemberAccess(MemberAccessNode {
+                        object: Box::new(lhs),
+                        member: MemberNode::TupleIndex(index),
+                    })))
                 }
-                _ => Err(ParseError::UnexpectedToken(
-                    member_li.token,
-                    member_li.span,
-                    None,
-                )),
+                _ => Err(ParseError::UnexpectedToken(member_li.token, member_li.span, None)),
             }
         }
         // Subscription call
@@ -506,12 +475,10 @@ fn parse_pratt_infix(
             state.consume_token(li.token)?;
             let indexee = parse_clause_node(state)?;
             state.consume_token(Token::RSquareParen)?;
-            Ok(ClauseNode::new(ClauseCase::Subscription(
-                SubscriptionNode {
-                    indexer: Box::new(lhs),
-                    indexee: Box::new(indexee),
-                },
-            )))
+            Ok(ClauseNode::new(ClauseCase::Subscription(SubscriptionNode {
+                indexer: Box::new(lhs),
+                indexee: Box::new(indexee),
+            })))
         }
         // function call
         Token::LRoundParen => {
@@ -566,18 +533,12 @@ fn parse_unary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     }
 }
 
-fn parse_recursive_unary(
-    state: &mut Context,
-    match_token: Token,
-) -> Result<ClauseNode<()>, ParseError> {
+fn parse_recursive_unary(state: &mut Context, match_token: Token) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr()?;
     if li.token == match_token {
         state.advance();
         let expr = parse_recursive_unary(state, match_token)?;
-        Ok(ClauseNode::new(ClauseCase::Unary(
-            Box::new(expr),
-            match_token,
-        )))
+        Ok(ClauseNode::new(ClauseCase::Unary(Box::new(expr), match_token)))
     } else {
         parse_primary(state)
     }
@@ -588,8 +549,7 @@ fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
         // Struct literal: `Name { field = value }`.
         // Only attempted when the context allows it (disabled in if/while/for conditions
         // to avoid ambiguity with block expressions — same restriction as Rust).
-        let is_struct_literal =
-            state.allow_struct_literal && state.peek_2_token(&[Token::LPointParen]);
+        let is_struct_literal = state.allow_struct_literal && state.peek_2_token(&[Token::LPointParen]);
         if is_struct_literal {
             let node = parse_struct_literal_node(state)?;
             ClauseCase::RawValue(RawValueNode::StructLiteral(node))
@@ -618,9 +578,7 @@ fn parse_raw_value_node(state: &mut Context) -> Result<RawValueNode<()>, ParseEr
         | Token::String
         | Token::RawString => parse_scalar_node(state).map(RawValueNode::Scalar),
         Token::LSquareParen => parse_array_literal_node(state).map(RawValueNode::ArrayLiteral),
-        Token::PercentLRoundParen => {
-            parse_tuple_literal_node(state).map(RawValueNode::TupleLiteral)
-        }
+        Token::PercentLRoundParen => parse_tuple_literal_node(state).map(RawValueNode::TupleLiteral),
         Token::PercentLPointParent => parse_map_literal_node(state).map(RawValueNode::MapLiteral),
         Token::Fn => parse_function_decl(state).map(RawValueNode::FnDecl),
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
@@ -644,9 +602,7 @@ fn parse_scalar_node(state: &mut Context) -> Result<ScalarNode, ParseError> {
     }
 }
 
-fn parse_struct_field_literal_node(
-    state: &mut Context,
-) -> Result<StructLiteralFieldNode<()>, ParseError> {
+fn parse_struct_field_literal_node(state: &mut Context) -> Result<StructLiteralFieldNode<()>, ParseError> {
     let li = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Equal)?;
     let value = parse_clause_node(state)?;
@@ -712,10 +668,7 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
         state.consume_token(Token::Colon)?;
         let repeat = parse_clause_node(state)?;
         state.consume_token(Token::RSquareParen)?;
-        Ok(ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode {
-            repeat,
-            value,
-        })))
+        Ok(ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode { repeat, value })))
     // [for a in b: c]
     } else if state.peek_2_token(&[Token::For]) {
         state.consume_token(Token::LSquareParen)?;
@@ -731,12 +684,7 @@ fn parse_array_literal_node(state: &mut Context) -> Result<ArrayLiteralNode<()>,
             },
         )))
     } else {
-        let exprs = parse_comma_list(
-            state,
-            Token::LSquareParen,
-            Token::RSquareParen,
-            parse_clause_node,
-        )?;
+        let exprs = parse_comma_list(state, Token::LSquareParen, Token::RSquareParen, parse_clause_node)?;
         Ok(ArrayLiteralNode::List(exprs))
     }
 }
@@ -749,17 +697,15 @@ fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode<()>, Par
         state.consume_token(Token::RFatArrow)?;
         let value_body = parse_clause_node(state)?;
         state.consume_token(Token::RPointParen)?;
-        Ok(MapLiteralNode::ForComprehension(Box::new(
-            MapForComprehensionNode {
-                binding: for_part.binding,
-                collection: for_part.collection,
-                filter: for_part.filter,
-                body: MapForComprehensionBodyNode {
-                    key: key_body,
-                    value: value_body,
-                },
+        Ok(MapLiteralNode::ForComprehension(Box::new(MapForComprehensionNode {
+            binding: for_part.binding,
+            collection: for_part.collection,
+            filter: for_part.filter,
+            body: MapForComprehensionBodyNode {
+                key: key_body,
+                value: value_body,
             },
-        )))
+        })))
     } else {
         let nodes = parse_comma_list(
             state,
@@ -772,18 +718,11 @@ fn parse_map_literal_node(state: &mut Context) -> Result<MapLiteralNode<()>, Par
 }
 
 fn parse_tuple_literal_node(state: &mut Context) -> Result<TupleLiteralNode<()>, ParseError> {
-    let members = parse_comma_list(
-        state,
-        Token::PercentLRoundParen,
-        Token::RRoundParen,
-        parse_clause_node,
-    )?;
+    let members = parse_comma_list(state, Token::PercentLRoundParen, Token::RRoundParen, parse_clause_node)?;
     Ok(TupleLiteralNode { members })
 }
 
-fn parse_map_literal_element_node(
-    state: &mut Context,
-) -> Result<MapLiteralKVElemNode<()>, ParseError> {
+fn parse_map_literal_element_node(state: &mut Context) -> Result<MapLiteralKVElemNode<()>, ParseError> {
     let key = parse_scalar_node(state)?;
     state.consume_token(Token::RFatArrow)?;
     let value = parse_clause_node(state)?;
@@ -792,12 +731,7 @@ fn parse_map_literal_element_node(
 
 fn parse_function_decl(state: &mut Context) -> Result<FnDeclNode<()>, ParseError> {
     state.consume_token(Token::Fn)?;
-    let params = parse_comma_list(
-        state,
-        Token::LRoundParen,
-        Token::RRoundParen,
-        parse_fn_param,
-    )?;
+    let params = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_fn_param)?;
 
     let return_type = if state.peek(&[Token::RThinArrow]) {
         // TODO: consider if we have type annotation, do not allow  single expr form
@@ -894,11 +828,7 @@ where
         }
 
         if !has_consumed_separator {
-            return Err(ParseError::UnexpectedToken(
-                li.token,
-                li.span,
-                Some(separator),
-            ));
+            return Err(ParseError::UnexpectedToken(li.token, li.span, Some(separator)));
         }
 
         let expr = lower_fn(state)?;
@@ -926,8 +856,7 @@ where
     F: Fn(&mut Context) -> Result<T, ParseError>,
 {
     state.consume_token(left_paren)?;
-    let result =
-        parse_repeated_with_separator(state, Token::Comma, lower_fn, |t| t == right_paren)?;
+    let result = parse_repeated_with_separator(state, Token::Comma, lower_fn, |t| t == right_paren)?;
     state.consume_token(right_paren)?;
     Ok(result)
 }
@@ -1150,19 +1079,13 @@ mod tests {
     #[test]
     fn parse_unary_minus() {
         let ast = parse_str("-x;");
-        assert!(matches!(
-            first_clause(&ast),
-            ClauseCase::Unary(_, Token::Minus)
-        ));
+        assert!(matches!(first_clause(&ast), ClauseCase::Unary(_, Token::Minus)));
     }
 
     #[test]
     fn parse_unary_not() {
         let ast = parse_str("not true;");
-        assert!(matches!(
-            first_clause(&ast),
-            ClauseCase::Unary(_, Token::Not)
-        ));
+        assert!(matches!(first_clause(&ast), ClauseCase::Unary(_, Token::Not)));
     }
 
     #[test]
@@ -1183,8 +1106,7 @@ mod tests {
         let ast = parse_str("var x = 5;");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => {
                 assert_eq!(*type_, None);
             }
@@ -1197,8 +1119,7 @@ mod tests {
         let ast = parse_str("var x: number = 5;");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => {
                 assert_eq!(*type_, Some(TypeNode::BuiltIn(TypeId::NUMBER)));
             }
@@ -1211,8 +1132,7 @@ mod tests {
         let ast = parse_str("var x: any = 5;");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => {
                 assert_eq!(*type_, Some(TypeNode::BuiltIn(TypeId::ANY)));
             }
@@ -1225,8 +1145,7 @@ mod tests {
         let ast = parse_str("var x: bool = true;");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => {
                 assert_eq!(*type_, Some(TypeNode::BuiltIn(TypeId::BOOL)));
             }
@@ -1239,8 +1158,7 @@ mod tests {
         let ast = parse_str("var a: [number] = [];");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => match type_ {
                 Some(TypeNode::Array(inner)) => {
                     assert_eq!(**inner, TypeNode::BuiltIn(TypeId::NUMBER));
@@ -1256,8 +1174,7 @@ mod tests {
         let ast = parse_str("var a: [any] = [];");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => match type_ {
                 Some(TypeNode::Array(inner)) => {
                     assert_eq!(**inner, TypeNode::BuiltIn(TypeId::ANY));
@@ -1273,8 +1190,7 @@ mod tests {
         let ast = parse_str("var a: [[number]] = [];");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => match type_ {
                 Some(TypeNode::Array(outer)) => match outer.as_ref() {
                     TypeNode::Array(inner) => {
@@ -1293,8 +1209,7 @@ mod tests {
         let ast = parse_str("var a: [%{str => number}] = [];");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => match type_ {
                 Some(TypeNode::Array(outer)) => match outer.as_ref() {
                     TypeNode::Map { key, value } => {
@@ -1333,8 +1248,7 @@ mod tests {
         let ast = parse_str("var m: %{str => number} = %{};");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => match type_ {
                 Some(TypeNode::Map { key, value }) => {
                     assert_eq!(**key, TypeNode::BuiltIn(TypeId::STR));
@@ -1351,8 +1265,7 @@ mod tests {
         let ast = parse_str("var m: %{any => any} = %{};");
         match first_stmt(&ast) {
             Statement::Declare(DeclareStatementNode {
-                explicit_type: type_,
-                ..
+                explicit_type: type_, ..
             }) => match type_ {
                 Some(TypeNode::Map { key, value }) => {
                     assert_eq!(**key, TypeNode::BuiltIn(TypeId::ANY));
@@ -1698,8 +1611,7 @@ mod tests {
         let ast = parse_str("for x in items { 1 }");
         match first_stmt(&ast) {
             Statement::Expr(Expression {
-                case: ExprCase::For(f),
-                ..
+                case: ExprCase::For(f), ..
             }) => match &f.collection.case {
                 ClauseCase::Identifier(_) => {}
                 other => panic!("expected Identifier in for collection, got {other:?}"),

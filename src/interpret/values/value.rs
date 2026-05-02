@@ -140,9 +140,7 @@ impl Value {
 
             // 2 functions are considered equals if they point to the same `blueprint`
             (Value::Function(l), Value::Function(r)) => Ok(l == r),
-            (Value::BuiltinFunction(l), Value::BuiltinFunction(r)) => {
-                Ok(std::ptr::fn_addr_eq(*l, *r))
-            }
+            (Value::BuiltinFunction(l), Value::BuiltinFunction(r)) => Ok(std::ptr::fn_addr_eq(*l, *r)),
 
             (Array(l_handle), Array(r_handle)) => {
                 if l_handle == r_handle {
@@ -223,16 +221,10 @@ impl Value {
         }
     }
 
-    pub fn get_by_chain_step(
-        &self,
-        step: ChainStep<Value>,
-        env: &Environment,
-    ) -> Result<Value, InterpretError> {
+    pub fn get_by_chain_step(&self, step: ChainStep<Value>, env: &Environment) -> Result<Value, InterpretError> {
         let Some(handle) = self.get_handle() else {
             return Err(match step {
-                ChainStep::Member(member) => {
-                    InterpretError::MemberAccessOnInvalidType(*self, member)
-                }
+                ChainStep::Member(member) => InterpretError::MemberAccessOnInvalidType(*self, member),
                 ChainStep::Subscription(_) => InterpretError::ValueUnIndexable(*self),
             });
         };
@@ -421,23 +413,14 @@ mod tests {
 
     #[test]
     fn make_bool_builds_scalar_bool() {
-        assert!(matches!(
-            Value::make_bool(true),
-            Value::Scalar(Scalar::Bool(true))
-        ));
-        assert!(matches!(
-            Value::make_bool(false),
-            Value::Scalar(Scalar::Bool(false))
-        ));
+        assert!(matches!(Value::make_bool(true), Value::Scalar(Scalar::Bool(true))));
+        assert!(matches!(Value::make_bool(false), Value::Scalar(Scalar::Bool(false))));
     }
 
     #[test]
     fn make_number_builds_scalar_number() {
         let v = Value::make_number(Number::Integer(42));
-        assert!(matches!(
-            v,
-            Value::Scalar(Scalar::Number(Number::Integer(42)))
-        ));
+        assert!(matches!(v, Value::Scalar(Scalar::Number(Number::Integer(42)))));
     }
 
     // ---------- get_bool ----------
@@ -482,11 +465,7 @@ mod tests {
     fn get_handle_on_non_handle_returns_none() {
         assert!(Value::make_nil().get_handle().is_none());
         assert!(Value::make_bool(true).get_handle().is_none());
-        assert!(
-            Value::make_number(Number::Integer(0))
-                .get_handle()
-                .is_none()
-        );
+        assert!(Value::make_number(Number::Integer(0)).get_handle().is_none());
         // Unit and BuiltinFunction are also non-handle
         assert!(Value::Unit.get_handle().is_none());
     }
@@ -495,10 +474,7 @@ mod tests {
 
     #[test]
     fn to_index_non_negative_integer_ok() {
-        assert_eq!(
-            Value::make_number(Number::Integer(5)).to_index().unwrap(),
-            5
-        );
+        assert_eq!(Value::make_number(Number::Integer(5)).to_index().unwrap(), 5);
     }
 
     #[test]
@@ -508,21 +484,12 @@ mod tests {
 
     #[test]
     fn to_index_non_integer_float_errors() {
-        assert!(
-            Value::make_number(Number::Floating(2.5))
-                .to_index()
-                .is_err()
-        );
+        assert!(Value::make_number(Number::Floating(2.5)).to_index().is_err());
     }
 
     #[test]
     fn to_index_integer_valued_float_ok() {
-        assert_eq!(
-            Value::make_number(Number::Floating(7.0))
-                .to_index()
-                .unwrap(),
-            7
-        );
+        assert_eq!(Value::make_number(Number::Floating(7.0)).to_index().unwrap(), 7);
     }
 
     #[test]

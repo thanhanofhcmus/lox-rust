@@ -83,9 +83,7 @@ impl TryInto<usize> for Number {
         let err = InterpretError::ValueMustBeUsize(Value::make_number(self));
         match self {
             Self::Integer(i) if i >= 0 => usize::try_from(i).map_err(|_| err),
-            Self::Floating(v) if v >= 0.0 && v.fract() == 0.0 && v <= usize::MAX as f64 => {
-                Ok(v as usize)
-            }
+            Self::Floating(v) if v >= 0.0 && v.fract() == 0.0 && v <= usize::MAX as f64 => Ok(v as usize),
             _ => Err(err),
         }
     }

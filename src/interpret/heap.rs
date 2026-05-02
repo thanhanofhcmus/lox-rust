@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    ops::{AddAssign, SubAssign},
-};
+use std::{collections::HashMap, ops::AddAssign};
 
 use crate::{
     ast::{ChainStep, MemberNode},
@@ -102,11 +99,7 @@ impl GcObject {
         }
     }
 
-    pub fn replace_at_chain_step(
-        &mut self,
-        step: ChainStep<Value>,
-        new_value: Value,
-    ) -> Result<Value, InterpretError> {
+    pub fn replace_at_chain_step(&mut self, step: ChainStep<Value>, new_value: Value) -> Result<Value, InterpretError> {
         match step {
             ChainStep::Subscription(indexee) => match self {
                 GcObject::Array(arr) => {
@@ -214,10 +207,7 @@ impl Heap {
 
             if entry.is_marked_for_delete {
                 number_of_to_be_deleted_objects += 1;
-                to_be_deleted_objects_stats
-                    .entry(kind)
-                    .or_insert(0)
-                    .add_assign(1);
+                to_be_deleted_objects_stats.entry(kind).or_insert(0).add_assign(1);
             } else {
                 number_of_used_objects += 1;
             }
@@ -246,10 +236,7 @@ impl Heap {
             .filter_map(|v| v.get_str_id())
             .for_each(|id| self.string_interner.mark_to_keep(id));
 
-        let mut trace_list = root_values
-            .iter()
-            .filter_map(|v| v.get_handle())
-            .collect::<Vec<_>>();
+        let mut trace_list = root_values.iter().filter_map(|v| v.get_handle()).collect::<Vec<_>>();
 
         while let Some(handle) = trace_list.pop() {
             let Some(Some(entry)) = self.slots.get_mut(handle.0) else {
@@ -382,9 +369,7 @@ impl Heap {
         let mut current_handle = root_handle;
 
         for step in chain_steps.iter().copied() {
-            let current_value = self
-                .get_object_or_error(current_handle)?
-                .get_by_chain_step(step)?;
+            let current_value = self.get_object_or_error(current_handle)?.get_by_chain_step(step)?;
 
             let (new_handle, new_value) = self.copy_by_value(current_value)?;
 
@@ -440,14 +425,10 @@ impl Heap {
     }
 
     pub fn get_object_or_error(&self, handle: GcHandle) -> Result<&GcObject, InterpretError> {
-        self.get_object(handle)
-            .ok_or(InterpretError::GcObjectNotFound(handle))
+        self.get_object(handle).ok_or(InterpretError::GcObjectNotFound(handle))
     }
 
-    pub fn get_object_mut_or_error(
-        &mut self,
-        handle: GcHandle,
-    ) -> Result<&mut GcObject, InterpretError> {
+    pub fn get_object_mut_or_error(&mut self, handle: GcHandle) -> Result<&mut GcObject, InterpretError> {
         self.get_object_mut(handle)
             .ok_or(InterpretError::GcObjectNotFound(handle))
     }
@@ -460,11 +441,8 @@ impl Heap {
             return None;
         };
 
-        if is_increase {
-            entry.ref_count.add_assign(1);
-        } else {
-            entry.ref_count.sub_assign(1);
-        }
+        entry.ref_count =
+            if is_increase { entry.ref_count.saturating_add(1) } else { entry.ref_count.saturating_sub(1) };
 
         Some(entry)
     }
@@ -478,9 +456,7 @@ impl DebugString for HeapStats {
         writeln!(
             s,
             "GC Objects  live: {}  |  dead: {}  |  total: {}",
-            self.number_of_used_objects,
-            self.number_of_to_be_deleted_objects,
-            self.number_of_total_objects,
+            self.number_of_used_objects, self.number_of_to_be_deleted_objects, self.number_of_total_objects,
         )
         .unwrap();
         writeln!(
@@ -502,22 +478,13 @@ impl DebugString for HeapStats {
             .iter()
             .map(|k| {
                 let total = self.total_objects_stats.get(k).copied().unwrap_or(0);
-                let dead = self
-                    .to_be_deleted_objects_stats
-                    .get(k)
-                    .copied()
-                    .unwrap_or(0);
+                let dead = self.to_be_deleted_objects_stats.get(k).copied().unwrap_or(0);
                 (*k, total - dead)
             })
             .collect();
 
         writeln!(s, "Live by kind:  {}", fmt_kind(&live_by_kind)).unwrap();
-        writeln!(
-            s,
-            "Dead by kind:  {}",
-            fmt_kind(&self.to_be_deleted_objects_stats)
-        )
-        .unwrap();
+        writeln!(s, "Dead by kind:  {}", fmt_kind(&self.to_be_deleted_objects_stats)).unwrap();
 
         s
     }
@@ -528,13 +495,7 @@ impl DebugString for Heap {
         use std::fmt::Write as FmtWrite;
         let mut s = String::new();
 
-        writeln!(
-            s,
-            "Heap (slots={}, free={}):",
-            self.slots.len(),
-            self.free_list.len()
-        )
-        .unwrap();
+        writeln!(s, "Heap (slots={}, free={}):", self.slots.len(), self.free_list.len()).unwrap();
 
         for (i, slot) in self.slots.iter().enumerate() {
             let Some(entry) = slot else { continue };

@@ -19,13 +19,8 @@ pub enum TypeNode {
     BuiltIn(TypeId),
     Named(Identifier),
     Array(Box<TypeNode>),
-    Map {
-        key: Box<TypeNode>,
-        value: Box<TypeNode>,
-    },
-    Tuple {
-        members: Vec<TypeNode>,
-    },
+    Map { key: Box<TypeNode>, value: Box<TypeNode> },
+    Tuple { members: Vec<TypeNode> },
 }
 
 #[derive(Debug, Clone)]

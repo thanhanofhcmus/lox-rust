@@ -156,9 +156,7 @@ impl TypeInterner {
         }
 
         let (index, category) = match type_ {
-            Type::Unit | Type::Nil | Type::Any | Type::Bool | Type::Number | Type::Str => {
-                (0, TypeId::CATEGORY_SCALAR)
-            }
+            Type::Unit | Type::Nil | Type::Any | Type::Bool | Type::Number | Type::Str => (0, TypeId::CATEGORY_SCALAR),
             Type::Array { .. } => (1, TypeId::CATEGORY_ARRAY),
             Type::Map { .. } => (2, TypeId::CATEGORY_MAP),
             Type::Tuple { .. } => (3, TypeId::CATEGORY_TUPLE),
@@ -231,21 +229,11 @@ impl TypeInterner {
                 variadic,
                 return_,
             }) => {
-                let mut p: Vec<String> = params
-                    .iter()
-                    .map(|&i| self.generate_readable_name(ir, i))
-                    .collect();
+                let mut p: Vec<String> = params.iter().map(|&i| self.generate_readable_name(ir, i)).collect();
                 if let Some(variadic_type) = variadic {
-                    p.push(format!(
-                        "{} ...",
-                        self.generate_readable_name(ir, *variadic_type)
-                    ))
+                    p.push(format!("{} ...", self.generate_readable_name(ir, *variadic_type)))
                 }
-                format!(
-                    "fn({}) -> {}",
-                    p.join(", "),
-                    self.generate_readable_name(ir, *return_)
-                )
+                format!("fn({}) -> {}", p.join(", "), self.generate_readable_name(ir, *return_))
             }
             None => format!("Unknown(#{})", id.0),
         }

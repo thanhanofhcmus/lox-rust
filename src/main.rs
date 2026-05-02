@@ -17,8 +17,8 @@ use rustyline::{DefaultEditor, error::ReadlineError};
 use thiserror::Error;
 
 use crate::{
-    ast::AST, identifier_registry::IdentifierRegistry, interpret::InterpretError,
-    parse::ParseError, typecheck::TypecheckError,
+    ast::AST, identifier_registry::IdentifierRegistry, interpret::InterpretError, parse::ParseError,
+    typecheck::TypecheckError,
 };
 
 /// Internal control-flow signal for "the script failed and the formatted
@@ -55,19 +55,11 @@ impl RunnerContext {
         }
     }
 
-    fn lex_and_parse(
-        &mut self,
-        input: &str,
-        source_name: Option<&str>,
-        is_in_repl: bool,
-    ) -> Result<AST<()>, RunError> {
+    fn lex_and_parse(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> Result<AST<()>, RunError> {
         trace!("Lexing start");
 
         let tokens = parse::lex(input).map_err(|err| {
-            error!(
-                "Lex error:\n{}",
-                err.generate_user_facing_error(source_name, input)
-            );
+            error!("Lex error:\n{}", err.generate_user_facing_error(source_name, input));
             RunError::Parse(err)
         })?;
 
@@ -82,15 +74,10 @@ impl RunnerContext {
         }
 
         debug!("Parsing start");
-        let ast = parse::parse(input, &tokens, &mut self.identifier_registry, is_in_repl).map_err(
-            |err| {
-                error!(
-                    "Parse error:\n{}",
-                    err.generate_user_facing_error(source_name, input)
-                );
-                RunError::Parse(err)
-            },
-        )?;
+        let ast = parse::parse(input, &tokens, &mut self.identifier_registry, is_in_repl).map_err(|err| {
+            error!("Parse error:\n{}", err.generate_user_facing_error(source_name, input));
+            RunError::Parse(err)
+        })?;
 
         debug!("Parsing done");
         trace!("{:?}", &ast);
@@ -187,10 +174,7 @@ impl Config {
             _ => panic!("unknown mode: {}", mode_str),
         };
 
-        Self {
-            mode,
-            strict_assert,
-        }
+        Self { mode, strict_assert }
     }
 }
 

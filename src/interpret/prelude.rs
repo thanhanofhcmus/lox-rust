@@ -19,16 +19,10 @@ pub fn create() -> HashMap<Id, Value> {
     preludes.insert(Id::new("from_json"), Value::BuiltinFunction(from_json_fn));
     preludes.insert(Id::new("to_json"), Value::BuiltinFunction(to_json_fn));
 
-    preludes.insert(
-        Id::new("array_length"),
-        Value::BuiltinFunction(array_length_fn),
-    );
+    preludes.insert(Id::new("array_length"), Value::BuiltinFunction(array_length_fn));
     preludes.insert(Id::new("array_push"), Value::BuiltinFunction(array_push_fn));
     preludes.insert(Id::new("array_pop"), Value::BuiltinFunction(array_pop_fn));
-    preludes.insert(
-        Id::new("array_insert"),
-        Value::BuiltinFunction(array_insert_fn),
-    );
+    preludes.insert(Id::new("array_insert"), Value::BuiltinFunction(array_insert_fn));
 
     preludes.insert(Id::new("map_length"), Value::BuiltinFunction(map_length_fn));
     preludes.insert(Id::new("map_keys"), Value::BuiltinFunction(map_keys_fn));
@@ -39,18 +33,9 @@ pub fn create() -> HashMap<Id, Value> {
     preludes.insert(Id::new("_dbg_print"), Value::BuiltinFunction(dbg_print_fn));
     preludes.insert(Id::new("_dbg_state"), Value::BuiltinFunction(dbg_state_fn));
     preludes.insert(Id::new("_dbg_gc_mark"), Value::BuiltinFunction(dbg_gc_mark));
-    preludes.insert(
-        Id::new("_dbg_gc_sweep"),
-        Value::BuiltinFunction(dbg_gc_sweep),
-    );
-    preludes.insert(
-        Id::new("_dbg_gc_mark_sweep"),
-        Value::BuiltinFunction(dbg_gc_mark_sweep),
-    );
-    preludes.insert(
-        Id::new("_dbg_heap_stats"),
-        Value::BuiltinFunction(dbg_heap_stats),
-    );
+    preludes.insert(Id::new("_dbg_gc_sweep"), Value::BuiltinFunction(dbg_gc_sweep));
+    preludes.insert(Id::new("_dbg_gc_mark_sweep"), Value::BuiltinFunction(dbg_gc_mark_sweep));
+    preludes.insert(Id::new("_dbg_heap_stats"), Value::BuiltinFunction(dbg_heap_stats));
 
     preludes
 }
@@ -89,9 +74,7 @@ fn dbg_heap_stats(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, Inter
 }
 
 fn dbg_gc_mark(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, InterpretError> {
-    ctx.environment
-        .heap
-        .mark(ctx.environment.collect_all_variables());
+    ctx.environment.heap.mark(ctx.environment.collect_all_variables());
     Ok(Value::make_nil())
 }
 
@@ -101,9 +84,7 @@ fn dbg_gc_sweep(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, Interpr
 }
 
 fn dbg_gc_mark_sweep(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, InterpretError> {
-    ctx.environment
-        .heap
-        .mark(ctx.environment.collect_all_variables());
+    ctx.environment.heap.mark(ctx.environment.collect_all_variables());
     ctx.environment.heap.sweep();
     Ok(Value::make_nil())
 }
@@ -148,9 +129,9 @@ fn assert_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interpr
                     "condition did not evaluate to a boolean: {msg}"
                 )))
             } else {
-                let warn_msg = ctx.environment.insert_string_variable(
-                    "Assertion check value did not evaluate to a boolean".into(),
-                );
+                let warn_msg = ctx
+                    .environment
+                    .insert_string_variable("Assertion check value did not evaluate to a boolean".into());
                 print_fn(ctx, vec![warn_msg])?;
                 print_fn(ctx, vec![message_val])
             }
@@ -172,8 +153,8 @@ fn from_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Inte
     let value = args[0];
     let str_id = get_str_arg(from_json_fn, value)?;
     let s = ctx.environment.get_string(str_id)?;
-    let serial_value = serde_json::from_str::<SerialValue>(s)
-        .map_err(|e| InterpretError::DeserializeFailed(value, e.to_string()))?;
+    let serial_value =
+        serde_json::from_str::<SerialValue>(s).map_err(|e| InterpretError::DeserializeFailed(value, e.to_string()))?;
 
     let value = serial_value.hydrate(ctx.environment)?;
 
@@ -184,13 +165,9 @@ fn to_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interp
     check_min_args(to_json_fn, &args, 1)?;
     let value = args[0];
 
-    let serial_value =
-        SerialValue::convert_from_value(value, ctx.environment, ctx.identifier_registry)?;
+    let serial_value = SerialValue::convert_from_value(value, ctx.environment, ctx.identifier_registry)?;
 
-    let is_print_pretty = get_bool_arg(
-        to_json_fn,
-        args.get(1).copied().unwrap_or(Value::make_bool(false)),
-    )?;
+    let is_print_pretty = get_bool_arg(to_json_fn, args.get(1).copied().unwrap_or(Value::make_bool(false)))?;
     let result = if is_print_pretty {
         serde_json::to_string_pretty(&serial_value)
     } else {
@@ -328,11 +305,7 @@ fn map_remove_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Int
 
 // Argument validation helpers
 
-fn check_exact_args(
-    func: BuiltinFn,
-    args: &[Value],
-    expected: usize,
-) -> Result<(), InterpretError> {
+fn check_exact_args(func: BuiltinFn, args: &[Value], expected: usize) -> Result<(), InterpretError> {
     if args.len() != expected {
         return Err(InterpretError::WrongNumberOfArgument(
             Value::BuiltinFunction(func),

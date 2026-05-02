@@ -8,6 +8,8 @@ use crate::identifier_registry::Identifier;
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
+type ConvertForComprehensionResult<R> = Result<(ClauseNode<TypeId>, Option<ClauseNode<TypeId>>, R), TypecheckError>;
+
 pub struct TypeChecker<'e> {
     environment: &'e mut Environment,
 
@@ -52,16 +54,10 @@ impl<'cl> TypeChecker<'cl> {
             global_stmts.push(stmt);
         }
 
-        Ok(AST {
-            imports,
-            global_stmts,
-        })
+        Ok(AST { imports, global_stmts })
     }
 
-    fn convert_stmt(
-        &mut self,
-        ut_stmt: Statement<()>,
-    ) -> Result<Statement<TypeId>, TypecheckError> {
+    fn convert_stmt(&mut self, ut_stmt: Statement<()>) -> Result<Statement<TypeId>, TypecheckError> {
         match ut_stmt {
             Statement::Declare(node) => {
                 let result = self.convert_declare_stmt(node);
@@ -106,8 +102,7 @@ impl<'cl> TypeChecker<'cl> {
             }
             DeclareBindingNode::Tuple { members } => {
                 let arity = members.len();
-                let actual_members =
-                    self.resolve_tuple_members_for_destructure(actual_type_id, arity)?;
+                let actual_members = self.resolve_tuple_members_for_destructure(actual_type_id, arity)?;
                 let explicit_members: Option<Vec<TypeId>> = explicit_type_id
                     .map(|e| self.resolve_tuple_members_for_destructure(e, arity))
                     .transpose()?;
@@ -162,10 +157,7 @@ impl<'cl> TypeChecker<'cl> {
             expr,
         }: DeclareStatementNode<()>,
     ) -> Result<DeclareStatementNode<TypeId>, TypecheckError> {
-        let explicit_type_id = type_node
-            .as_ref()
-            .map(|n| self.extract_type_node_id(n))
-            .transpose()?;
+        let explicit_type_id = type_node.as_ref().map(|n| self.extract_type_node_id(n)).transpose()?;
 
         // Expose the declared name to a directly-nested fn literal for
         // self-recursion. Tuple destructuring can't name a single callable,
@@ -215,10 +207,7 @@ impl<'cl> TypeChecker<'cl> {
         }
     }
 
-    fn convert_struct_decl(
-        &mut self,
-        node: StructDeclNode,
-    ) -> Result<StructDeclNode, TypecheckError> {
+    fn convert_struct_decl(&mut self, node: StructDeclNode) -> Result<StructDeclNode, TypecheckError> {
         if let Some(prior) = self.environment.lookup_type_id_from_id(node.iden.id) {
             return Err(TypecheckError::DuplicateTypeDeclaration(node.iden, prior));
         }
@@ -244,8 +233,7 @@ impl<'cl> TypeChecker<'cl> {
             id: node.iden.id,
             fields,
         }));
-        self.environment
-            .associate_id_with_type(node.iden.id, type_id);
+        self.environment.associate_id_with_type(node.iden.id, type_id);
         Ok(node)
     }
 
@@ -271,16 +259,14 @@ impl<'cl> TypeChecker<'cl> {
         // Walk the chain with an explicit running type, validating each step
         // against the current type and computing the next running type.
         let mut running_type_id = base_type_id;
-        let mut follows: Vec<ChainStep<ClauseNode<TypeId>>> =
-            Vec::with_capacity(target.follows.len());
+        let mut follows: Vec<ChainStep<ClauseNode<TypeId>>> = Vec::with_capacity(target.follows.len());
 
         for step in target.follows {
             let next_type_id = match &step {
                 ChainStep::Subscription(clause) => {
                     let typed_clause = self.convert_clause(clause.clone())?;
                     let indexee_type_id = typed_clause.extra;
-                    let next =
-                        self.resolve_subscription_result_type(running_type_id, indexee_type_id)?;
+                    let next = self.resolve_subscription_result_type(running_type_id, indexee_type_id)?;
                     follows.push(ChainStep::Subscription(typed_clause));
                     next
                 }
@@ -310,27 +296,18 @@ impl<'cl> TypeChecker<'cl> {
             .lookup_type(indexer_type_id)
             .ok_or(TypecheckError::TypeIsNotDeclaredInternal(indexer_type_id))?;
         match indexer_type {
-            Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => {
-                Ok(*elem)
-            }
+            Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => Ok(*elem),
             Type::Map { key, value } if (*key == indexee_type_id) || (*key == TypeId::ANY) => {
                 require_map_key_type(indexee_type_id)?;
                 Ok(*value)
             }
             Type::Any => Ok(TypeId::ANY),
-            _ => Err(TypecheckError::IndexOpTypeMismatch(
-                indexer_type_id,
-                indexee_type_id,
-            )),
+            _ => Err(TypecheckError::IndexOpTypeMismatch(indexer_type_id, indexee_type_id)),
         }
     }
 
     /// Resolve the declared type of a struct field and tuple index
-    fn resolve_member_result_type(
-        &self,
-        object_type_id: TypeId,
-        member: MemberNode,
-    ) -> Result<TypeId, TypecheckError> {
+    fn resolve_member_result_type(&self, object_type_id: TypeId, member: MemberNode) -> Result<TypeId, TypecheckError> {
         if object_type_id == TypeId::ANY {
             return Ok(TypeId::ANY);
         }
@@ -349,25 +326,22 @@ impl<'cl> TypeChecker<'cl> {
                 _ => Err(TypecheckError::TypeIsNotStruct(object_type_id)),
             },
             MemberNode::TupleIndex(idx) => match object_type {
-                Type::Tuple {
-                    members: tuple_members,
-                } => tuple_members
-                    .get(idx)
-                    .copied()
-                    .ok_or(TypecheckError::TupleIndexOutOfBound(
-                        object_type_id,
-                        tuple_members.len(),
-                        idx,
-                    )),
+                Type::Tuple { members: tuple_members } => {
+                    tuple_members
+                        .get(idx)
+                        .copied()
+                        .ok_or(TypecheckError::TupleIndexOutOfBound(
+                            object_type_id,
+                            tuple_members.len(),
+                            idx,
+                        ))
+                }
                 _ => Err(TypecheckError::TypeIsNotStruct(object_type_id)),
             },
         }
     }
 
-    fn convert_expr(
-        &mut self,
-        ut_expr: Expression<()>,
-    ) -> Result<Expression<TypeId>, TypecheckError> {
+    fn convert_expr(&mut self, ut_expr: Expression<()>) -> Result<Expression<TypeId>, TypecheckError> {
         let (type_id, case) = match ut_expr.case {
             ExprCase::Clause(ut_clause) => {
                 let clause = self.convert_clause(ut_clause)?;
@@ -393,25 +367,15 @@ impl<'cl> TypeChecker<'cl> {
                 (type_id, ExprCase::When(when_node))
             }
             ExprCase::Return(ut_expr) => {
-                let expr = ut_expr
-                    .map(|e| self.convert_expr(*e).map(Box::new))
-                    .transpose()?;
+                let expr = ut_expr.map(|e| self.convert_expr(*e).map(Box::new)).transpose()?;
                 let type_id = expr.as_ref().map(|e| e.extra).unwrap_or(TypeId::UNIT);
                 (type_id, ExprCase::Return(expr))
             }
-            ExprCase::While(ut_while_node) => (
-                TypeId::UNIT,
-                ExprCase::While(self.convert_while(ut_while_node)?),
-            ),
-            ExprCase::For(ut_for_node) => {
-                (TypeId::UNIT, ExprCase::For(self.convert_for(ut_for_node)?))
-            }
+            ExprCase::While(ut_while_node) => (TypeId::UNIT, ExprCase::While(self.convert_while(ut_while_node)?)),
+            ExprCase::For(ut_for_node) => (TypeId::UNIT, ExprCase::For(self.convert_for(ut_for_node)?)),
         };
 
-        Ok(Expression {
-            extra: type_id,
-            case,
-        })
+        Ok(Expression { extra: type_id, case })
     }
 
     fn convert_block(&mut self, block: BlockNode<()>) -> Result<BlockNode<TypeId>, TypecheckError> {
@@ -434,10 +398,7 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_if_chain(
-        &mut self,
-        node: IfChainNode<()>,
-    ) -> Result<IfChainNode<TypeId>, TypecheckError> {
+    fn convert_if_chain(&mut self, node: IfChainNode<()>) -> Result<IfChainNode<TypeId>, TypecheckError> {
         Ok(IfChainNode {
             if_node: self.convert_else_if(node.if_node)?,
             else_if_nodes: node
@@ -449,10 +410,7 @@ impl<'cl> TypeChecker<'cl> {
         })
     }
 
-    fn convert_else_if(
-        &mut self,
-        node: ElseIfNode<()>,
-    ) -> Result<ElseIfNode<TypeId>, TypecheckError> {
+    fn convert_else_if(&mut self, node: ElseIfNode<()>) -> Result<ElseIfNode<TypeId>, TypecheckError> {
         let cond = self.convert_clause(node.cond)?;
         require_type(TypeId::BOOL, cond.extra)?;
         let stmts = self.convert_block(node.stmts)?;
@@ -466,10 +424,7 @@ impl<'cl> TypeChecker<'cl> {
         Ok(WhileNode { cond, body })
     }
 
-    fn convert_for(
-        &mut self,
-        node: ForStatementNode<()>,
-    ) -> Result<ForStatementNode<TypeId>, TypecheckError> {
+    fn convert_for(&mut self, node: ForStatementNode<()>) -> Result<ForStatementNode<TypeId>, TypecheckError> {
         let collection = self.convert_clause(node.collection)?;
         let elem_type_id = self.iterable_element_type(collection.extra);
         self.with_scope(|this| {
@@ -504,7 +459,7 @@ impl<'cl> TypeChecker<'cl> {
         collection: ClauseNode<()>,
         filter: Option<ClauseNode<()>>,
         body_fn: impl FnOnce(&mut Self) -> Result<R, TypecheckError>,
-    ) -> Result<(ClauseNode<TypeId>, Option<ClauseNode<TypeId>>, R), TypecheckError> {
+    ) -> ConvertForComprehensionResult<R> {
         let collection = self.convert_clause(collection)?;
         let elem_type_id = self.iterable_element_type(collection.extra);
         let (filter, body) = self.with_scope(|this| {
@@ -528,20 +483,14 @@ impl<'cl> TypeChecker<'cl> {
         Ok(WhenNode { arms })
     }
 
-    fn convert_when_arm(
-        &mut self,
-        node: WhenArmNode<()>,
-    ) -> Result<WhenArmNode<TypeId>, TypecheckError> {
+    fn convert_when_arm(&mut self, node: WhenArmNode<()>) -> Result<WhenArmNode<TypeId>, TypecheckError> {
         let cond = self.convert_clause(node.cond)?;
         require_type(TypeId::BOOL, cond.extra)?;
         let expr = self.convert_clause(node.expr)?;
         Ok(WhenArmNode { cond, expr })
     }
 
-    fn convert_clause(
-        &mut self,
-        ut_clause: ClauseNode<()>,
-    ) -> Result<ClauseNode<TypeId>, TypecheckError> {
+    fn convert_clause(&mut self, ut_clause: ClauseNode<()>) -> Result<ClauseNode<TypeId>, TypecheckError> {
         let (type_id, case) = match ut_clause.case {
             ClauseCase::RawValue(raw) => {
                 let (type_id, raw) = self.convert_raw_value(raw)?;
@@ -567,14 +516,7 @@ impl<'cl> TypeChecker<'cl> {
                 let lhs = Box::new(self.convert_clause(*bin.lhs)?);
                 let rhs = Box::new(self.convert_clause(*bin.rhs)?);
                 let type_id = self.type_binary_op(bin.op, lhs.extra, rhs.extra)?;
-                (
-                    type_id,
-                    ClauseCase::Binary(BinaryOpNode {
-                        lhs,
-                        op: bin.op,
-                        rhs,
-                    }),
-                )
+                (type_id, ClauseCase::Binary(BinaryOpNode { lhs, op: bin.op, rhs }))
             }
             ClauseCase::Subscription(sub) => {
                 let (type_id, case) = self.convert_subscription(sub)?;
@@ -589,16 +531,10 @@ impl<'cl> TypeChecker<'cl> {
                 (type_id, ClauseCase::FnCall(case))
             }
         };
-        Ok(ClauseNode {
-            extra: type_id,
-            case,
-        })
+        Ok(ClauseNode { extra: type_id, case })
     }
 
-    fn convert_raw_value(
-        &mut self,
-        raw: RawValueNode<()>,
-    ) -> Result<(TypeId, RawValueNode<TypeId>), TypecheckError> {
+    fn convert_raw_value(&mut self, raw: RawValueNode<()>) -> Result<(TypeId, RawValueNode<TypeId>), TypecheckError> {
         match raw {
             RawValueNode::Scalar(s) => Ok((get_scalar_node_type_id(&s), RawValueNode::Scalar(s))),
             RawValueNode::ArrayLiteral(arr) => {
@@ -647,9 +583,7 @@ impl<'cl> TypeChecker<'cl> {
                 let value = self.convert_clause(rep.value)?;
                 let repeat = self.convert_clause(rep.repeat)?;
                 require_type(TypeId::NUMBER, repeat.extra)?;
-                let type_id = self
-                    .environment
-                    .declare_type(&Type::Array { elem: value.extra });
+                let type_id = self.environment.declare_type(&Type::Array { elem: value.extra });
                 Ok((
                     type_id,
                     ArrayLiteralNode::Repeat(Box::new(ArrayRepeatNode { value, repeat })),
@@ -663,12 +597,8 @@ impl<'cl> TypeChecker<'cl> {
                     filter,
                 } = *comp;
                 let (collection, filter, body) =
-                    self.convert_for_comprehension_pre(&binding, collection, filter, |this| {
-                        this.convert_clause(body)
-                    })?;
-                let type_id = self
-                    .environment
-                    .declare_type(&Type::Array { elem: body.extra });
+                    self.convert_for_comprehension_pre(&binding, collection, filter, |this| this.convert_clause(body))?;
+                let type_id = self.environment.declare_type(&Type::Array { elem: body.extra });
                 Ok((
                     type_id,
                     ArrayLiteralNode::ForComprehension(Box::new(ArrayForComprehensionNode {
@@ -691,19 +621,13 @@ impl<'cl> TypeChecker<'cl> {
                 let mut nodes = Vec::with_capacity(elems.len());
                 for elem in elems {
                     let value = self.convert_clause(elem.value)?;
-                    nodes.push(MapLiteralKVElemNode {
-                        key: elem.key,
-                        value,
-                    });
+                    nodes.push(MapLiteralKVElemNode { key: elem.key, value });
                 }
 
                 let type_id = if nodes.is_empty() {
                     TypeId::MAP_UNTYPED
                 } else {
-                    let key_types: Vec<_> = nodes
-                        .iter()
-                        .map(|n| get_scalar_node_type_id(&n.key))
-                        .collect();
+                    let key_types: Vec<_> = nodes.iter().map(|n| get_scalar_node_type_id(&n.key)).collect();
                     self.environment.declare_type(&Type::Map {
                         key: unify_types(&key_types),
                         value: unify_types(nodes.iter().map(|n| &n.value.extra)),
@@ -805,14 +729,9 @@ impl<'cl> TypeChecker<'cl> {
                         .fields
                         .iter()
                         .find(|f| f.id == provided.iden.id)
-                        .ok_or(TypecheckError::StructFieldNotExist(
-                            struct_type_id,
-                            provided.iden,
-                        ))?;
+                        .ok_or(TypecheckError::StructFieldNotExist(struct_type_id, provided.iden))?;
                     let provided_type = provided.value.extra;
-                    if provided_type != TypeId::ANY
-                        && declared.type_ != TypeId::ANY
-                        && provided_type != declared.type_
+                    if provided_type != TypeId::ANY && declared.type_ != TypeId::ANY && provided_type != declared.type_
                     {
                         return Err(TypecheckError::StructFieldTypeMismatch(
                             struct_type_id,
@@ -829,10 +748,7 @@ impl<'cl> TypeChecker<'cl> {
         Ok((struct_type_id, StructLiteralNode { iden, fields }))
     }
 
-    fn convert_fn_decl(
-        &mut self,
-        node: FnDeclNode<()>,
-    ) -> Result<(TypeId, FnDeclNode<TypeId>), TypecheckError> {
+    fn convert_fn_decl(&mut self, node: FnDeclNode<()>) -> Result<(TypeId, FnDeclNode<TypeId>), TypecheckError> {
         // Params are declared in a fresh scope surrounding the body. The
         // body itself opens its own scope via `convert_block`, so param
         // shadowing by locals is handled naturally.
@@ -887,9 +803,7 @@ impl<'cl> TypeChecker<'cl> {
                 Some(type_annot) if type_annot == body.extra => type_annot,
                 // error case
                 Some(type_annot) => {
-                    return Err(TypecheckError::ExplicitFnReturnTypeMismatch(
-                        type_annot, body.extra,
-                    ));
+                    return Err(TypecheckError::ExplicitFnReturnTypeMismatch(type_annot, body.extra));
                 }
             };
 
@@ -942,10 +856,7 @@ impl<'cl> TypeChecker<'cl> {
         ))
     }
 
-    fn convert_fn_call(
-        &mut self,
-        node: FnCallNode<()>,
-    ) -> Result<(TypeId, FnCallNode<TypeId>), TypecheckError> {
+    fn convert_fn_call(&mut self, node: FnCallNode<()>) -> Result<(TypeId, FnCallNode<TypeId>), TypecheckError> {
         let caller = self.convert_clause(*node.caller)?;
 
         let args = node
@@ -1011,10 +922,7 @@ impl<'cl> TypeChecker<'cl> {
                 .map(|(i, (l, r))| (i, *l, r))
                 .collect::<Vec<(usize, TypeId, TypeId)>>();
             if !wrong_type_args.is_empty() {
-                return Err(TypecheckError::WrongArgumentTypes(
-                    caller_type_id,
-                    wrong_type_args,
-                ));
+                return Err(TypecheckError::WrongArgumentTypes(caller_type_id, wrong_type_args));
             }
         }
 
@@ -1028,12 +936,7 @@ impl<'cl> TypeChecker<'cl> {
         ))
     }
 
-    fn type_binary_op(
-        &self,
-        op: Token,
-        lhs: TypeId,
-        rhs: TypeId,
-    ) -> Result<TypeId, TypecheckError> {
+    fn type_binary_op(&self, op: Token, lhs: TypeId, rhs: TypeId) -> Result<TypeId, TypecheckError> {
         use Token::*;
         let any = lhs == TypeId::ANY || rhs == TypeId::ANY;
         let mismatch = || TypecheckError::BinaryOpTypeMismatch(op, lhs, rhs);
@@ -1155,11 +1058,7 @@ fn promote_untyped_to_any(type_id: TypeId) -> TypeId {
 /// Reconcile a single binding's `explicit` annotation with the `actual` rhs
 /// type. `Any` on the annotation side is permissive; concrete annotations
 /// must match (with the `ARRAY_UNTYPED` / `MAP_UNTYPED` relaxation for empty literals).
-fn reconcile_single_type(
-    iden: Identifier,
-    explicit: TypeId,
-    actual: TypeId,
-) -> Result<TypeId, TypecheckError> {
+fn reconcile_single_type(iden: Identifier, explicit: TypeId, actual: TypeId) -> Result<TypeId, TypecheckError> {
     match (explicit, actual) {
         (TypeId::ANY, _) => Ok(TypeId::ANY),
         (e, a) if e == a => Ok(e),
@@ -1178,8 +1077,7 @@ mod tests {
     fn typecheck_str(input: &str) -> Result<AST<TypeId>, TypecheckError> {
         let items = lex(input).expect("lex failed");
         let mut identifier_registry = IdentifierRegistry::new();
-        let ast = crate::parse::parse(input, &items, &mut identifier_registry, false)
-            .expect("parse failed");
+        let ast = crate::parse::parse(input, &items, &mut identifier_registry, false).expect("parse failed");
         let mut env = Environment::new();
         TypeChecker::new(&mut env).convert(ast)
     }
@@ -1296,10 +1194,7 @@ mod tests {
     fn env_user_global_can_shadow_builtin() {
         // User-global scope is scope 1, above builtins at scope 0.
         let mut env = Environment::new();
-        assert!(
-            env.declare_variable_id(Id::new("print"), TypeId::NUMBER)
-                .is_ok()
-        );
+        assert!(env.declare_variable_id(Id::new("print"), TypeId::NUMBER).is_ok());
     }
 
     #[test]
@@ -1356,10 +1251,7 @@ mod tests {
     #[test]
     fn binary_and_on_non_bool_errors() {
         let err = typecheck_str("1 and 2;").unwrap_err();
-        assert!(matches!(
-            err,
-            TypecheckError::BinaryOpTypeMismatch(Token::And, _, _)
-        ));
+        assert!(matches!(err, TypecheckError::BinaryOpTypeMismatch(Token::And, _, _)));
     }
 
     // ---------- unary op typing ----------
@@ -1379,19 +1271,13 @@ mod tests {
     #[test]
     fn unary_minus_on_bool_errors() {
         let err = typecheck_str("-true;").unwrap_err();
-        assert!(matches!(
-            err,
-            TypecheckError::UnaryOpTypeMismatch(Token::Minus, _)
-        ));
+        assert!(matches!(err, TypecheckError::UnaryOpTypeMismatch(Token::Minus, _)));
     }
 
     #[test]
     fn unary_not_on_number_errors() {
         let err = typecheck_str("not 1;").unwrap_err();
-        assert!(matches!(
-            err,
-            TypecheckError::UnaryOpTypeMismatch(Token::Not, _)
-        ));
+        assert!(matches!(err, TypecheckError::UnaryOpTypeMismatch(Token::Not, _)));
     }
 
     // ---------- array literals ----------
@@ -1403,10 +1289,7 @@ mod tests {
     #[test]
     fn identifier_undefined_errors() {
         let err = typecheck_str("x;").unwrap_err();
-        assert!(matches!(
-            err,
-            TypecheckError::UndefinedVariableIdentifier(_)
-        ));
+        assert!(matches!(err, TypecheckError::UndefinedVariableIdentifier(_)));
     }
 
     #[test]
@@ -1446,10 +1329,7 @@ mod tests {
     #[test]
     fn reassign_undefined_errors() {
         let err = typecheck_str("x = 5;").unwrap_err();
-        assert!(matches!(
-            err,
-            TypecheckError::UndefinedVariableIdentifier(_)
-        ));
+        assert!(matches!(err, TypecheckError::UndefinedVariableIdentifier(_)));
     }
 
     #[test]
@@ -1462,19 +1342,13 @@ mod tests {
     #[test]
     fn duplicate_var_in_same_scope_errors() {
         let err = typecheck_str("var x = 1; var x = 2;").unwrap_err();
-        assert!(matches!(
-            err,
-            TypecheckError::DuplicateVariableDeclaration(_)
-        ));
+        assert!(matches!(err, TypecheckError::DuplicateVariableDeclaration(_)));
     }
 
     #[test]
     fn fn_duplicate_param_errors() {
         let err = typecheck_str("var f = fn(x, x) x;").unwrap_err();
-        assert!(matches!(
-            err,
-            TypecheckError::DuplicateVariableDeclaration(_)
-        ));
+        assert!(matches!(err, TypecheckError::DuplicateVariableDeclaration(_)));
     }
 
     // ---------- underscore wildcard ----------
@@ -1503,8 +1377,7 @@ mod tests {
 
     #[test]
     fn fn_self_binding_direct_recursion_typechecks() {
-        typecheck_str("var f = fn(n) { if n <= 0 { return 0; } return 1 + f(n - 1); }; f(3);")
-            .unwrap();
+        typecheck_str("var f = fn(n) { if n <= 0 { return 0; } return 1 + f(n - 1); }; f(3);").unwrap();
     }
 
     #[test]
@@ -1522,8 +1395,7 @@ mod tests {
     fn fn_mutual_recursion_is_rejected() {
         // Self-binding only covers the current fn; `b` is not visible when
         // converting `a`'s body.
-        let err = typecheck_str("var a = fn() { return b(); }; var b = fn() { return a(); };")
-            .unwrap_err();
+        let err = typecheck_str("var a = fn() { return b(); }; var b = fn() { return a(); };").unwrap_err();
         assert!(
             matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
             "expected UndefinedVariableIdentifier, got {err:?}"
@@ -1535,10 +1407,7 @@ mod tests {
         // Lexical scoping: inner fn's body walks up the scope stack, so the
         // outer fn's self-binding is still visible. (This is the normal
         // closure behavior — not a leak to siblings.)
-        typecheck_str(
-            "var outer = fn() { var inner = fn() { return outer(); }; return inner(); };",
-        )
-        .unwrap();
+        typecheck_str("var outer = fn() { var inner = fn() { return outer(); }; return inner(); };").unwrap();
     }
 
     // ---------- tuple destructuring typecheck ----------
@@ -1558,10 +1427,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                TypecheckError::TupleDestructureArityMismatch {
-                    expected: 3,
-                    actual: 2,
-                }
+                TypecheckError::TupleDestructureArityMismatch { expected: 3, actual: 2 }
             ),
             "expected TupleDestructureArityMismatch{{3,2}}, got {err:?}"
         );
@@ -1613,10 +1479,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                TypecheckError::TupleDestructureArityMismatch {
-                    expected: 2,
-                    actual: 3,
-                }
+                TypecheckError::TupleDestructureArityMismatch { expected: 2, actual: 3 }
             ),
             "expected TupleDestructureArityMismatch{{2,3}}, got {err:?}"
         );
@@ -1640,8 +1503,7 @@ mod tests {
 
     #[test]
     fn struct_literal_correct_fields_ok() {
-        typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, y = 2 };")
-            .unwrap();
+        typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, y = 2 };").unwrap();
     }
 
     #[test]
@@ -1655,8 +1517,7 @@ mod tests {
 
     #[test]
     fn struct_field_count_mismatch_errors() {
-        let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1 };")
-            .unwrap_err();
+        let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1 };").unwrap_err();
         assert!(
             matches!(err, TypecheckError::StructFieldCountMismatch(_, 2, 1)),
             "expected StructFieldCountMismatch(_, 2, 1), got {err:?}"
@@ -1674,8 +1535,7 @@ mod tests {
 
     #[test]
     fn struct_field_type_mismatch_errors() {
-        let err = typecheck_str("struct Point { x: number } var p = Point { x = \"hello\" };")
-            .unwrap_err();
+        let err = typecheck_str("struct Point { x: number } var p = Point { x = \"hello\" };").unwrap_err();
         assert!(
             matches!(err, TypecheckError::StructFieldTypeMismatch(_, _, _)),
             "expected StructFieldTypeMismatch, got {err:?}"
@@ -1684,9 +1544,7 @@ mod tests {
 
     #[test]
     fn struct_literal_duplicate_field_errors() {
-        let err =
-            typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, x = 2 };")
-                .unwrap_err();
+        let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, x = 2 };").unwrap_err();
         assert!(
             matches!(err, TypecheckError::DuplicateStructLiteralField(_)),
             "expected DuplicateStructLiteralField, got {err:?}"
@@ -1709,8 +1567,7 @@ mod tests {
 
     #[test]
     fn member_access_unknown_field_errors() {
-        let err =
-            typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.z;").unwrap_err();
+        let err = typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.z;").unwrap_err();
         assert!(
             matches!(err, TypecheckError::StructFieldNotExist(_, _)),
             "expected StructFieldNotExist, got {err:?}"

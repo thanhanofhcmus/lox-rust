@@ -127,10 +127,7 @@ impl SerialValue {
             Self::Str(v) => env.insert_string_variable(v),
 
             Self::Array(values) => {
-                let arr = values
-                    .into_iter()
-                    .map(|v| v.hydrate(env))
-                    .collect::<Result<_, _>>()?;
+                let arr = values.into_iter().map(|v| v.hydrate(env)).collect::<Result<_, _>>()?;
                 env.insert_array_variable(arr)
             }
 
@@ -148,10 +145,7 @@ impl SerialValue {
     }
 }
 
-fn serialize_map<S: Serializer>(
-    m: &BTreeMap<SerialMapKey, SerialValue>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
+fn serialize_map<S: Serializer>(m: &BTreeMap<SerialMapKey, SerialValue>, serializer: S) -> Result<S::Ok, S::Error> {
     let string_map = m
         .iter()
         .filter_map(|(k, v)| {

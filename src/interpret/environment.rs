@@ -157,10 +157,7 @@ impl Environment {
             .iter_all()
             .flat_map(|s| s.variables.values().copied())
             .collect::<Vec<_>>();
-        let module_vars = self
-            .modules
-            .iter()
-            .flat_map(|(_, v)| v.variables.values().copied());
+        let module_vars = self.modules.iter().flat_map(|(_, v)| v.variables.values().copied());
         variables.extend(module_vars);
 
         variables
@@ -226,10 +223,7 @@ impl Environment {
         self.scope_stack.get_current().get_variable(id)
     }
 
-    pub fn get_variable_all_scope(
-        &self,
-        node: &Identifier,
-    ) -> Option<(Value, bool /* is_readonly */)> {
+    pub fn get_variable_all_scope(&self, node: &Identifier) -> Option<(Value, bool /* is_readonly */)> {
         let id = node.id;
         // check scopes/stacks
         for scope in self.scope_stack.iter_outward() {
@@ -253,10 +247,7 @@ impl Environment {
         if id == Id::UNDERSCORE {
             return None;
         }
-        let old_value = self
-            .scope_stack
-            .get_current_mut()
-            .insert_variable(id, value);
+        let old_value = self.scope_stack.get_current_mut().insert_variable(id, value);
         self.heap.shallow_copy_value(value);
         old_value
     }

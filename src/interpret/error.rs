@@ -71,9 +71,7 @@ impl InterpretError {
         interner: &TypeInterner,
     ) -> String {
         let description = self.resolve_description(env, ir, interner);
-        let source_name = source_name
-            .map(|s| format!("\n  --> {s}\n"))
-            .unwrap_or("".to_string());
+        let source_name = source_name.map(|s| format!("\n  --> {s}\n")).unwrap_or("".to_string());
 
         // Interpret errors don't carry source spans, so show just the message
         // unless a future variant adds span support
@@ -81,12 +79,7 @@ impl InterpretError {
         format!("Runtime Error: {description}{source_name}")
     }
 
-    fn resolve_description(
-        &self,
-        env: &Environment,
-        ir: &IdentifierRegistry,
-        interner: &TypeInterner,
-    ) -> String {
+    fn resolve_description(&self, env: &Environment, ir: &IdentifierRegistry, interner: &TypeInterner) -> String {
         match self {
             Self::ReDeclareVariable(node) => {
                 format!(
@@ -206,16 +199,10 @@ impl InterpretError {
                 format!("`{}` cannot be serialized.", format_value(*val, env, ir))
             }
             Self::SerializeFailed(val, err) => {
-                format!(
-                    "Serialization of `{}` failed: {err}.",
-                    format_value(*val, env, ir)
-                )
+                format!("Serialization of `{}` failed: {err}.", format_value(*val, env, ir))
             }
             Self::DeserializeFailed(val, err) => {
-                format!(
-                    "Deserialization of `{}` failed: {err}.",
-                    format_value(*val, env, ir)
-                )
+                format!("Deserialization of `{}` failed: {err}.", format_value(*val, env, ir))
             }
             Self::WriteValueFailed(val, err) => {
                 // Avoid calling `format_value` here — WriteValueFailed came from
@@ -223,9 +210,7 @@ impl InterpretError {
                 // heap is in a partial state.
                 format!("Writing `{val:?}` failed: {err}.")
             }
-            Self::UseUnitValue => {
-                "A unit value `()` was used where a real value was expected.".to_string()
-            }
+            Self::UseUnitValue => "A unit value `()` was used where a real value was expected.".to_string(),
             Self::GcObjectNotFound(handle) => {
                 format!("Internal error: GC object `{handle:?}` no longer exists in the heap.")
             }
@@ -258,9 +243,7 @@ impl InterpretError {
             }
             Self::StringNotFoundOnHeap(id) => {
                 // TODO: call to the interner to get the actual string back
-                format!(
-                    "Internal error: string with id `{id:?}` does not exist in the string interner."
-                )
+                format!("Internal error: string with id `{id:?}` does not exist in the string interner.")
             }
             Self::ScopeOverflow(limit) => {
                 format!("Stack overflow: call depth exceeded the limit of {limit}.")
@@ -286,10 +269,7 @@ impl InterpretError {
                 format!("Index {index} is out of bounds: the Tuple has {len} members.")
             }
             Self::CannotDestructureAsTuple(val) => {
-                format!(
-                    "`{}` cannot be destructured as a tuple.",
-                    format_value(*val, env, ir)
-                )
+                format!("`{}` cannot be destructured as a tuple.", format_value(*val, env, ir))
             }
             Self::TupleDestructureArityMismatch { expected, actual } => {
                 format!("Tuple destructuring expected {expected} member(s) but value has {actual}.")

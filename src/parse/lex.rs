@@ -53,10 +53,7 @@ fn is_keyword_or_identifier_char(c: u8) -> bool {
 }
 
 fn is_next_char(input: &[u8], curr_offset: usize, expect: u8) -> bool {
-    input
-        .get(curr_offset + 1)
-        .map(|next| *next == expect)
-        .unwrap_or(false)
+    input.get(curr_offset + 1).map(|next| *next == expect).unwrap_or(false)
 }
 
 /// A token that can legally precede `.member` (i.e. a value-producing token).
@@ -110,9 +107,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 // Reject leading-dot floats like `.5` — a `.` directly
                 // followed by a digit is only member access if the previous
                 // emitted token can produce a value.
-                let next_is_digit = utf8_bytes
-                    .get(curr_offset + 1)
-                    .is_some_and(|n| n.is_ascii_digit());
+                let next_is_digit = utf8_bytes.get(curr_offset + 1).is_some_and(|n| n.is_ascii_digit());
                 let prev_is_value = result.last().is_some_and(|li| is_value_token(li.token));
                 if next_is_digit && !prev_is_value {
                     return Err(ParseError::UnexpectedCharacter(Span::one(curr_offset)));
@@ -128,16 +123,10 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
 
             b'%' => {
                 if is_next_char(utf8_bytes, curr_offset, b'{') {
-                    result.push(LexItem::new(
-                        Token::PercentLPointParent,
-                        Span::two(curr_offset),
-                    ));
+                    result.push(LexItem::new(Token::PercentLPointParent, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else if is_next_char(utf8_bytes, curr_offset, b'(') {
-                    result.push(LexItem::new(
-                        Token::PercentLRoundParen,
-                        Span::two(curr_offset),
-                    ));
+                    result.push(LexItem::new(Token::PercentLRoundParen, Span::two(curr_offset)));
                     curr_offset += 1;
                 } else {
                     result.push(tok_one(Token::Percentage));
@@ -186,9 +175,7 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
             }
 
             v if v.is_ascii_digit() => {
-                let prev_was_dot = result
-                    .last()
-                    .is_some_and(|li| matches!(li.token, Token::Dot));
+                let prev_was_dot = result.last().is_some_and(|li| matches!(li.token, Token::Dot));
                 result.push(lex_number(utf8_bytes, &mut curr_offset, prev_was_dot)?);
             }
             v if is_keyword_or_identifier_char(v) => {
@@ -257,10 +244,7 @@ fn lex_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseError> {
             b'"' => {
                 let end_offset = *offset;
 
-                return Ok(LexItem::new(
-                    Token::String,
-                    Span::new(start_offset, end_offset),
-                ));
+                return Ok(LexItem::new(Token::String, Span::new(start_offset, end_offset)));
             }
 
             // escape char
@@ -300,10 +284,7 @@ fn lex_raw_string(input: &[u8], offset: &mut usize) -> Result<LexItem, ParseErro
             b'"' => {
                 let end_offset = *offset;
 
-                return Ok(LexItem::new(
-                    Token::RawString,
-                    Span::new(start_offset, end_offset),
-                ));
+                return Ok(LexItem::new(Token::RawString, Span::new(start_offset, end_offset)));
             }
 
             // escape char
@@ -462,43 +443,25 @@ mod tests {
     fn keyword_control_flow() {
         assert_eq!(
             tokens("if else while for when in"),
-            vec![
-                Token::If,
-                Token::Else,
-                Token::While,
-                Token::For,
-                Token::When,
-                Token::In,
-            ]
+            vec![Token::If, Token::Else, Token::While, Token::For, Token::When, Token::In,]
         );
     }
 
     #[test]
     fn keyword_fn_return_var() {
-        assert_eq!(
-            tokens("fn return var"),
-            vec![Token::Fn, Token::Return, Token::Var]
-        );
+        assert_eq!(tokens("fn return var"), vec![Token::Fn, Token::Return, Token::Var]);
     }
 
     #[test]
     fn keyword_logical() {
-        assert_eq!(
-            tokens("and or not"),
-            vec![Token::And, Token::Or, Token::Not]
-        );
+        assert_eq!(tokens("and or not"), vec![Token::And, Token::Or, Token::Not]);
     }
 
     #[test]
     fn keyword_types() {
         assert_eq!(
             tokens("any bool number str"),
-            vec![
-                Token::TypeAny,
-                Token::TypeBool,
-                Token::TypeNumber,
-                Token::TypeStr,
-            ]
+            vec![Token::TypeAny, Token::TypeBool, Token::TypeNumber, Token::TypeStr,]
         );
     }
 
@@ -526,10 +489,7 @@ mod tests {
 
     #[test]
     fn integer_literal() {
-        assert_eq!(
-            with_text("42"),
-            vec![(Token::WholeNumber, "42".to_string())]
-        );
+        assert_eq!(with_text("42"), vec![(Token::WholeNumber, "42".to_string())]);
     }
 
     #[test]
@@ -623,10 +583,7 @@ mod tests {
 
     #[test]
     fn plain_string_literal() {
-        assert_eq!(
-            with_text("\"hello\""),
-            vec![(Token::String, "\"hello\"".to_string())]
-        );
+        assert_eq!(with_text("\"hello\""), vec![(Token::String, "\"hello\"".to_string())]);
     }
 
     #[test]
@@ -687,10 +644,7 @@ mod tests {
 
     #[test]
     fn whitespace_is_skipped() {
-        assert_eq!(
-            tokens(" \t\nvar\n\t x "),
-            vec![Token::Var, Token::Identifier]
-        );
+        assert_eq!(tokens(" \t\nvar\n\t x "), vec![Token::Var, Token::Identifier]);
     }
 
     #[test]
