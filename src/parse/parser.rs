@@ -1456,7 +1456,7 @@ mod tests {
 
     #[test]
     fn parse_import_at_top() {
-        let ast = parse_str("import \"foo\" as foo;");
+        let ast = parse_str("import \"self:foo\" as foo;");
         assert_eq!(ast.imports.len(), 1);
         assert_eq!(ast.global_stmts.len(), 0);
     }
