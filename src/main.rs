@@ -108,7 +108,7 @@ impl RunnerContext {
         let rc = Rc::new(RefCell::new(std::io::stdout()));
         let mut interpreter = interpret::Interpreter::new(
             &mut self.interpret_env,
-            self.typecheck_env.get_type_interner(),
+            &mut self.typecheck_env,
             &mut self.identifier_registry,
             input,
             rc,

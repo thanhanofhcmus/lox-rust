@@ -67,9 +67,9 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
         .ok_or(ParseError::ImportPathDoesNotHavePackage(path_li.span))?;
 
     let package_start = path_li.span.start + 1;
-    let package_end = package_start + colon_pos;
+    let package_end = package_start + colon_pos - 2;
 
-    let path_start = package_end + 1;
+    let path_start = package_end + 2;
     let path_end = path_li.span.end - 1;
 
     let package_span = Span::new(package_start, package_end);
@@ -107,17 +107,17 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
     };
 
     match li.token {
-        // builtin
+        // Builtin
         Token::TypeAny => next(TypeId::ANY),
         Token::TypeBool => next(TypeId::BOOL),
         Token::TypeNumber => next(TypeId::NUMBER),
         Token::TypeStr => next(TypeId::STR),
-        // named
+        // Named
         Token::Identifier => {
             state.advance();
             Ok(TypeNode::Named(state.create_identifier(li)))
         }
-        // array
+        // Array
         Token::LSquareParen => {
             state.consume_token(Token::LSquareParen)?;
             let inner_type_node = parse_type_node(state)?;

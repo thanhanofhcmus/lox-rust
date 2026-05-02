@@ -1,16 +1,16 @@
 use super::environment::Environment;
 use super::error::InterpretError;
 use super::values::Value;
-use crate::ast::*;
 use crate::id::Id;
 use crate::interpret::heap::GcHandle;
+use crate::{ast::*, typecheck};
 
 use crate::identifier_registry::{Identifier, IdentifierRegistry};
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple};
 use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
-use crate::types::{TypeId, TypeInterner};
+use crate::types::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -70,7 +70,7 @@ impl ValueReturn {
 
 pub struct Interpreter<'e, 't, 's> {
     environment: &'e mut Environment,
-    type_interner: &'t TypeInterner,
+    typecheck_environment: &'t mut typecheck::Environment,
     identifier_registry: &'s mut IdentifierRegistry,
     input: &'s str,
 
@@ -82,7 +82,7 @@ pub struct Interpreter<'e, 't, 's> {
 impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     pub fn new(
         environment: &'e mut Environment,
-        type_interner: &'t TypeInterner,
+        typecheck_environment: &'t mut typecheck::Environment,
         identifier_registry: &'s mut IdentifierRegistry,
         input: &'s str,
         print_writer: Rc<RefCell<dyn std::io::Write>>,
@@ -90,7 +90,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     ) -> Self {
         Self {
             environment,
-            type_interner,
+            typecheck_environment,
             identifier_registry,
             input,
             print_writer,
@@ -190,6 +190,9 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         // check if we import this yet
         let module_id = node.iden.id;
         if self.environment.contains_module(module_id) {
+            // TODO: return error makes more sense here, since we cannot have multiple import
+            // import "self:a.lox" as a;
+            // import "third:a.lox" as a; // error here
             return Ok(());
         }
 
@@ -217,9 +220,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         let untyped = parse::parse(&content, &tokens, self.identifier_registry, true)
             .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
 
-        // we should have a shared type/symbol pool between modules, not creating a new env like this
-        let mut tc_env = crate::typecheck::Environment::new();
-        let module_ast = crate::typecheck::TypeChecker::new(&mut tc_env)
+        let module_ast = crate::typecheck::TypeChecker::new(self.typecheck_environment)
             .convert(untyped)
             .map_err(|err| InterpretError::TypeCheckModuleFailed(name.clone(), path.clone(), err))?;
 
@@ -230,7 +231,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         self.environment.init_module(module_id);
         let mut itp = Interpreter::new(
             self.environment,
-            self.type_interner,
+            self.typecheck_environment,
             self.identifier_registry,
             &content,
             self.print_writer.clone(),
