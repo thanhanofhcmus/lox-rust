@@ -23,7 +23,6 @@ macro_rules! id {
 impl Id {
     pub const UNDERSCORE: Self = id!("_");
     pub const SELF: Self = id!("self");
-    pub const CURRENT: Self = id!("__current__");
 
     pub fn new(name: &str) -> Self {
         let hash = fnv1a_hash(name.as_bytes());

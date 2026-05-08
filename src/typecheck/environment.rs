@@ -162,7 +162,7 @@ fn get_builtin_fn_type(name: &str) -> Type {
         "print" => Type::Function {
             params: vec![],
             variadic: Some(TypeId::STR),
-            return_: TypeId::STR,
+            return_: TypeId::NIL,
         },
 
         "assert" => Type::Function {
