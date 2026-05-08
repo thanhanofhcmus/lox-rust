@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use crate::{id::Id, identifier_registry::IdentifierRegistry};
 
@@ -111,19 +111,38 @@ impl Type {
     };
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TypeScope {
+    symbols: HashMap<Id, TypeId>,
+}
+
+impl TypeScope {
+    pub fn new() -> Self {
+        Self {
+            symbols: HashMap::new(),
+        }
+    }
+
+    pub fn get_type_id(&self, id: Id) -> Option<TypeId> {
+        self.symbols.get(&id).copied()
+    }
+
+    pub fn associate(&mut self, id: Id, type_id: TypeId) {
+        _ = self.symbols.insert(id, type_id)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeInterner {
     type_to_id: HashMap<Type, TypeId>,
     id_to_type: HashMap<TypeId, Type>,
-    /// Store the name of the structs and their assoicated fields, maybe method later
-    id_to_type_id: HashMap<Id, TypeId>,
     counters: [usize; 6],
 }
 
 impl TypeInterner {
     pub fn new() -> Self {
         // The TypeId::*_UNTYPED variants are deliberately left out.
-        // They do not have a type representation and cannot be interned as an existing type.
+        // They do not have a type representation and cannot be interned from an existing type.
 
         let id_to_type = HashMap::from([
             (TypeId::ANY, Type::Any),
@@ -145,7 +164,6 @@ impl TypeInterner {
         Self {
             type_to_id,
             id_to_type,
-            id_to_type_id: HashMap::new(),
             counters: TypeId::NEXT_IDS,
         }
     }
@@ -177,14 +195,6 @@ impl TypeInterner {
 
     pub fn get_type(&self, type_id: TypeId) -> Option<&Type> {
         self.id_to_type.get(&type_id)
-    }
-
-    pub fn associate_id_with_type(&mut self, id: Id, type_id: TypeId) {
-        _ = self.id_to_type_id.insert(id, type_id);
-    }
-
-    pub fn get_type_id_by_id(&self, id: Id) -> Option<TypeId> {
-        self.id_to_type_id.get(&id).copied()
     }
 
     pub fn generate_readable_name(&self, ir: &IdentifierRegistry, id: TypeId) -> String {

@@ -9,10 +9,7 @@ use crate::{
         heap::{GcHandle, GcKind, StrId},
         values::DisplayWriter,
     },
-    parse::ParseError,
     token::Token,
-    typecheck,
-    types::TypeInterner,
 };
 
 #[derive(Debug)]
@@ -34,11 +31,7 @@ pub enum InterpretError {
     ValueMustBeUsize(Value),
     // TODO: add GcHandle to error to know which array is out of bound
     ArrayOutOfBound(usize, usize),
-    ModuleNotFoundInPath(String, String),
-    ReadModuleFailed(String, String, std::io::Error),
-    ParseModuleFailed(String, String, ParseError),
-    TypeCheckModuleFailed(String, String, typecheck::TypecheckError),
-    InterpretModuleFailed(String, String, Box<InterpretError>),
+
     ValueCannotBeUsedAsSourceInFor(Value),
     TypeIsNotSerializable(Value),
     SerializeFailed(Value, String),
@@ -53,7 +46,7 @@ pub enum InterpretError {
     StringNotFoundOnHeap(StrId),
     ScopeOverflow(usize),
     ScopeUnderflow,
-    ModuleScopeStackUnbalanced(usize),
+
     AssertionFailed(String),
     StructFieldNotFound(Id, Identifier),
     TupleIndexOutOfBound(usize, usize),
@@ -68,9 +61,8 @@ impl InterpretError {
         input: &str,
         env: &Environment,
         ir: &IdentifierRegistry,
-        interner: &TypeInterner,
     ) -> String {
-        let description = self.resolve_description(env, ir, interner);
+        let description = self.resolve_description(env, ir);
         let source_name = source_name.map(|s| format!("\n  --> {s}\n")).unwrap_or("".to_string());
 
         // Interpret errors don't carry source spans, so show just the message
@@ -79,7 +71,7 @@ impl InterpretError {
         format!("Runtime Error: {description}{source_name}")
     }
 
-    fn resolve_description(&self, env: &Environment, ir: &IdentifierRegistry, interner: &TypeInterner) -> String {
+    fn resolve_description(&self, env: &Environment, ir: &IdentifierRegistry) -> String {
         match self {
             Self::ReDeclareVariable(node) => {
                 format!(
@@ -168,27 +160,7 @@ impl InterpretError {
             Self::ArrayOutOfBound(len, index) => {
                 format!("Index {index} is out of bounds: the array has length {len}.")
             }
-            Self::ModuleNotFoundInPath(module, path) => {
-                format!("Module '{module}' could not be found at path '{path}'.")
-            }
-            Self::ReadModuleFailed(module, path, err) => {
-                format!("Failed to read module '{module}' at '{path}': {err}.")
-            }
-            Self::ParseModuleFailed(module, path, err) => {
-                format!("Failed to parse module '{module}' at '{path}': {err}.")
-            }
-            Self::TypeCheckModuleFailed(module, path, err) => {
-                format!(
-                    "Type error in module '{module}' at '{path}': {}.",
-                    err.resolve_description(ir, interner),
-                )
-            }
-            Self::InterpretModuleFailed(module, path, err) => {
-                format!(
-                    "Runtime error in module '{module}' at '{path}': {}.",
-                    err.resolve_description(env, ir, interner)
-                )
-            }
+
             Self::ValueCannotBeUsedAsSourceInFor(val) => {
                 format!(
                     "Value `{}` cannot be used as a for-loop source",
@@ -249,12 +221,7 @@ impl InterpretError {
                 format!("Stack overflow: call depth exceeded the limit of {limit}.")
             }
             Self::ScopeUnderflow => "Internal error: attempted to pop the root scope.".to_string(),
-            Self::ModuleScopeStackUnbalanced(depth) => {
-                format!(
-                    "Internal error: module evaluation left {depth} scope(s) on the stack; \
-                     expected exactly 1 (the module's global scope)."
-                )
-            }
+
             Self::AssertionFailed(msg) => {
                 format!("Assertion failed: {msg}")
             }

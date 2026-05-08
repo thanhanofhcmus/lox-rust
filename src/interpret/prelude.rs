@@ -74,6 +74,7 @@ fn dbg_heap_stats(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, Inter
 }
 
 fn dbg_gc_mark(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, InterpretError> {
+    // TODO: marks all variable in the modules, *all* modules, not just the one imported in this SELF
     ctx.environment.heap.mark(ctx.environment.collect_all_variables());
     Ok(Value::make_nil())
 }
@@ -84,6 +85,7 @@ fn dbg_gc_sweep(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, Interpr
 }
 
 fn dbg_gc_mark_sweep(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, InterpretError> {
+    // TODO: marks all variable in the modules, *all* modules, not just the one imported in this SELF
     ctx.environment.heap.mark(ctx.environment.collect_all_variables());
     ctx.environment.heap.sweep();
     Ok(Value::make_nil())

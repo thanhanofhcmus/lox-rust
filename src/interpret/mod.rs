@@ -6,6 +6,6 @@ mod interpreter;
 mod prelude;
 mod values;
 
-pub use environment::Environment;
+pub use environment::{Environment, Module, ModuleRegistry};
 pub use error::InterpretError;
 pub use interpreter::Interpreter;

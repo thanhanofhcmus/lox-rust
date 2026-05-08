@@ -5,6 +5,7 @@ use super::{Environment, TypecheckError};
 use crate::ast::*;
 use crate::id::Id;
 use crate::identifier_registry::Identifier;
+use crate::typecheck::{Module, ModuleRegistry};
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
@@ -12,6 +13,7 @@ type ConvertForComprehensionResult<R> = Result<(ClauseNode<TypeId>, Option<Claus
 
 pub struct TypeChecker<'e> {
     environment: &'e mut Environment,
+    module_registry: &'e ModuleRegistry,
 
     /// Set by `convert_declare_stmt` to the lhs name before descending into
     /// the rhs, and `take`n by `convert_fn_decl` if the rhs is directly an
@@ -21,12 +23,17 @@ pub struct TypeChecker<'e> {
     current_declaration_id: Option<Identifier>,
 }
 
-impl<'cl> TypeChecker<'cl> {
-    pub fn new(environment: &'cl mut Environment) -> Self {
+impl<'e> TypeChecker<'e> {
+    pub fn new(environment: &'e mut Environment, module_registry: &'e ModuleRegistry) -> Self {
         Self {
             environment,
+            module_registry,
             current_declaration_id: None,
         }
+    }
+
+    pub fn make_module(&mut self) -> Module {
+        self.environment.make_module()
     }
 
     /// Run `f` with a fresh scope pushed on the environment. The scope is
@@ -45,7 +52,9 @@ impl<'cl> TypeChecker<'cl> {
             global_stmts: untyped_global_stmts,
         } = ast;
 
-        // TODO: work on imports
+        for import in &imports {
+            self.environment.add_module(import.iden.id, import.metadata.clone());
+        }
 
         let mut global_stmts = Vec::with_capacity(untyped_global_stmts.len());
 
@@ -253,7 +262,7 @@ impl<'cl> TypeChecker<'cl> {
 
         let base_type_id = self
             .environment
-            .lookup_id(target.base.id)
+            .lookup_variable_id(target.base.id)
             .ok_or(TypecheckError::UndefinedVariableIdentifier(target.base))?;
 
         // Walk the chain with an explicit running type, validating each step
@@ -499,7 +508,7 @@ impl<'cl> TypeChecker<'cl> {
             ClauseCase::Identifier(iden) => {
                 let type_ = self
                     .environment
-                    .lookup_id(iden.id)
+                    .lookup_variable_id(iden.id)
                     .ok_or(TypecheckError::UndefinedVariableIdentifier(iden))?;
                 (type_, ClauseCase::Identifier(iden))
             }
@@ -844,6 +853,14 @@ impl<'cl> TypeChecker<'cl> {
         ))
     }
 
+    fn convert_module_access(&mut self, node: ModuleAccessNode) -> Result<(TypeId, ModuleAccessNode), TypecheckError> {
+        let member_type_id = self
+            .environment
+            .lookup_variable_id_module_scope(node.module.id, node.member.id, self.module_registry) // TODO: errors
+            .unwrap();
+        Ok((member_type_id, node))
+    }
+
     fn convert_subscription(
         &mut self,
         node: SubscriptionNode<()>,
@@ -1083,7 +1100,8 @@ mod tests {
         let mut identifier_registry = IdentifierRegistry::new();
         let ast = crate::parse::parse(input, &items, &mut identifier_registry, false).expect("parse failed");
         let mut env = Environment::new();
-        TypeChecker::new(&mut env).convert(ast)
+        let module_registry = ModuleRegistry::new();
+        TypeChecker::new(&mut env, &module_registry).convert(ast)
     }
 
     /// Type of the expression inside the first top-level Expr statement's Clause.
@@ -1158,13 +1176,13 @@ mod tests {
         let mut env = Environment::new();
         let id = Id::new("x");
         env.declare_variable_id(id, TypeId::NUMBER).unwrap();
-        assert_eq!(env.lookup_id(id), Some(TypeId::NUMBER));
+        assert_eq!(env.lookup_variable_id(id), Some(TypeId::NUMBER));
     }
 
     #[test]
     fn env_lookup_missing_is_none() {
         let env = Environment::new();
-        assert_eq!(env.lookup_id(Id::new("nope")), None);
+        assert_eq!(env.lookup_variable_id(Id::new("nope")), None);
     }
 
     #[test]
@@ -1182,16 +1200,16 @@ mod tests {
         env.declare_variable_id(id, TypeId::NUMBER).unwrap();
         env.push_scope();
         assert!(env.declare_variable_id(id, TypeId::STR).is_ok());
-        assert_eq!(env.lookup_id(id), Some(TypeId::STR));
+        assert_eq!(env.lookup_variable_id(id), Some(TypeId::STR));
         env.pop_scope();
-        assert_eq!(env.lookup_id(id), Some(TypeId::NUMBER));
+        assert_eq!(env.lookup_variable_id(id), Some(TypeId::NUMBER));
     }
 
     #[test]
     fn env_builtins_are_in_scope() {
         let env = Environment::new();
-        assert!(env.lookup_id(Id::new("print")).is_some());
-        assert!(env.lookup_id(Id::new("assert")).is_some());
+        assert!(env.lookup_variable_id(Id::new("print")).is_some());
+        assert!(env.lookup_variable_id(Id::new("assert")).is_some());
     }
 
     #[test]

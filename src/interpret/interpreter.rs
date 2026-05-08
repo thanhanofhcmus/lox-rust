@@ -3,26 +3,18 @@ use super::error::InterpretError;
 use super::values::Value;
 use crate::id::Id;
 use crate::interpret::heap::GcHandle;
+use crate::interpret::{Module, ModuleRegistry};
 use crate::{ast::*, typecheck};
 
 use crate::identifier_registry::{Identifier, IdentifierRegistry};
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple};
-use crate::parse;
 use crate::string_utils;
 use crate::token::Token;
 use crate::types::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
 use std::rc::Rc;
 
-// Shared interpreter state threaded through evaluation AND value display /
-// serialization. Display code (see `values::display_writer`, `Value::write_display`)
-// technically only needs `&Environment` + `&IdentifierRegistry`, but we pass the whole
-// `BorrowContext` to avoid maintaining a second "display-only" context struct
-// that would have to be kept in sync. Fields unused by a given call site are
-// simply ignored — do not split this into a narrower struct without a concrete
-// reason.
 pub struct BorrowContext<'e> {
     pub environment: &'e mut Environment,
     pub print_writer: Rc<RefCell<dyn std::io::Write>>,
@@ -70,6 +62,8 @@ impl ValueReturn {
 
 pub struct Interpreter<'e, 't, 's> {
     environment: &'e mut Environment,
+    module_registry: &'e ModuleRegistry,
+    #[allow(unused)]
     typecheck_environment: &'t mut typecheck::Environment,
     identifier_registry: &'s mut IdentifierRegistry,
     input: &'s str,
@@ -82,6 +76,7 @@ pub struct Interpreter<'e, 't, 's> {
 impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     pub fn new(
         environment: &'e mut Environment,
+        module_registry: &'e ModuleRegistry,
         typecheck_environment: &'t mut typecheck::Environment,
         identifier_registry: &'s mut IdentifierRegistry,
         input: &'s str,
@@ -90,12 +85,36 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     ) -> Self {
         Self {
             environment,
+            module_registry,
             typecheck_environment,
             identifier_registry,
             input,
             print_writer,
             strict_assert,
         }
+    }
+
+    pub fn interpret(&mut self, ast: &'s AST<TypeId>) -> Result<Value, InterpretError> {
+        // we don't interpret here, we should only be interpret ONCE in the main file
+        // only declare that the SELF module have imported these modules
+        for import in &ast.imports {
+            self.environment.add_module(import.iden.id, import.metadata.clone());
+        }
+
+        for stmt in &ast.global_stmts {
+            let ret = self.interpret_stmt(stmt)?;
+            // At the global level, we catch the bubble and return the value
+            // TODO: This is not valid, return should not be in the top level
+            if ret.should_bubble_up {
+                return Ok(ret.get_or_unit());
+            }
+        }
+
+        Ok(Value::Unit)
+    }
+
+    pub fn make_module(&mut self) -> Module {
+        self.environment.make_module()
     }
 
     fn with_scope<V>(
@@ -157,23 +176,6 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         }
     }
 
-    pub fn interpret(&mut self, ast: &'s AST<TypeId>) -> Result<Value, InterpretError> {
-        for import in &ast.imports {
-            self.interpret_import_stmt(import)?;
-        }
-
-        for stmt in &ast.global_stmts {
-            let ret = self.interpret_stmt(stmt)?;
-            // At the global level, we catch the bubble and return the value
-            // TODO: This is not valid, return should not be in the top level
-            if ret.should_bubble_up {
-                return Ok(ret.get_or_unit());
-            }
-        }
-
-        Ok(Value::Unit)
-    }
-
     fn interpret_stmt(&mut self, stmt: &Statement<TypeId>) -> Result<ValueReturn, InterpretError> {
         match stmt {
             Statement::Declare(node) => self.interpret_declare_stmt(node),
@@ -184,78 +186,6 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             Statement::ReassignIden(node, expr) => self.interpret_reassign_id_stmt(node, expr),
             Statement::Expr(expr) => self.interpret_expr(expr),
         }
-    }
-
-    fn interpret_import_stmt(&mut self, node: &ImportNode) -> Result<(), InterpretError> {
-        // check if we import this yet
-        let module_id = node.iden.id;
-        if self.environment.contains_module(module_id) {
-            // TODO: return error makes more sense here, since we cannot have multiple import
-            // import "self:a.lox" as a;
-            // import "third:a.lox" as a; // error here
-            return Ok(());
-        }
-
-        let name = node.iden.span.string_from_source(self.input);
-        let path = node.path.string_from_source(self.input);
-
-        if node.package.id != Id::SELF {
-            unimplemented!()
-        }
-
-        // read the file
-        // TODO: move file loader to an interface
-        let file_path = Path::new(&path);
-        if !file_path.exists() || !file_path.is_file() {
-            return Err(InterpretError::ModuleNotFoundInPath(name, path));
-        }
-
-        let content = std::fs::read_to_string(file_path)
-            .map_err(|err| InterpretError::ReadModuleFailed(name.clone(), path.clone(), err))?;
-
-        let tokens =
-            parse::lex(&content).map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
-
-        // TODO: fix should_eval_string in parser, current always set to true
-        let untyped = parse::parse(&content, &tokens, self.identifier_registry, true)
-            .map_err(|err| InterpretError::ParseModuleFailed(name.clone(), path.clone(), err))?;
-
-        let module_ast = crate::typecheck::TypeChecker::new(self.typecheck_environment)
-            .convert(untyped)
-            .map_err(|err| InterpretError::TypeCheckModuleFailed(name.clone(), path.clone(), err))?;
-
-        // interpret the file
-        // we will kind of need to keep track of the current module stack
-        // and the current scope stack
-        // everything starts from a module
-        self.environment.init_module(module_id);
-        let mut itp = Interpreter::new(
-            self.environment,
-            self.typecheck_environment,
-            self.identifier_registry,
-            &content,
-            self.print_writer.clone(),
-            self.strict_assert,
-        );
-
-        // We treat the module evaluation as a top-level interpret call
-        let interpret_result = itp
-            .interpret(&module_ast)
-            .map_err(|err| InterpretError::InterpretModuleFailed(name, path, Box::new(err)));
-
-        // Always attempt to deinit, even if interpretation failed. Prefer the
-        // interpret error (root cause); only surface a scope imbalance if the
-        // module body actually completed.
-        let deinit_result = self.environment.deinit_module();
-
-        // TODO: Maybe do something with the return value of a module
-        // if that actually make sense
-        interpret_result?;
-        deinit_result?;
-
-        // TODO: detect circular dependency
-
-        Ok(())
     }
 
     fn insert_variable(&mut self, iden: Identifier, value: Value) -> Result<(), InterpretError> {
@@ -636,6 +566,13 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
     fn interpret_member_access(&mut self, node: &MemberAccessNode<TypeId>) -> Result<Value, InterpretError> {
         let value = self.interpret_clause_expr(&node.object)?;
         value.get_by_chain_step(ChainStep::Member(node.member), self.environment)
+    }
+
+    fn interpret_module_access(&mut self, node: &ModuleAccessNode) -> Result<Value, InterpretError> {
+        self.environment
+            .get_variable_module_scope(&node.module.id, node.member.id, self.module_registry)
+            // TODO: make error more okay, add the module part
+            .ok_or(InterpretError::NotFoundVariable(node.member))
     }
 
     fn interpret_fn_call(&mut self, node: &FnCallNode<TypeId>) -> Result<Value, InterpretError> {

@@ -11,6 +11,7 @@ use crate::{
         prelude,
         values::{Array, Function, Map, Struct, Tuple},
     },
+    module::{ModuleMetadata, ModuleRegistry as GenericModuleRegistry},
 };
 
 #[derive(Debug)]
@@ -20,6 +21,10 @@ struct Scope {
 }
 
 impl Scope {
+    fn make_global() -> Self {
+        Self::new(true)
+    }
+
     fn new(is_readonly: bool) -> Self {
         Self {
             variables: HashMap::new(),
@@ -41,7 +46,7 @@ struct ScopeStack(Vec<Scope>);
 
 impl ScopeStack {
     fn new() -> Self {
-        Self(vec![Scope::new(false)])
+        Self(vec![Scope::make_global()])
     }
 
     fn len(&self) -> usize {
@@ -82,20 +87,11 @@ impl ScopeStack {
 }
 
 #[derive(Debug)]
-struct Module {
+pub struct Module {
     variables: HashMap<Id, Value>,
-    #[allow(unused)]
-    id: Id,
 }
 
-impl Module {
-    fn new(id: Id) -> Self {
-        Self {
-            variables: HashMap::new(),
-            id,
-        }
-    }
-}
+pub type ModuleRegistry = GenericModuleRegistry<Module>;
 
 const SCOPE_SIZE_LIMIT: usize = 100;
 
@@ -103,9 +99,9 @@ const SCOPE_SIZE_LIMIT: usize = 100;
 pub struct Environment {
     pub(super) heap: Heap,
     scope_stack: ScopeStack,
-    modules: HashMap<Id, Module>,
+    imported_modules: HashMap<Id, ModuleMetadata>,
+    // TODO: update this any maybe anything that is HashMap<Id, Value> to be a Scope
     preludes: HashMap<Id, Value>,
-    current_module_id: Id,
 }
 
 macro_rules! decl_gc_type_methods {
@@ -138,69 +134,48 @@ macro_rules! decl_gc_type_methods {
 
 impl Environment {
     pub fn new() -> Self {
-        let current_module_id = Id::CURRENT;
-
-        let modules = HashMap::from([(current_module_id, Module::new(current_module_id))]);
-
         Self {
             heap: Heap::new(),
             scope_stack: ScopeStack::new(),
-            modules,
+            imported_modules: HashMap::new(),
             preludes: prelude::create(),
-            current_module_id,
         }
     }
 
     pub(super) fn collect_all_variables(&self) -> Vec<Value> {
-        let mut variables = self
-            .scope_stack
+        self.scope_stack
             .iter_all()
             .flat_map(|s| s.variables.values().copied())
-            .collect::<Vec<_>>();
-        let module_vars = self.modules.iter().flat_map(|(_, v)| v.variables.values().copied());
-        variables.extend(module_vars);
+            .collect::<Vec<_>>()
 
-        variables
+        // TODO: marks all variable in the modules, *all* modules, not just the one imported in this SELF
+
+        // let mut variables = self
+        //     .scope_stack
+        //     .iter_all()
+        //     .flat_map(|s| s.variables.values().copied())
+        //     .collect::<Vec<_>>();
+        // let module_vars = self.modules.iter().flat_map(|(_, v)| v.variables.values().copied());
+        // variables.extend(module_vars);
+
+        // variables
     }
 
     // Module functions
 
-    pub fn contains_module(&self, id: Id) -> bool {
-        self.modules.contains_key(&id)
+    pub fn add_module(&mut self, id: Id, metadata: ModuleMetadata) {
+        self.imported_modules.insert(id, metadata);
     }
 
-    pub fn init_module(&mut self, id: Id) {
-        self.current_module_id = id;
-        // if we were to allow import in any places, we need to stash the stack
-        // of the current module and restore it later
-    }
-
-    pub fn deinit_module(&mut self) -> Result<(), InterpretError> {
-        let mut module = Module::new(self.current_module_id);
-        // After a module is evaluated there should be exactly one scope
-        // remaining (the module's global scope). Anything else indicates
-        // an unbalanced push/pop somewhere in evaluation — surface it as a
-        // recoverable error instead of panicking.
-        let depth = self.scope_stack.len();
-        if depth != 1 {
-            return Err(InterpretError::ModuleScopeStackUnbalanced(depth));
-        }
-        // Transfer variables to the module instead of disposing them —
+    pub fn make_module(&mut self) -> Module {
+        // Transfer variables to the module instead of disposing them
         // do NOT call pop_scope() here, which would shallow_dispose every value.
-        let last_scope = self.scope_stack.pop()?;
-        module.variables = last_scope.variables;
+        // We use get_current_mut here because we assume the current scope is the last scope
+        // i.e. The global scope
+        let last_scope = std::mem::replace(self.scope_stack.get_current_mut(), Scope::make_global());
+        let variables = last_scope.variables;
 
-        // TODO: module GC is incomplete. Heap objects owned by module-scope
-        // variables are never disposed here — they stay alive for the process
-        // lifetime. Ref-count bookkeeping for these values is also permanently
-        // skewed (pop_scope was intentionally skipped). This is acceptable
-        // today because mark-sweep is the authoritative reclaim path and
-        // module variables root via `collect_all_variables`, but the whole
-        // module loader needs a proper design pass (see docs/todos.md:
-        // "Rework module"). Revisit ref-count invariants when that lands.
-
-        self.modules.insert(self.current_module_id, module);
-        Ok(())
+        Module { variables }
     }
 
     // Scope functions
@@ -225,6 +200,7 @@ impl Environment {
 
     pub fn get_variable_all_scope(&self, node: &Identifier) -> Option<(Value, bool /* is_readonly */)> {
         let id = node.id;
+
         // check scopes/stacks
         for scope in self.scope_stack.iter_outward() {
             if let Some(value) = scope.get_variable(id) {
@@ -240,6 +216,17 @@ impl Environment {
         }
 
         None
+    }
+
+    pub fn get_variable_module_scope(
+        &self,
+        module: &Id,
+        member: Id,
+        module_registry: &ModuleRegistry,
+    ) -> Option<Value> {
+        let metadata = self.imported_modules.get(module)?;
+        let module = module_registry.get(metadata)?;
+        module.variables.get(&member).copied()
     }
 
     pub fn insert_variable(&mut self, id: Id, value: Value) -> Option<Value> {
@@ -309,19 +296,10 @@ impl Environment {
             }
         }
         writeln!(s).unwrap();
-
-        writeln!(s, "Current module: {:?}", self.current_module_id).unwrap();
         writeln!(s).unwrap();
         writeln!(s, "Modules:").unwrap();
-        for module in self.modules.values() {
-            if module.variables.is_empty() {
-                writeln!(s, "  {:?}: (empty)", module.id).unwrap();
-            } else {
-                writeln!(s, "  {:?}:", module.id).unwrap();
-                for (id, value) in &module.variables {
-                    writeln!(s, "    {id:?} = {value:?}").unwrap();
-                }
-            }
+        for module_id in &self.imported_modules {
+            writeln!(s, "  {:?}:", module_id).unwrap();
         }
         writeln!(s).unwrap();
 
