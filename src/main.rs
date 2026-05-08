@@ -1,24 +1,27 @@
 mod ast;
+mod dag;
 mod id;
 mod identifier_registry;
 mod interpret;
+mod module;
 mod parse;
 mod span;
 mod string_interner;
 mod string_utils;
 mod token;
+mod type_index;
 mod typecheck;
 mod types;
 
-use std::{cell::RefCell, env, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, env, path::Path, rc::Rc};
 
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
 use thiserror::Error;
 
 use crate::{
-    ast::AST, identifier_registry::IdentifierRegistry, interpret::InterpretError, parse::ParseError,
-    typecheck::TypecheckError,
+    ast::AST, dag::DAG, id::Id, identifier_registry::IdentifierRegistry, interpret::InterpretError,
+    module::ModuleMetadata, parse::ParseError, typecheck::TypecheckError, types::TypeId,
 };
 
 /// Internal control-flow signal for "the script failed and the formatted
@@ -41,7 +44,14 @@ type DynResult = Result<(), Box<dyn std::error::Error>>;
 struct RunnerContext {
     identifier_registry: IdentifierRegistry,
     typecheck_env: typecheck::Environment,
+    typecheck_module_registry: typecheck::ModuleRegistry,
+
     interpret_env: interpret::Environment,
+    interpret_module_registry: interpret::ModuleRegistry,
+
+    parse_cache: HashMap<ModuleMetadata, AST<()>>,
+    typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
+
     strict_assert: bool,
 }
 
@@ -50,7 +60,11 @@ impl RunnerContext {
         Self {
             identifier_registry: IdentifierRegistry::new(),
             typecheck_env: typecheck::Environment::new(),
+            typecheck_module_registry: typecheck::ModuleRegistry::new(),
             interpret_env: interpret::Environment::new(),
+            interpret_module_registry: interpret::ModuleRegistry::new(),
+            parse_cache: HashMap::new(),
+            typecheck_cache: HashMap::new(),
             strict_assert,
         }
     }
@@ -85,50 +99,150 @@ impl RunnerContext {
         Ok(ast)
     }
 
-    fn run_stmt(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> RunResult {
-        let ast = self.lex_and_parse(input, source_name, is_in_repl)?;
-
+    fn type_check(
+        &mut self,
+        ast: AST<()>,
+        input: &str,
+        source_name: Option<&str>,
+    ) -> Result<(AST<types::TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
-        let mut typechecker = typecheck::TypeChecker::new(&mut self.typecheck_env);
-        let ast = typechecker.convert(ast).map_err(|err| {
-            error!(
-                "Typecheck error:\n{}",
-                err.generate_user_facing_error(
-                    source_name,
-                    input,
-                    &self.identifier_registry,
-                    self.typecheck_env.get_type_interner()
-                )
-            );
-            RunError::Typecheck(err)
-        })?;
-        debug!("type checking done");
+        let mut typechecker = typecheck::TypeChecker::new(&mut self.typecheck_env, &self.typecheck_module_registry);
 
+        match typechecker.convert(ast) {
+            Err(err) => {
+                error!(
+                    "Typecheck error:\n{}",
+                    err.generate_user_facing_error(
+                        source_name,
+                        input,
+                        &self.identifier_registry,
+                        self.typecheck_env.get_type_interner()
+                    )
+                );
+                Err(RunError::Typecheck(err))
+            }
+            Ok(ast) => {
+                debug!("type checking done");
+                let module = typechecker.make_module();
+
+                Ok((ast, module))
+            }
+        }
+    }
+
+    fn interpret(
+        &mut self,
+        ast: AST<TypeId>,
+        input: &str,
+        source_name: Option<&str>,
+    ) -> Result<interpret::Module, RunError> {
         debug!("interpreting start");
-        let rc = Rc::new(RefCell::new(std::io::stdout()));
+        let print_writer = Rc::new(RefCell::new(std::io::stdout()));
         let mut interpreter = interpret::Interpreter::new(
             &mut self.interpret_env,
+            &self.interpret_module_registry,
             &mut self.typecheck_env,
             &mut self.identifier_registry,
             input,
-            rc,
+            print_writer,
             self.strict_assert,
         );
 
-        interpreter.interpret(&ast).map_err(|err| {
-            error!(
-                "Interpreter error:\n{}",
-                err.generate_user_facing_error(
-                    source_name,
-                    input,
-                    &self.interpret_env,
-                    &self.identifier_registry,
-                    self.typecheck_env.get_type_interner(),
-                )
-            );
-            RunError::Interpret(err)
-        })?;
-        debug!("interpreting done");
+        match interpreter.interpret(&ast) {
+            Ok(_) => {
+                debug!("interpreting done");
+                Ok(interpreter.make_module())
+            }
+            Err(err) => {
+                error!(
+                    "Interpreter error:\n{}",
+                    err.generate_user_facing_error(source_name, input, &self.interpret_env, &self.identifier_registry,)
+                );
+                Err(RunError::Interpret(err))
+            }
+        }
+    }
+
+    fn run_stmt(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> RunResult {
+        // for a module, we should only be: Parse once - Typecheck once - Interpret once
+
+        let mut module_dag = DAG::new();
+        let mut import_queue = vec![];
+
+        let ast = self.lex_and_parse(input, source_name, is_in_repl)?;
+
+        let root_module_metadata = ModuleMetadata {
+            package: Id::SELF,
+            path: ".".to_string(),
+        };
+
+        let root_module_node_id = module_dag.add_node(root_module_metadata.clone());
+        for imp in &ast.imports {
+            let md_node_id = module_dag.add_node(imp.metadata.clone());
+            module_dag.add_edge(root_module_node_id, md_node_id);
+            import_queue.push(md_node_id);
+        }
+
+        self.parse_cache.insert(root_module_metadata, ast);
+
+        // both parse and build the module DAG
+        while let Some(current_node_id) = import_queue.pop() {
+            let node_metadata = module_dag.get_node(current_node_id).unwrap().data.clone();
+            if self.parse_cache.contains_key(&node_metadata) {
+                continue;
+            }
+
+            let path = &node_metadata.path;
+            if node_metadata.package != Id::SELF {
+                unimplemented!()
+            }
+
+            // read the file
+            // TODO: move file loader to an interface
+            let file_path = Path::new(&path);
+            if !file_path.exists() || !file_path.is_file() {
+                panic!("path is point to no file");
+            }
+
+            let content = std::fs::read_to_string(file_path).unwrap();
+            let untyped_ast = self.lex_and_parse(&content, Some(path), true)?;
+
+            for imp in &untyped_ast.imports {
+                let md_node_id = module_dag.add_node(imp.metadata.clone());
+                module_dag.add_edge(current_node_id, md_node_id);
+                import_queue.push(md_node_id);
+            }
+
+            self.parse_cache.insert(node_metadata, untyped_ast);
+        }
+
+        if module_dag.has_circle() {
+            unimplemented!()
+        }
+        module_dag.transitive_reduce();
+
+        let order = module_dag.get_leaf_first_order();
+
+        // we might want to have just a single global registry that contains every symbols there is
+
+        // typecheck
+        for &current_node_id in &order {
+            let node_metadata = module_dag.get_node(current_node_id).unwrap().data.clone();
+            let untyped_ast = self.parse_cache.get(&node_metadata).unwrap().clone();
+            // FIXME: typecheck is using the same env, we should typecheck each module in a new scope
+            let (typed_ast, module) = self.type_check(untyped_ast, input, source_name)?;
+            self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
+            self.typecheck_module_registry.insert(node_metadata, module);
+        }
+
+        // interpret
+        for &current_node_id in &order {
+            let node_metadata = module_dag.get_node(current_node_id).unwrap().data.clone();
+            let typed_ast = self.typecheck_cache.get(&node_metadata).unwrap().clone();
+
+            let module = self.interpret(typed_ast, input, source_name)?;
+            self.interpret_module_registry.insert(node_metadata, module);
+        }
 
         Ok(())
     }
