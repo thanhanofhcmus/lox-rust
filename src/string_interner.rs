@@ -1,54 +1,10 @@
-use std::{
-    cmp,
-    collections::{HashMap, HashSet},
-    marker::PhantomData,
-};
+use std::collections::{HashMap, HashSet};
 
 use derive_more::Debug;
 
-#[derive(Debug)]
-#[debug("{}({})", std::any::type_name::<T>(), _0)]
-pub struct SymbolId<T>(usize, PhantomData<T>);
+use crate::type_index::TypeIndex;
 
-impl<T> Clone for SymbolId<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<T> Copy for SymbolId<T> {}
-
-impl<T> PartialOrd for SymbolId<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T> Ord for SymbolId<T> {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl<T> PartialEq for SymbolId<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T> Eq for SymbolId<T> {}
-
-impl<T> std::hash::Hash for SymbolId<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl<T> SymbolId<T> {
-    pub fn new(value: usize) -> Self {
-        Self(value, PhantomData)
-    }
-}
+pub type SymbolId<T> = TypeIndex<usize, T>;
 
 #[derive(Debug, Clone)]
 pub struct StringInterner<T> {
