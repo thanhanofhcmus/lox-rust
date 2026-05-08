@@ -115,7 +115,14 @@ pub fn lex(input: &str) -> Result<Vec<LexItem>, ParseError> {
                 result.push(tok_one(Token::Dot));
             }
             b',' => result.push(tok_one(Token::Comma)),
-            b':' => result.push(tok_one(Token::Colon)),
+            b':' => {
+                if is_next_char(utf8_bytes, curr_offset, b':') {
+                    result.push(LexItem::new(Token::ColonColon, Span::two(curr_offset)));
+                    curr_offset += 1;
+                } else {
+                    result.push(tok_one(Token::Colon))
+                }
+            }
             b';' => result.push(tok_one(Token::Semicolon)),
             b'+' => result.push(tok_one(Token::Plus)),
             b'*' => result.push(tok_one(Token::Star)),

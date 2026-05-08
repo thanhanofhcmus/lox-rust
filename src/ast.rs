@@ -1,4 +1,4 @@
-use crate::{identifier_registry::Identifier, span::Span, token::Token, types::TypeId};
+use crate::{identifier_registry::Identifier, module::ModuleMetadata, span::Span, token::Token, types::TypeId};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
@@ -9,8 +9,7 @@ pub struct AST<T> {
 
 #[derive(Debug, Clone)]
 pub struct ImportNode {
-    pub path: Span,
-    pub package: Identifier,
+    pub metadata: ModuleMetadata,
     pub iden: Identifier,
 }
 
@@ -178,6 +177,7 @@ pub enum ClauseCase<T> {
     Subscription(SubscriptionNode<T>),
     FnCall(FnCallNode<T>),
     MemberAccess(MemberAccessNode<T>),
+    ModuleAccess(ModuleAccessNode),
 }
 
 #[derive(Debug, Clone)]
@@ -196,6 +196,12 @@ pub enum MemberNode {
 pub struct MemberAccessNode<T> {
     pub object: Box<ClauseNode<T>>,
     pub member: MemberNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleAccessNode {
+    pub module: Identifier,
+    pub member: Identifier,
 }
 
 #[derive(Debug, Clone)]

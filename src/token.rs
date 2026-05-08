@@ -121,6 +121,9 @@ pub enum Token {
     #[display(";")]
     Semicolon,
 
+    #[display("::")]
+    ColonColon,
+
     #[display("comment")]
     Comment,
 }

@@ -526,6 +526,10 @@ impl<'cl> TypeChecker<'cl> {
                 let (type_id, case) = self.convert_member_access(node)?;
                 (type_id, ClauseCase::MemberAccess(case))
             }
+            ClauseCase::ModuleAccess(node) => {
+                let (type_id, case) = self.convert_module_access(node)?;
+                (type_id, ClauseCase::ModuleAccess(case))
+            }
             ClauseCase::FnCall(call) => {
                 let (type_id, case) = self.convert_fn_call(call)?;
                 (type_id, ClauseCase::FnCall(case))

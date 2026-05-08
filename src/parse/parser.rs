@@ -1,5 +1,6 @@
 use crate::identifier_registry::Identifier;
 use crate::identifier_registry::IdentifierRegistry;
+use crate::module::ModuleMetadata;
 use crate::types::TypeId;
 use crate::{ast::*, string_utils};
 
@@ -68,22 +69,23 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
 
     let package_start = path_li.span.start + 1;
     let package_end = package_start + colon_pos - 2;
+    let package_iden = state.create_identifier(LexItem {
+        span: Span::new(package_start, package_end),
+        token: Token::Identifier,
+    });
 
     let path_start = package_end + 2;
     let path_end = path_li.span.end - 1;
-
-    let package_span = Span::new(package_start, package_end);
-    let path_span = Span::new(path_start, path_end);
+    let path = Span::new(path_start, path_end).string_from_source(state.get_input());
 
     state.consume_token(Token::As)?;
     let iden_li = state.consume_token(Token::Identifier)?;
     state.consume_token(Token::Semicolon)?;
     Ok(ImportNode {
-        package: state.create_identifier(LexItem {
-            span: package_span,
-            token: Token::Identifier,
-        }),
-        path: path_span,
+        metadata: ModuleMetadata {
+            package: package_iden.id,
+            path,
+        },
         iden: state.create_identifier(iden_li),
     })
 }
@@ -405,7 +407,7 @@ fn get_binding_power(token: Token) -> Option<(BindingPower, BindingPower)> {
         Star | Slash | Percentage => (FactorLeft, FactorRight),
 
         // postfix operators, we will only extract the left part
-        LSquareParen | LRoundParen | Dot => (ChainLeft, ChainRight),
+        LSquareParen | LRoundParen | ColonColon | Dot => (ChainLeft, ChainRight),
         _ => return Option::None,
     };
     Some(bp)
@@ -445,6 +447,18 @@ fn parse_pratt_infix(
 ) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
+        // Module access
+        Token::ColonColon => {
+            state.consume_token(li.token)?;
+            let ClauseCase::Identifier(module_iden) = lhs.case else {
+                unimplemented!()
+            };
+            let member_li = state.consume_token(Token::Identifier)?;
+            Ok(ClauseNode::new(ClauseCase::ModuleAccess(ModuleAccessNode {
+                module: module_iden,
+                member: state.create_identifier(member_li),
+            })))
+        }
         // Struct/Tuple member access
         Token::Dot => {
             state.consume_token(li.token)?;
@@ -480,7 +494,7 @@ fn parse_pratt_infix(
                 indexee: Box::new(indexee),
             })))
         }
-        // function call
+        // Function call
         Token::LRoundParen => {
             let args = parse_comma_list(state, Token::LRoundParen, Token::RRoundParen, parse_expr)?;
             Ok(ClauseNode::new(ClauseCase::FnCall(FnCallNode {

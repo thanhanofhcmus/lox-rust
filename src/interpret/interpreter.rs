@@ -478,6 +478,7 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
             ClauseCase::FnCall(node) => self.interpret_fn_call(node),
             ClauseCase::Subscription(node) => self.interpret_subscription(node),
             ClauseCase::MemberAccess(node) => self.interpret_member_access(node),
+            ClauseCase::ModuleAccess(node) => self.interpret_module_access(node),
             ClauseCase::Identifier(node) => self
                 .environment
                 .get_variable_all_scope(node)
