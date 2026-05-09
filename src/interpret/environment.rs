@@ -32,6 +32,10 @@ impl Scope {
         }
     }
 
+    fn from_map(variables: HashMap<Id, Value>, is_readonly: bool) -> Self {
+        Self { variables, is_readonly }
+    }
+
     fn get_variable(&self, id: Id) -> Option<Value> {
         self.variables.get(&id).copied()
     }
@@ -100,8 +104,7 @@ pub struct Environment {
     pub(super) heap: Heap,
     scope_stack: ScopeStack,
     imported_modules: HashMap<Id, ModuleMetadata>,
-    // TODO: update this any maybe anything that is HashMap<Id, Value> to be a Scope
-    preludes: HashMap<Id, Value>,
+    preludes: Scope,
 }
 
 macro_rules! decl_gc_type_methods {
@@ -138,7 +141,7 @@ impl Environment {
             heap: Heap::new(),
             scope_stack: ScopeStack::new(),
             imported_modules: HashMap::new(),
-            preludes: prelude::create(),
+            preludes: Scope::from_map(prelude::create(), true),
         }
     }
 
@@ -211,8 +214,8 @@ impl Environment {
         // from now on, the variable is always readonly
 
         // get from built-in
-        if let Some(value) = self.preludes.get(&id) {
-            return Some((*value, true));
+        if let Some(value) = self.preludes.get_variable(id) {
+            return Some((value, true));
         }
 
         None

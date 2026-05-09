@@ -1,10 +1,10 @@
 use super::environment::Environment;
 use super::error::InterpretError;
 use super::values::Value;
+use crate::ast::*;
 use crate::id::Id;
 use crate::interpret::heap::GcHandle;
 use crate::interpret::{Module, ModuleRegistry};
-use crate::{ast::*, typecheck};
 
 use crate::identifier_registry::{Identifier, IdentifierRegistry};
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple};
@@ -60,11 +60,9 @@ impl ValueReturn {
     }
 }
 
-pub struct Interpreter<'e, 't, 's> {
+pub struct Interpreter<'e, 's> {
     environment: &'e mut Environment,
     module_registry: &'e ModuleRegistry,
-    #[allow(unused)]
-    typecheck_environment: &'t mut typecheck::Environment,
     identifier_registry: &'s mut IdentifierRegistry,
     input: &'s str,
 
@@ -73,11 +71,10 @@ pub struct Interpreter<'e, 't, 's> {
     strict_assert: bool,
 }
 
-impl<'e, 't, 's> Interpreter<'e, 't, 's> {
+impl<'e, 's> Interpreter<'e, 's> {
     pub fn new(
         environment: &'e mut Environment,
         module_registry: &'e ModuleRegistry,
-        typecheck_environment: &'t mut typecheck::Environment,
         identifier_registry: &'s mut IdentifierRegistry,
         input: &'s str,
         print_writer: Rc<RefCell<dyn std::io::Write>>,
@@ -86,7 +83,6 @@ impl<'e, 't, 's> Interpreter<'e, 't, 's> {
         Self {
             environment,
             module_registry,
-            typecheck_environment,
             identifier_registry,
             input,
             print_writer,
