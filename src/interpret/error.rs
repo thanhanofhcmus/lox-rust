@@ -3,7 +3,7 @@ use super::values::Value;
 use crate::{
     ast::MemberNode,
     id::Id,
-    identifier_registry::{Identifier, IdentifierRegistry},
+    identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry},
     interpret::{
         Environment,
         heap::{GcHandle, GcKind, StrId},
@@ -15,8 +15,8 @@ use crate::{
 #[derive(Debug)]
 pub enum InterpretError {
     ReDeclareVariable(Identifier),
-    NotFoundVariable(Identifier),
     VariableReadOnly(Identifier),
+    NotFoundVariable(ComplexIdentifier),
     UnknownOperation(Token),
     InvalidOperationOnType(Token, Value),
     MismatchType(Token, Value, Value),
@@ -82,7 +82,8 @@ impl InterpretError {
             Self::NotFoundVariable(node) => {
                 format!(
                     "Variable '{}' is not defined in the current scope.",
-                    ir.get_or_unknown(node.id)
+                    // TODO: add the module here
+                    ir.get_or_unknown(node.name.id)
                 )
             }
             Self::VariableReadOnly(node) => {

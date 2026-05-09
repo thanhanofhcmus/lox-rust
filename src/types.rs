@@ -8,7 +8,7 @@ pub struct TypeId(usize);
 impl TypeId {
     // Using the top 4 bits for the category (allows 16 categories)
     const CATEGORY_SHIFT: usize = (std::mem::size_of::<usize>() * 8) - 4;
-    const ID_MASK: usize = !(0xF << Self::CATEGORY_SHIFT);
+    const ID_MASK: usize = !(0b1111 << Self::CATEGORY_SHIFT);
 
     const CATEGORY_SCALAR: usize = 0 << Self::CATEGORY_SHIFT;
     const CATEGORY_ARRAY: usize = 1 << Self::CATEGORY_SHIFT;
@@ -41,12 +41,20 @@ impl TypeId {
         1, // Struct
     ];
 
-    pub fn is_array(&self) -> bool {
+    pub fn is_array(self) -> bool {
         (self.0 & !Self::ID_MASK) == Self::CATEGORY_ARRAY
     }
 
-    pub fn is_map(&self) -> bool {
+    pub fn is_map(self) -> bool {
         (self.0 & !Self::ID_MASK) == Self::CATEGORY_MAP
+    }
+
+    // debug functions
+    pub fn get_parts(self) -> (usize, usize) {
+        (
+            (self.0 & !Self::ID_MASK) >> Self::CATEGORY_SHIFT,
+            (self.0 & Self::ID_MASK),
+        )
     }
 }
 

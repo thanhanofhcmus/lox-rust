@@ -20,8 +20,15 @@ use rustyline::{DefaultEditor, error::ReadlineError};
 use thiserror::Error;
 
 use crate::{
-    ast::AST, dag::DAG, id::Id, identifier_registry::IdentifierRegistry, interpret::InterpretError,
-    module::ModuleMetadata, parse::ParseError, typecheck::TypecheckError, types::TypeId,
+    ast::AST,
+    dag::DAG,
+    id::Id,
+    identifier_registry::IdentifierRegistry,
+    interpret::InterpretError,
+    module::ModuleMetadata,
+    parse::ParseError,
+    typecheck::TypecheckError,
+    types::{TypeId, TypeInterner},
 };
 
 /// Internal control-flow signal for "the script failed and the formatted
@@ -45,28 +52,33 @@ struct RunnerContext {
     global_identifier_registry: IdentifierRegistry,
     typecheck_module_registry: typecheck::ModuleRegistry,
     interpret_module_registry: interpret::ModuleRegistry,
-
-    repl_typecheck_env: typecheck::Environment,
-    repl_interpret_env: interpret::Environment,
+    type_interner: TypeInterner,
 
     parse_cache: HashMap<ModuleMetadata, AST<()>>,
     typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
+
+    repl_typecheck_module: typecheck::Module,
+    repl_interpreter_module: interpret::Module,
 
     strict_assert: bool,
 }
 
 impl RunnerContext {
     fn new(strict_assert: bool) -> Self {
+        let type_interner = TypeInterner::new();
+        let typecheck_module_registry = typecheck::ModuleRegistry::new();
         Self {
             global_identifier_registry: IdentifierRegistry::new(),
-            typecheck_module_registry: typecheck::ModuleRegistry::new(),
+            typecheck_module_registry,
             interpret_module_registry: interpret::ModuleRegistry::new(),
-
-            repl_typecheck_env: typecheck::Environment::new(),
-            repl_interpret_env: interpret::Environment::new(),
+            type_interner,
 
             parse_cache: HashMap::new(),
             typecheck_cache: HashMap::new(),
+
+            repl_typecheck_module: typecheck::Module::default(),
+            repl_interpreter_module: interpret::Module::default(),
+
             strict_assert,
         }
     }
@@ -101,35 +113,13 @@ impl RunnerContext {
         Ok(ast)
     }
 
-    fn type_check_repl(
-        &mut self,
-        ast: AST<()>,
-        input: &str,
-        source_name: Option<&str>,
-    ) -> Result<AST<types::TypeId>, RunError> {
-        debug!("type checking start");
+    fn create_typecheck_env(&'_ mut self) -> typecheck::Environment<'_> {
+        typecheck::Environment::new(&mut self.type_interner, &self.typecheck_module_registry)
+    }
 
-        let mut typechecker =
-            typecheck::TypeChecker::new(&mut self.repl_typecheck_env, &self.typecheck_module_registry);
-
-        match typechecker.convert(ast) {
-            Err(err) => {
-                error!(
-                    "Typecheck error:\n{}",
-                    err.generate_user_facing_error(
-                        source_name,
-                        input,
-                        &self.global_identifier_registry,
-                        self.repl_typecheck_env.get_type_interner()
-                    )
-                );
-                Err(RunError::Typecheck(err))
-            }
-            Ok(ast) => {
-                debug!("type checking done");
-                Ok(ast)
-            }
-        }
+    fn create_repl_typecheck_env(&'_ mut self) -> typecheck::Environment<'_> {
+        let repl_module = std::mem::take(&mut self.repl_typecheck_module);
+        typecheck::Environment::from_module(repl_module, &mut self.type_interner, &self.typecheck_module_registry)
     }
 
     fn type_check(
@@ -137,11 +127,11 @@ impl RunnerContext {
         ast: AST<()>,
         input: &str,
         source_name: Option<&str>,
+        is_repl: bool,
     ) -> Result<(AST<types::TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
-
-        let mut type_check_env = typecheck::Environment::new();
-        let mut typechecker = typecheck::TypeChecker::new(&mut type_check_env, &self.typecheck_module_registry);
+        let typecheck_env = if is_repl { self.create_repl_typecheck_env() } else { self.create_typecheck_env() };
+        let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
 
         match typechecker.convert(ast) {
             Err(err) => {
@@ -151,7 +141,7 @@ impl RunnerContext {
                         source_name,
                         input,
                         &self.global_identifier_registry,
-                        self.repl_typecheck_env.get_type_interner()
+                        &self.type_interner,
                     )
                 );
                 Err(RunError::Typecheck(err))
@@ -159,40 +149,7 @@ impl RunnerContext {
             Ok(ast) => {
                 debug!("type checking done");
                 let module = typechecker.make_module();
-
                 Ok((ast, module))
-            }
-        }
-    }
-
-    fn interpret_repl(&mut self, ast: AST<TypeId>, input: &str, source_name: Option<&str>) -> Result<(), RunError> {
-        debug!("interpreting start");
-        let print_writer = Rc::new(RefCell::new(std::io::stdout()));
-        let mut interpreter = interpret::Interpreter::new(
-            &mut self.repl_interpret_env,
-            &self.interpret_module_registry,
-            &mut self.global_identifier_registry,
-            input,
-            print_writer,
-            self.strict_assert,
-        );
-
-        match interpreter.interpret(&ast) {
-            Ok(_) => {
-                debug!("interpreting done");
-                Ok(())
-            }
-            Err(err) => {
-                error!(
-                    "Interpreter error:\n{}",
-                    err.generate_user_facing_error(
-                        source_name,
-                        input,
-                        &self.repl_interpret_env,
-                        &self.global_identifier_registry,
-                    )
-                );
-                Err(RunError::Interpret(err))
             }
         }
     }
@@ -202,23 +159,31 @@ impl RunnerContext {
         ast: AST<TypeId>,
         input: &str,
         source_name: Option<&str>,
+        is_repl: bool,
     ) -> Result<interpret::Module, RunError> {
         debug!("interpreting start");
         let print_writer = Rc::new(RefCell::new(std::io::stdout()));
-        let mut interpreter_env = interpret::Environment::new();
+        let strict_assert = self.strict_assert;
+        let interpret_env = if is_repl {
+            let repl_module = std::mem::take(&mut self.repl_interpreter_module);
+            interpret::Environment::from_module(repl_module, &self.interpret_module_registry)
+        } else {
+            interpret::Environment::new(&self.interpret_module_registry)
+        };
+
         let mut interpreter = interpret::Interpreter::new(
-            &mut interpreter_env,
-            &self.interpret_module_registry,
+            interpret_env,
             &mut self.global_identifier_registry,
             input,
             print_writer,
-            self.strict_assert,
+            strict_assert,
         );
+        let result = interpreter.interpret(&ast).map(|_| interpreter.make_module());
 
-        match interpreter.interpret(&ast) {
-            Ok(_) => {
+        match result {
+            Ok(module) => {
                 debug!("interpreting done");
-                Ok(interpreter.make_module())
+                Ok(module)
             }
             Err(err) => {
                 error!(
@@ -226,8 +191,8 @@ impl RunnerContext {
                     err.generate_user_facing_error(
                         source_name,
                         input,
-                        &self.repl_interpret_env,
-                        &self.global_identifier_registry,
+                        interpreter.get_env(),
+                        interpreter.get_identifer_registry(),
                     )
                 );
                 Err(RunError::Interpret(err))
@@ -235,21 +200,21 @@ impl RunnerContext {
         }
     }
 
-    fn run_stmt(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> RunResult {
+    fn run_stmt(&mut self, input: &str, source_name: Option<&str>) -> RunResult {
         // for a module, we should only be: Parse once - Typecheck once - Interpret once
+
+        let is_in_repl = source_name.is_none();
 
         let mut module_dag = DAG::new();
         let mut import_queue = vec![];
 
         let ast = self.lex_and_parse(input, source_name, is_in_repl)?;
 
-        // The REPL module
         let root_module_metadata = ModuleMetadata {
             package: Id::SELF,
-            path: ".".to_string(),
+            // The REPL module or file
+            path: source_name.unwrap_or(".").to_string(),
         };
-
-        let repl_module_metadata = root_module_metadata.clone();
 
         let root_module_node_id = module_dag.add_node(root_module_metadata.clone());
         for imp in &ast.imports {
@@ -258,7 +223,7 @@ impl RunnerContext {
             import_queue.push(md_node_id);
         }
 
-        self.parse_cache.insert(root_module_metadata, ast);
+        self.parse_cache.insert(root_module_metadata.clone(), ast);
 
         // both parse and build the module DAG
         while let Some(current_node_id) = import_queue.pop() {
@@ -268,6 +233,7 @@ impl RunnerContext {
             }
 
             let path = &node_metadata.path;
+
             if node_metadata.package != Id::SELF {
                 unimplemented!();
             }
@@ -305,12 +271,13 @@ impl RunnerContext {
             let node_metadata = module_dag.get_node(current_node_id).unwrap().data.clone();
             let untyped_ast = self.parse_cache.get(&node_metadata).unwrap().clone();
 
-            if repl_module_metadata == node_metadata {
-                let typed_ast = self.type_check_repl(untyped_ast, input, source_name)?;
-                self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
+            let is_repl = is_in_repl && root_module_metadata == node_metadata;
+
+            let (typed_ast, module) = self.type_check(untyped_ast, input, source_name, is_repl)?;
+            self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
+            if is_repl {
+                self.repl_typecheck_module = module;
             } else {
-                let (typed_ast, module) = self.type_check(untyped_ast, input, source_name)?;
-                self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
                 self.typecheck_module_registry.insert(node_metadata, module);
             }
         }
@@ -320,10 +287,12 @@ impl RunnerContext {
             let node_metadata = module_dag.get_node(current_node_id).unwrap().data.clone();
             let typed_ast = self.typecheck_cache.get(&node_metadata).unwrap().clone();
 
-            if repl_module_metadata == node_metadata {
-                self.interpret_repl(typed_ast, input, source_name)?;
+            let is_repl = is_in_repl && root_module_metadata == node_metadata;
+
+            let module = self.interpret(typed_ast, input, source_name, is_repl)?;
+            if is_repl {
+                self.repl_interpreter_module = module;
             } else {
-                let module = self.interpret(typed_ast, input, source_name)?;
                 self.interpret_module_registry.insert(node_metadata, module);
             }
         }
@@ -405,14 +374,14 @@ fn main() -> DynResult {
 
 fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
     info!("Running in Prompt mode");
-    ctx.run_stmt(line, None, false)
+    ctx.run_stmt(line, None)
         .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
 fn run_file(ctx: &mut RunnerContext, file_path: &str) -> DynResult {
     info!("Read from file: {}", file_path);
     let contents = std::fs::read_to_string(file_path)?;
-    ctx.run_stmt(&contents, Some(file_path), false)
+    ctx.run_stmt(&contents, Some(file_path))
         .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
@@ -425,14 +394,14 @@ fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynResult 
 
     if let Some(line) = initial_line {
         rl.add_history_entry(&line)?;
-        let _ = ctx.run_stmt(line.trim_end(), None, true);
+        let _ = ctx.run_stmt(line.trim_end(), None);
     }
 
     loop {
         match rl.readline("> ") {
             Ok(line) => {
                 rl.add_history_entry(&line)?;
-                let _ = ctx.run_stmt(line.trim_end(), None, true);
+                let _ = ctx.run_stmt(line.trim_end(), None);
             }
             Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => break,
             Err(err) => return Err(Box::new(err)),

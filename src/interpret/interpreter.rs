@@ -3,10 +3,10 @@ use super::error::InterpretError;
 use super::values::Value;
 use crate::ast::*;
 use crate::id::Id;
+use crate::interpret::Module;
 use crate::interpret::heap::GcHandle;
-use crate::interpret::{Module, ModuleRegistry};
 
-use crate::identifier_registry::{Identifier, IdentifierRegistry};
+use crate::identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry};
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple};
 use crate::string_utils;
 use crate::token::Token;
@@ -15,10 +15,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-pub struct BorrowContext<'e> {
-    pub environment: &'e mut Environment,
+pub struct BorrowContext<'a, 'e> {
+    pub environment: &'a mut Environment<'e>,
     pub print_writer: Rc<RefCell<dyn std::io::Write>>,
-    pub identifier_registry: &'e IdentifierRegistry,
+    pub identifier_registry: &'a IdentifierRegistry,
     pub strict_assert: bool,
 }
 
@@ -61,8 +61,7 @@ impl ValueReturn {
 }
 
 pub struct Interpreter<'e, 's> {
-    environment: &'e mut Environment,
-    module_registry: &'e ModuleRegistry,
+    environment: Environment<'e>,
     identifier_registry: &'s mut IdentifierRegistry,
     input: &'s str,
 
@@ -71,10 +70,12 @@ pub struct Interpreter<'e, 's> {
     strict_assert: bool,
 }
 
-impl<'e, 's> Interpreter<'e, 's> {
+impl<'e, 's> Interpreter<'e, 's>
+where
+    's: 'e,
+{
     pub fn new(
-        environment: &'e mut Environment,
-        module_registry: &'e ModuleRegistry,
+        environment: Environment<'e>,
         identifier_registry: &'s mut IdentifierRegistry,
         input: &'s str,
         print_writer: Rc<RefCell<dyn std::io::Write>>,
@@ -82,12 +83,19 @@ impl<'e, 's> Interpreter<'e, 's> {
     ) -> Self {
         Self {
             environment,
-            module_registry,
             identifier_registry,
             input,
             print_writer,
             strict_assert,
         }
+    }
+
+    pub fn get_env(&self) -> &Environment<'e> {
+        &self.environment
+    }
+
+    pub fn get_identifer_registry(&self) -> &IdentifierRegistry {
+        self.identifier_registry
     }
 
     pub fn interpret(&mut self, ast: &'s AST<TypeId>) -> Result<Value, InterpretError> {
@@ -252,13 +260,13 @@ impl<'e, 's> Interpreter<'e, 's> {
             reassign_chain_steps.push(chain_step);
         }
 
-        let iden = &node.base;
+        let iden = node.base;
 
-        let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden.id) else {
-            return Err(InterpretError::NotFoundVariable(*iden));
+        let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden.into()) else {
+            return Err(InterpretError::NotFoundVariable(iden.into()));
         };
         if is_readonly {
-            return Err(InterpretError::VariableReadOnly(*iden));
+            return Err(InterpretError::VariableReadOnly(iden));
         }
 
         match reassign_chain_steps.split_last() {
@@ -404,12 +412,7 @@ impl<'e, 's> Interpreter<'e, 's> {
             ClauseCase::FnCall(node) => self.interpret_fn_call(node),
             ClauseCase::Subscription(node) => self.interpret_subscription(node),
             ClauseCase::MemberAccess(node) => self.interpret_member_access(node),
-            ClauseCase::ModuleAccess(node) => self.interpret_module_access(node),
-            ClauseCase::Identifier(node) => self
-                .environment
-                .get_variable_all_scope(node.id)
-                .map(|v| Ok(v.0))
-                .unwrap_or_else(|| Err(InterpretError::NotFoundVariable(*node))),
+            ClauseCase::Identifier(ciden) => self.get_complex_identifier(*ciden),
         }
     }
 
@@ -532,7 +535,7 @@ impl<'e, 's> Interpreter<'e, 's> {
     }
 
     fn interpret_struct_literal(&mut self, node: &StructLiteralNode<TypeId>) -> Result<Value, InterpretError> {
-        let id = node.iden.id;
+        let id = node.ciden.name.id;
         // compare field type with actual value
         let mut fields = HashMap::new();
         for field_literal in &node.fields {
@@ -556,19 +559,26 @@ impl<'e, 's> Interpreter<'e, 's> {
     fn interpret_subscription(&mut self, node: &SubscriptionNode<TypeId>) -> Result<Value, InterpretError> {
         let indexer = self.interpret_clause_expr(&node.indexer)?;
         let indexee = self.interpret_clause_expr(&node.indexee)?;
-        indexer.get_by_chain_step(ChainStep::Subscription(indexee), self.environment)
+        indexer.get_by_chain_step(ChainStep::Subscription(indexee), &self.environment)
     }
 
     fn interpret_member_access(&mut self, node: &MemberAccessNode<TypeId>) -> Result<Value, InterpretError> {
         let value = self.interpret_clause_expr(&node.object)?;
-        value.get_by_chain_step(ChainStep::Member(node.member), self.environment)
+        value.get_by_chain_step(ChainStep::Member(node.member), &self.environment)
     }
 
-    fn interpret_module_access(&mut self, node: &ModuleAccessNode) -> Result<Value, InterpretError> {
+    fn get_complex_identifier(&mut self, ciden: ComplexIdentifier) -> Result<Value, InterpretError> {
+        // ClauseCase::Identifier(node) => self
+        //     .environment
+        //     .get_variable_all_scope(node.id)
+        //     .map(|v| Ok(v.0))
+        //     .unwrap_or_else(|| Err(InterpretError::NotFoundVariable(*node))),
+
         self.environment
-            .get_variable_module_scope(&node.module.id, node.member.id, self.module_registry)
+            .get_variable_all_scope(ciden.into())
+            .map(|(v, _)| v)
             // TODO: make error more okay, add the module part
-            .ok_or(InterpretError::NotFoundVariable(node.member))
+            .ok_or(InterpretError::NotFoundVariable(ciden))
     }
 
     fn interpret_fn_call(&mut self, node: &FnCallNode<TypeId>) -> Result<Value, InterpretError> {
@@ -628,7 +638,7 @@ impl<'e, 's> Interpreter<'e, 's> {
             .map(|expr| self.interpret_expr(expr).and_then(|v| v.get_or_error()))
             .collect::<Result<_, _>>()?;
         let mut prelude_context = BorrowContext {
-            environment: self.environment,
+            environment: &mut self.environment,
             print_writer: self.print_writer.clone(),
             identifier_registry: self.identifier_registry,
             strict_assert: self.strict_assert,
@@ -664,7 +674,7 @@ impl<'e, 's> Interpreter<'e, 's> {
             Token::And | Token::Or => and_or(lhs_val, op, rhs_val),
             Token::Minus | Token::Star | Token::Slash | Token::Percentage => binary_number(lhs_val, op, rhs_val),
             Token::EqualEqual | Token::BangEqual => {
-                let cmp = lhs_val.deep_eq(&rhs_val, self.environment)?;
+                let cmp = lhs_val.deep_eq(&rhs_val, &self.environment)?;
                 let ret = cmp == (op == Token::EqualEqual);
                 Ok(Value::make_bool(ret))
             }

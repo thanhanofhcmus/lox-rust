@@ -1,5 +1,5 @@
 use crate::{
-    identifier_registry::{Identifier, IdentifierRegistry},
+    identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry},
     token::Token,
     types::{TypeId, TypeInterner},
 };
@@ -17,8 +17,8 @@ pub enum TypecheckError {
     WrongArgumentTypes(TypeId, Vec<(usize, TypeId, TypeId)>),
     UnexpectedType(TypeId, TypeId),
     TypeNotStructInLiteral(TypeId),
-    UndefinedVariableIdentifier(Identifier),
-    UndefinedTypeIdentifier(Identifier),
+    UndefinedVariableIdentifier(ComplexIdentifier),
+    UndefinedTypeIdentifier(ComplexIdentifier),
     DuplicateVariableDeclaration(Identifier),
     DuplicateTypeDeclaration(Identifier, TypeId),
     TypeIsNotDeclaredInternal(TypeId),
@@ -148,17 +148,19 @@ impl TypecheckError {
                 interner.generate_readable_name(ir, *expected)
             ),
 
-            Self::UndefinedVariableIdentifier(node) => {
+            Self::UndefinedVariableIdentifier(ciden) => {
                 format!(
                     "The variable '{}' is not defined in the visible scope.",
-                    ir.get_or_unknown(node.id),
+                    // TODO: add module to the node name
+                    ir.get_or_unknown(ciden.name.id),
                 )
             }
 
-            Self::UndefinedTypeIdentifier(node) => {
+            Self::UndefinedTypeIdentifier(ciden) => {
                 format!(
                     "The type '{}' is not defined in the visible scope.",
-                    ir.get_or_unknown(node.id),
+                    // TODO: add module to the node name
+                    ir.get_or_unknown(ciden.name.id),
                 )
             }
 
@@ -177,10 +179,15 @@ impl TypecheckError {
                 )
             }
 
-            Self::TypeIsNotDeclaredInternal(type_id) => format!(
-                "Type with id {} should have been declared but not found. This is an internal error.",
-                interner.generate_readable_name(ir, *type_id),
-            ),
+            Self::TypeIsNotDeclaredInternal(type_id) => {
+                let (category, counter) = type_id.get_parts();
+                format!(
+                    "Type with id={}, category={}, counter={} should have been declared but not found. This is an internal error.",
+                    interner.generate_readable_name(ir, *type_id),
+                    category,
+                    counter
+                )
+            }
 
             Self::TypeIsNotStruct(type_id) => format!(
                 "The type `{}` is not a struct.",
@@ -233,8 +240,8 @@ impl TypecheckError {
     fn get_source_start(&self, input: &str) -> Option<(usize, usize)> {
         match self {
             Self::ExplicitTypeMismatch(node, _, _)
-            | Self::UndefinedVariableIdentifier(node)
-            | Self::UndefinedTypeIdentifier(node)
+            | Self::UndefinedVariableIdentifier(ComplexIdentifier { module: _, name: node })
+            | Self::UndefinedTypeIdentifier(ComplexIdentifier { module: _, name: node })
             | Self::DuplicateVariableDeclaration(node)
             | Self::StructFieldNotExist(_, node)
             | Self::DuplicateStructLiteralField(node) => Some(node.span.to_start_row_col(input)),

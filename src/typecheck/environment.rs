@@ -2,32 +2,34 @@ use std::collections::HashMap;
 
 use crate::{
     id::Id,
+    identifier_registry::ComplexId,
     module::{ModuleMetadata, ModuleRegistry as GenericModuleRegistry},
     types::{Type, TypeId, TypeInterner, TypeScope},
 };
 
 pub type ModuleRegistry = GenericModuleRegistry<Module>;
 
+#[derive(Debug, Default)]
 pub struct Module {
     symbol_scope: TypeScope,
-    #[allow(unused)]
     struct_scope: TypeScope,
 }
 
 /// Scoped symbol table mapping `Id` → `Type` for typechecking.
 /// The outermost scope is seeded with interpreter builtins (see `BUILTIN_NAMES`).
-pub struct Environment {
+pub struct Environment<'a> {
     scopes: Vec<TypeScope>,
-    type_interner: TypeInterner,
     local_struct_scope: TypeScope,
     imported_modules: HashMap<Id, ModuleMetadata>,
+    // TODO: move preludes to shared
     preludes: TypeScope,
+    type_interner: &'a mut TypeInterner,
+    module_registry: &'a ModuleRegistry,
 }
 
-impl Environment {
-    pub fn new() -> Self {
+impl<'a> Environment<'a> {
+    pub fn new(type_interner: &'a mut TypeInterner, module_registry: &'a ModuleRegistry) -> Self {
         let mut preludes = TypeScope::new();
-        let mut type_interner = TypeInterner::new();
 
         for &name in BUILTIN_NAMES {
             let type_ = get_builtin_fn_type(name);
@@ -38,11 +40,29 @@ impl Environment {
         Self {
             // Scope 0 is the user-global scope
             scopes: vec![TypeScope::new()],
-            type_interner,
             local_struct_scope: TypeScope::new(),
             imported_modules: HashMap::new(),
             preludes,
+            type_interner,
+            module_registry,
         }
+    }
+
+    pub fn from_module(
+        module: Module,
+        type_interner: &'a mut TypeInterner,
+        module_registry: &'a ModuleRegistry,
+    ) -> Self {
+        let Module {
+            symbol_scope,
+            struct_scope,
+        } = module;
+        let mut env = Self::new(type_interner, module_registry);
+
+        env.local_struct_scope = struct_scope;
+        _ = std::mem::replace(env.scopes.get_mut(0).unwrap(), symbol_scope);
+
+        env
     }
 
     pub fn add_module(&mut self, id: Id, metadata: ModuleMetadata) {
@@ -56,10 +76,6 @@ impl Environment {
             symbol_scope,
             struct_scope,
         }
-    }
-
-    pub fn get_type_interner(&self) -> &TypeInterner {
-        &self.type_interner
     }
 
     pub fn push_scope(&mut self) {
@@ -87,23 +103,21 @@ impl Environment {
         }
     }
 
-    pub fn lookup_variable_id_module_scope(
-        &self,
-        module: Id,
-        member: Id,
-        module_registry: &ModuleRegistry,
-    ) -> Option<TypeId> {
-        let metadata = self.imported_modules.get(&module)?;
-        let module = module_registry.get(metadata)?;
-        module.symbol_scope.get_type_id(member)
-    }
-
-    pub fn lookup_variable_id(&self, id: Id) -> Option<TypeId> {
-        self.scopes
+    pub fn lookup_variable_id(&self, cid: ComplexId) -> Option<TypeId> {
+        if let Some(type_id) = self
+            .scopes
             .iter()
             .rev()
-            .find_map(|s| s.get_type_id(id))
-            .or_else(|| self.preludes.get_type_id(id))
+            .find_map(|s| s.get_type_id(cid.name))
+            .or_else(|| self.preludes.get_type_id(cid.name))
+        {
+            return Some(type_id);
+        }
+
+        let module_id = cid.module?;
+        let metadata = self.imported_modules.get(&module_id)?;
+        let module = self.module_registry.get(metadata)?;
+        module.symbol_scope.get_type_id(cid.name)
     }
 
     /// Return only the TypeId
@@ -113,6 +127,8 @@ impl Environment {
 
     /// Return the TypeId and if the type has already been declared before
     pub fn declare_type_with_check(&mut self, type_: &Type) -> (TypeId, bool) {
+        // if 2 modules declare 2 points type, they would be the same here
+        // should we allow that or should we make the type_id unique per module?
         self.type_interner.intern_type(type_)
     }
 
@@ -127,8 +143,15 @@ impl Environment {
         self.local_struct_scope.associate(id, type_id);
     }
 
-    pub fn lookup_type_id_from_id(&self, id: Id) -> Option<TypeId> {
-        self.local_struct_scope.get_type_id(id)
+    pub fn lookup_type_id(&self, cid: ComplexId) -> Option<TypeId> {
+        let scope = if let Some(module_id) = cid.module {
+            let module_metadata = self.imported_modules.get(&module_id)?;
+            let module = self.module_registry.get(module_metadata)?;
+            &module.struct_scope
+        } else {
+            &self.local_struct_scope
+        };
+        scope.get_type_id(cid.name)
     }
 }
 

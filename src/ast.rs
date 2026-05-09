@@ -1,4 +1,10 @@
-use crate::{identifier_registry::Identifier, module::ModuleMetadata, span::Span, token::Token, types::TypeId};
+use crate::{
+    identifier_registry::{ComplexIdentifier, Identifier},
+    module::ModuleMetadata,
+    span::Span,
+    token::Token,
+    types::TypeId,
+};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
@@ -16,7 +22,7 @@ pub struct ImportNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeNode {
     BuiltIn(TypeId),
-    Named(Identifier),
+    Named(ComplexIdentifier),
     Array(Box<TypeNode>),
     Map { key: Box<TypeNode>, value: Box<TypeNode> },
     Tuple { members: Vec<TypeNode> },
@@ -173,11 +179,10 @@ pub enum ClauseCase<T> {
     Binary(BinaryOpNode<T>),
     RawValue(RawValueNode<T>),
     Group(Box<ClauseNode<T>>),
-    Identifier(Identifier),
     Subscription(SubscriptionNode<T>),
     FnCall(FnCallNode<T>),
     MemberAccess(MemberAccessNode<T>),
-    ModuleAccess(ModuleAccessNode),
+    Identifier(ComplexIdentifier),
 }
 
 #[derive(Debug, Clone)]
@@ -196,12 +201,6 @@ pub enum MemberNode {
 pub struct MemberAccessNode<T> {
     pub object: Box<ClauseNode<T>>,
     pub member: MemberNode,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleAccessNode {
-    pub module: Identifier,
-    pub member: Identifier,
 }
 
 #[derive(Debug, Clone)]
@@ -247,9 +246,10 @@ pub struct StructLiteralFieldNode<T> {
 
 #[derive(Debug, Clone)]
 pub struct StructLiteralNode<T> {
-    pub iden: Identifier,
+    pub ciden: ComplexIdentifier,
     pub fields: Vec<StructLiteralFieldNode<T>>,
 }
+
 #[derive(Debug, Clone)]
 pub enum ArrayLiteralNode<T> {
     List(Vec<ClauseNode<T>>),

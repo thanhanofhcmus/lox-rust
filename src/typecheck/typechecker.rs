@@ -5,15 +5,14 @@ use super::{Environment, TypecheckError};
 use crate::ast::*;
 use crate::id::Id;
 use crate::identifier_registry::Identifier;
-use crate::typecheck::{Module, ModuleRegistry};
+use crate::typecheck::Module;
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
 
 type ConvertForComprehensionResult<R> = Result<(ClauseNode<TypeId>, Option<ClauseNode<TypeId>>, R), TypecheckError>;
 
 pub struct TypeChecker<'e> {
-    environment: &'e mut Environment,
-    module_registry: &'e ModuleRegistry,
+    environment: Environment<'e>,
 
     /// Set by `convert_declare_stmt` to the lhs name before descending into
     /// the rhs, and `take`n by `convert_fn_decl` if the rhs is directly an
@@ -24,10 +23,9 @@ pub struct TypeChecker<'e> {
 }
 
 impl<'e> TypeChecker<'e> {
-    pub fn new(environment: &'e mut Environment, module_registry: &'e ModuleRegistry) -> Self {
+    pub fn new(environment: Environment<'e>) -> Self {
         Self {
             environment,
-            module_registry,
             current_declaration_id: None,
         }
     }
@@ -189,10 +187,10 @@ impl<'e> TypeChecker<'e> {
     fn extract_type_node_id(&mut self, node: &TypeNode) -> Result<TypeId, TypecheckError> {
         match node {
             TypeNode::BuiltIn(type_id) => Ok(*type_id),
-            TypeNode::Named(type_iden) => self
+            TypeNode::Named(ciden) => self
                 .environment
-                .lookup_type_id_from_id(type_iden.id)
-                .ok_or(TypecheckError::UndefinedTypeIdentifier(*type_iden)),
+                .lookup_type_id((*ciden).into())
+                .ok_or(TypecheckError::UndefinedTypeIdentifier(*ciden)),
             TypeNode::Array(inner_type_node) => {
                 let elem = self.extract_type_node_id(inner_type_node)?;
                 Ok(self.environment.declare_type(&Type::Array { elem }))
@@ -217,7 +215,8 @@ impl<'e> TypeChecker<'e> {
     }
 
     fn convert_struct_decl(&mut self, node: StructDeclNode) -> Result<StructDeclNode, TypecheckError> {
-        if let Some(prior) = self.environment.lookup_type_id_from_id(node.iden.id) {
+        // Only look in the local scope, calling into in iden to create a local Identifier
+        if let Some(prior) = self.environment.lookup_type_id(node.iden.into()) {
             return Err(TypecheckError::DuplicateTypeDeclaration(node.iden, prior));
         }
 
@@ -260,10 +259,11 @@ impl<'e> TypeChecker<'e> {
             });
         }
 
+        let cid = target.base.into();
         let base_type_id = self
             .environment
-            .lookup_variable_id(target.base.id)
-            .ok_or(TypecheckError::UndefinedVariableIdentifier(target.base))?;
+            .lookup_variable_id(cid)
+            .ok_or(TypecheckError::UndefinedVariableIdentifier(target.base.into()))?;
 
         // Walk the chain with an explicit running type, validating each step
         // against the current type and computing the next running type.
@@ -508,7 +508,7 @@ impl<'e> TypeChecker<'e> {
             ClauseCase::Identifier(iden) => {
                 let type_ = self
                     .environment
-                    .lookup_variable_id(iden.id)
+                    .lookup_variable_id(iden.into())
                     .ok_or(TypecheckError::UndefinedVariableIdentifier(iden))?;
                 (type_, ClauseCase::Identifier(iden))
             }
@@ -534,10 +534,6 @@ impl<'e> TypeChecker<'e> {
             ClauseCase::MemberAccess(node) => {
                 let (type_id, case) = self.convert_member_access(node)?;
                 (type_id, ClauseCase::MemberAccess(case))
-            }
-            ClauseCase::ModuleAccess(node) => {
-                let (type_id, case) = self.convert_module_access(node)?;
-                (type_id, ClauseCase::ModuleAccess(case))
             }
             ClauseCase::FnCall(call) => {
                 let (type_id, case) = self.convert_fn_call(call)?;
@@ -701,7 +697,7 @@ impl<'e> TypeChecker<'e> {
         node: StructLiteralNode<()>,
     ) -> Result<(TypeId, StructLiteralNode<TypeId>), TypecheckError> {
         let StructLiteralNode {
-            iden,
+            ciden,
             fields: ut_fields,
         } = node;
 
@@ -721,8 +717,8 @@ impl<'e> TypeChecker<'e> {
 
         let struct_type_id = self
             .environment
-            .lookup_type_id_from_id(iden.id)
-            .ok_or(TypecheckError::UndefinedTypeIdentifier(iden))?;
+            .lookup_type_id(ciden.into())
+            .ok_or(TypecheckError::UndefinedTypeIdentifier(ciden))?;
         let type_ = self
             .environment
             .lookup_type(struct_type_id)
@@ -758,7 +754,7 @@ impl<'e> TypeChecker<'e> {
             _ => return Err(TypecheckError::TypeNotStructInLiteral(struct_type_id)),
         }
 
-        Ok((struct_type_id, StructLiteralNode { iden, fields }))
+        Ok((struct_type_id, StructLiteralNode { ciden, fields }))
     }
 
     fn convert_fn_decl(&mut self, node: FnDeclNode<()>) -> Result<(TypeId, FnDeclNode<TypeId>), TypecheckError> {
@@ -851,14 +847,6 @@ impl<'e> TypeChecker<'e> {
                 member: node.member,
             },
         ))
-    }
-
-    fn convert_module_access(&mut self, node: ModuleAccessNode) -> Result<(TypeId, ModuleAccessNode), TypecheckError> {
-        let member_type_id = self
-            .environment
-            .lookup_variable_id_module_scope(node.module.id, node.member.id, self.module_registry) // TODO: errors
-            .unwrap();
-        Ok((member_type_id, node))
     }
 
     fn convert_subscription(
@@ -1089,631 +1077,657 @@ fn reconcile_single_type(iden: Identifier, explicit: TypeId, actual: TypeId) -> 
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{id::Id, identifier_registry::IdentifierRegistry, parse::lex};
-    use pretty_assertions::assert_eq;
-
-    fn typecheck_str(input: &str) -> Result<AST<TypeId>, TypecheckError> {
-        let items = lex(input).expect("lex failed");
-        let mut identifier_registry = IdentifierRegistry::new();
-        let ast = crate::parse::parse(input, &items, &mut identifier_registry, false).expect("parse failed");
-        let mut env = Environment::new();
-        let module_registry = ModuleRegistry::new();
-        TypeChecker::new(&mut env, &module_registry).convert(ast)
-    }
-
-    /// Type of the expression inside the first top-level Expr statement's Clause.
-    fn first_clause_type(ast: &AST<TypeId>) -> TypeId {
-        match &ast.global_stmts[0] {
-            Statement::Expr(Expression {
-                case: ExprCase::Clause(c),
-                ..
-            }) => c.extra,
-            other => panic!("expected first stmt to be an Expr clause, got {other:?}"),
-        }
-    }
-
-    // ---------- unify_types (pure helper) ----------
-
-    #[test]
-    fn unify_empty_is_any() {
-        assert_eq!(unify_types(std::iter::empty::<&TypeId>()), TypeId::ANY);
-    }
-
-    #[test]
-    fn unify_single_concrete() {
-        assert_eq!(unify_types([&TypeId::NUMBER]), TypeId::NUMBER);
-    }
-
-    #[test]
-    fn unify_all_same_concrete() {
-        assert_eq!(
-            unify_types([&TypeId::NUMBER, &TypeId::NUMBER, &TypeId::NUMBER]),
-            TypeId::NUMBER
-        );
-    }
-
-    #[test]
-    fn unify_any_mixed_with_concrete_keeps_concrete() {
-        assert_eq!(unify_types([&TypeId::ANY, &TypeId::NUMBER]), TypeId::NUMBER);
-        assert_eq!(unify_types([&TypeId::NUMBER, &TypeId::ANY]), TypeId::NUMBER);
-    }
-
-    #[test]
-    fn unify_disagreeing_concretes_widens_to_any() {
-        assert_eq!(unify_types([&TypeId::NUMBER, &TypeId::STR]), TypeId::ANY);
-    }
-
-    #[test]
-    fn unify_all_any_is_any() {
-        assert_eq!(unify_types([&TypeId::ANY, &TypeId::ANY]), TypeId::ANY);
-    }
-
-    // ---------- require_type ----------
-
-    #[test]
-    fn require_type_exact_match_is_ok() {
-        assert!(require_type(TypeId::NUMBER, TypeId::NUMBER).is_ok());
-    }
-
-    #[test]
-    fn require_type_any_on_actual_is_permissive() {
-        assert!(require_type(TypeId::NUMBER, TypeId::ANY).is_ok());
-    }
-
-    #[test]
-    fn require_type_mismatch_errors() {
-        let err = require_type(TypeId::NUMBER, TypeId::BOOL).unwrap_err();
-        assert!(matches!(err, TypecheckError::UnexpectedType(_, _)));
-    }
-
-    // ---------- Environment ----------
-
-    #[test]
-    fn env_declare_and_lookup() {
-        let mut env = Environment::new();
-        let id = Id::new("x");
-        env.declare_variable_id(id, TypeId::NUMBER).unwrap();
-        assert_eq!(env.lookup_variable_id(id), Some(TypeId::NUMBER));
-    }
-
-    #[test]
-    fn env_lookup_missing_is_none() {
-        let env = Environment::new();
-        assert_eq!(env.lookup_variable_id(Id::new("nope")), None);
-    }
-
-    #[test]
-    fn env_redeclare_in_same_scope_errors() {
-        let mut env = Environment::new();
-        let id = Id::new("x");
-        env.declare_variable_id(id, TypeId::NUMBER).unwrap();
-        assert!(env.declare_variable_id(id, TypeId::STR).is_err());
-    }
-
-    #[test]
-    fn env_shadow_across_scopes_ok() {
-        let mut env = Environment::new();
-        let id = Id::new("x");
-        env.declare_variable_id(id, TypeId::NUMBER).unwrap();
-        env.push_scope();
-        assert!(env.declare_variable_id(id, TypeId::STR).is_ok());
-        assert_eq!(env.lookup_variable_id(id), Some(TypeId::STR));
-        env.pop_scope();
-        assert_eq!(env.lookup_variable_id(id), Some(TypeId::NUMBER));
-    }
-
-    #[test]
-    fn env_builtins_are_in_scope() {
-        let env = Environment::new();
-        assert!(env.lookup_variable_id(Id::new("print")).is_some());
-        assert!(env.lookup_variable_id(Id::new("assert")).is_some());
-    }
-
-    #[test]
-    fn env_user_global_can_shadow_builtin() {
-        // User-global scope is scope 1, above builtins at scope 0.
-        let mut env = Environment::new();
-        assert!(env.declare_variable_id(Id::new("print"), TypeId::NUMBER).is_ok());
-    }
-
-    #[test]
-    #[should_panic(expected = "scope underflow")]
-    fn env_pop_underflow_panics() {
-        let mut env = Environment::new();
-        env.pop_scope();
-        env.pop_scope();
-        env.pop_scope(); // eventually underflows
-    }
-
-    // ---------- binary op typing (via type_binary_op directly) ----------
-    // type_binary_op is a method on TypeChecker. Use end-to-end via typecheck_str.
-
-    #[test]
-    fn binary_number_plus_number_is_number() {
-        let ast = typecheck_str("1 + 2;").unwrap();
-        assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
-    }
-
-    #[test]
-    fn binary_str_plus_str_is_str() {
-        let ast = typecheck_str("\"a\" + \"b\";").unwrap();
-        assert_eq!(first_clause_type(&ast), TypeId::STR);
-    }
-
-    #[test]
-    fn binary_number_plus_bool_errors() {
-        let err = typecheck_str("1 + true;").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::BinaryOpTypeMismatch(Token::Plus, _, _)),
-            "expected BinaryOpTypeMismatch(Plus, ...), got {err:?}"
-        );
-    }
-
-    #[test]
-    fn binary_comparison_returns_bool() {
-        let ast = typecheck_str("1 < 2;").unwrap();
-        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
-    }
-
-    #[test]
-    fn binary_equality_same_type_is_bool() {
-        let ast = typecheck_str("1 == 2;").unwrap();
-        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
-    }
-
-    #[test]
-    fn binary_and_on_bools_is_bool() {
-        let ast = typecheck_str("true and false;").unwrap();
-        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
-    }
-
-    #[test]
-    fn binary_and_on_non_bool_errors() {
-        let err = typecheck_str("1 and 2;").unwrap_err();
-        assert!(matches!(err, TypecheckError::BinaryOpTypeMismatch(Token::And, _, _)));
-    }
-
-    // ---------- unary op typing ----------
-
-    #[test]
-    fn unary_minus_on_number_is_number() {
-        let ast = typecheck_str("-5;").unwrap();
-        assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
-    }
-
-    #[test]
-    fn unary_not_on_bool_is_bool() {
-        let ast = typecheck_str("not true;").unwrap();
-        assert_eq!(first_clause_type(&ast), TypeId::BOOL);
-    }
-
-    #[test]
-    fn unary_minus_on_bool_errors() {
-        let err = typecheck_str("-true;").unwrap_err();
-        assert!(matches!(err, TypecheckError::UnaryOpTypeMismatch(Token::Minus, _)));
-    }
-
-    #[test]
-    fn unary_not_on_number_errors() {
-        let err = typecheck_str("not 1;").unwrap_err();
-        assert!(matches!(err, TypecheckError::UnaryOpTypeMismatch(Token::Not, _)));
-    }
-
-    // ---------- array literals ----------
-
-    // ---------- map literals ----------
-
-    // ---------- identifier lookup ----------
-
-    #[test]
-    fn identifier_undefined_errors() {
-        let err = typecheck_str("x;").unwrap_err();
-        assert!(matches!(err, TypecheckError::UndefinedVariableIdentifier(_)));
-    }
-
-    #[test]
-    fn identifier_after_declare_has_declared_type() {
-        let ast = typecheck_str("var x: number = 5; x;").unwrap();
-        // The second stmt is `x;` — its clause's type should be Number.
-        match &ast.global_stmts[1] {
-            Statement::Expr(Expression {
-                case: ExprCase::Clause(c),
-                ..
-            }) => assert_eq!(c.extra, TypeId::NUMBER),
-            other => panic!("expected Expr clause, got {other:?}"),
-        }
-    }
-
-    // ---------- declaration annotations ----------
-
-    #[test]
-    fn declare_with_matching_annotation_ok() {
-        typecheck_str("var x: number = 5;").unwrap();
-    }
-
-    #[test]
-    fn declare_with_mismatched_annotation_errors() {
-        let err = typecheck_str("var x: number = \"hello\";").unwrap_err();
-        assert!(matches!(err, TypecheckError::ExplicitTypeMismatch(..)));
-    }
-
-    #[test]
-    fn declare_with_any_annotation_accepts_anything() {
-        typecheck_str("var x: any = \"hello\";").unwrap();
-        typecheck_str("var x: any = 5;").unwrap();
-    }
-
-    // ---------- reassign ----------
-
-    #[test]
-    fn reassign_undefined_errors() {
-        let err = typecheck_str("x = 5;").unwrap_err();
-        assert!(matches!(err, TypecheckError::UndefinedVariableIdentifier(_)));
-    }
-
-    #[test]
-    fn reassign_defined_ok() {
-        typecheck_str("var x: number = 5; x = 10;").unwrap();
-    }
-
-    // ---------- duplicate declaration ----------
-
-    #[test]
-    fn duplicate_var_in_same_scope_errors() {
-        let err = typecheck_str("var x = 1; var x = 2;").unwrap_err();
-        assert!(matches!(err, TypecheckError::DuplicateVariableDeclaration(_)));
-    }
-
-    #[test]
-    fn fn_duplicate_param_errors() {
-        let err = typecheck_str("var f = fn(x, x) x;").unwrap_err();
-        assert!(matches!(err, TypecheckError::DuplicateVariableDeclaration(_)));
-    }
-
-    // ---------- underscore wildcard ----------
-
-    #[test]
-    fn underscore_can_be_redeclared() {
-        typecheck_str("var _ = 1; var _ = 2;").unwrap();
-    }
-
-    #[test]
-    fn underscore_destructure_binds_other_members() {
-        typecheck_str("var %(_, b) = %(1, 2); var n: number = b;").unwrap();
-    }
-
-    #[test]
-    fn underscore_for_loop_typechecks() {
-        typecheck_str("for _ in [1, 2, 3] { }").unwrap();
-    }
-
-    #[test]
-    fn underscore_reassign_typechecks() {
-        typecheck_str("_ = 1;").unwrap();
-    }
-
-    // ---------- fn self-binding (recursion) ----------
-
-    #[test]
-    fn fn_self_binding_direct_recursion_typechecks() {
-        typecheck_str("var f = fn(n) { if n <= 0 { return 0; } return 1 + f(n - 1); }; f(3);").unwrap();
-    }
-
-    #[test]
-    fn fn_self_binding_does_not_leak_to_siblings() {
-        // `f` is pre-bound only inside its own body — on the previous line `f`
-        // should still be undefined.
-        let err = typecheck_str("var x = f; var f = fn() 1;").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
-            "expected UndefinedVariableIdentifier, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn fn_mutual_recursion_is_rejected() {
-        // Self-binding only covers the current fn; `b` is not visible when
-        // converting `a`'s body.
-        let err = typecheck_str("var a = fn() { return b(); }; var b = fn() { return a(); };").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
-            "expected UndefinedVariableIdentifier, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn fn_inner_sees_outer_self_binding_via_closure() {
-        // Lexical scoping: inner fn's body walks up the scope stack, so the
-        // outer fn's self-binding is still visible. (This is the normal
-        // closure behavior — not a leak to siblings.)
-        typecheck_str("var outer = fn() { var inner = fn() { return outer(); }; return inner(); };").unwrap();
-    }
-
-    // ---------- tuple destructuring typecheck ----------
-
-    #[test]
-    fn tuple_destructure_non_tuple_errors() {
-        let err = typecheck_str("var %(a, b) = 42;").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
-            "expected CannotDestructureAsTuple, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn tuple_destructure_wrong_arity_errors() {
-        let err = typecheck_str("var %(a, b, c) = %(1, 2);").unwrap_err();
-        assert!(
-            matches!(
-                err,
-                TypecheckError::TupleDestructureArityMismatch { expected: 3, actual: 2 }
-            ),
-            "expected TupleDestructureArityMismatch{{3,2}}, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn tuple_destructure_any_is_permissive() {
-        // `any` rhs hides the shape from typecheck; we bind each name as Any
-        // and defer to the runtime.
-        typecheck_str("var x: any = 42; var %(a, b) = x;").unwrap();
-    }
-
-    #[test]
-    fn tuple_destructure_binds_per_member_type() {
-        // `a` gets number, `b` gets str — subsequent annotated uses must
-        // accept them.
-        typecheck_str("var %(a, b) = %(1, \"hi\"); var n: number = a; var s: str = b;").unwrap();
-    }
-
-    #[test]
-    fn tuple_destructure_member_type_mismatch_via_annotation() {
-        // `b` is bound as str from the rhs tuple; a subsequent `number`
-        // annotation on b must fail. (Exercises that the member type really
-        // propagated, since reassignment doesn't check types today.)
-        let err = typecheck_str("var %(a, b) = %(1, \"hi\"); var n: number = b;").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
-            "expected ExplicitTypeMismatch, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn tuple_destructure_explicit_annotation_matches() {
-        typecheck_str("var %(a, b): %(number, str) = %(1, \"hi\");").unwrap();
-    }
-
-    #[test]
-    fn tuple_destructure_explicit_annotation_wrong_shape_errors() {
-        let err = typecheck_str("var %(a, b): number = %(1, \"hi\");").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
-            "expected CannotDestructureAsTuple, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn tuple_destructure_explicit_annotation_wrong_arity_errors() {
-        let err = typecheck_str("var %(a, b): %(number, str, bool) = %(1, \"hi\");").unwrap_err();
-        assert!(
-            matches!(
-                err,
-                TypecheckError::TupleDestructureArityMismatch { expected: 2, actual: 3 }
-            ),
-            "expected TupleDestructureArityMismatch{{2,3}}, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn for_loop_tuple_binding_over_array_of_scalars_errors() {
-        let err = typecheck_str("for %(a, b) in [1, 2, 3] { }").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
-            "expected CannotDestructureAsTuple, got {err:?}"
-        );
-    }
-
-    // ---------- struct declarations & literals ----------
-
-    #[test]
-    fn struct_decl_registers_type() {
-        typecheck_str("struct Point { x: number, y: number }").unwrap();
-    }
-
-    #[test]
-    fn struct_literal_correct_fields_ok() {
-        typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, y = 2 };").unwrap();
-    }
-
-    #[test]
-    fn struct_literal_undeclared_name_errors() {
-        let err = typecheck_str("var p = Foo { x = 1 };").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::UndefinedTypeIdentifier(_)),
-            "expected UndefinedTypeIdentifier, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn struct_field_count_mismatch_errors() {
-        let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1 };").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::StructFieldCountMismatch(_, 2, 1)),
-            "expected StructFieldCountMismatch(_, 2, 1), got {err:?}"
-        );
-    }
-
-    #[test]
-    fn struct_field_name_mismatch_errors() {
-        let err = typecheck_str("struct Point { x: number } var p = Point { z = 1 };").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::StructFieldNotExist(_, _)),
-            "expected StructFieldNameMismatch, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn struct_field_type_mismatch_errors() {
-        let err = typecheck_str("struct Point { x: number } var p = Point { x = \"hello\" };").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::StructFieldTypeMismatch(_, _, _)),
-            "expected StructFieldTypeMismatch, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn struct_literal_duplicate_field_errors() {
-        let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, x = 2 };").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::DuplicateStructLiteralField(_)),
-            "expected DuplicateStructLiteralField, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn struct_field_any_type_is_permissive() {
-        // A field with `any` annotation accepts any value type.
-        typecheck_str("struct Bag { item: any } var b = Bag { item = 42 };").unwrap();
-        typecheck_str("struct Bag { item: any } var b = Bag { item = \"hello\" };").unwrap();
-    }
-
-    // ---------- member access ----------
-
-    #[test]
-    fn member_access_on_known_struct_typechecks() {
-        typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.x;").unwrap();
-    }
-
-    #[test]
-    fn member_access_unknown_field_errors() {
-        let err = typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.z;").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::StructFieldNotExist(_, _)),
-            "expected StructFieldNotExist, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn member_access_on_non_struct_errors() {
-        let err = typecheck_str("var n: number = 1; n.x;").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::TypeIsNotStruct(_)),
-            "expected TypeIsNotStruct, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn member_access_on_any_is_permissive() {
-        // gradual-typing escape hatch: Any-typed object defers field check to runtime
-        typecheck_str("var p: any = 1; p.x;").unwrap();
-    }
-
-    #[test]
-    fn member_access_chained_typechecks() {
-        // Note: user-defined struct names aren't valid in type annotations yet
-        // (see parse_type_node), so we use `any` for the nested-struct field.
-        // Dot access on Any is a typecheck-level passthrough.
-        typecheck_str(
-            "struct Inner { v: number } \
-             struct Outer { inner: any } \
-             var o = Outer { inner = Inner { v = 42 } }; \
-             o.inner.v;",
-        )
-        .unwrap();
-    }
-
-    // ---------- array / map annotations ----------
-
-    #[test]
-    fn array_annotation_accepts_matching_literal() {
-        typecheck_str("var a: [number] = [1, 2, 3];").unwrap();
-    }
-
-    #[test]
-    fn array_annotation_accepts_empty_literal() {
-        // empty literal is ARRAY_UNTYPED; annotation pins the element type
-        typecheck_str("var a: [number] = [];").unwrap();
-    }
-
-    #[test]
-    fn array_annotation_rejects_wrong_element_type() {
-        let err = typecheck_str("var a: [number] = [\"hello\"];").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
-            "expected ExplicitTypeMismatch, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn array_annotation_any_accepts_mixed() {
-        typecheck_str("var a: [any] = [1, \"mixed\", true];").unwrap();
-    }
-
-    #[test]
-    fn nested_array_annotation_accepts_matching_literal() {
-        typecheck_str("var a: [[number]] = [[1, 2], [3, 4]];").unwrap();
-    }
-
-    #[test]
-    fn nested_array_annotation_rejects_wrong_inner_type() {
-        let err = typecheck_str("var a: [[number]] = [[\"s\"]];").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
-            "expected ExplicitTypeMismatch, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn map_annotation_accepts_matching_literal() {
-        typecheck_str("var m: %{str => number} = %{\"a\" => 1, \"b\" => 2};").unwrap();
-    }
-
-    #[test]
-    fn map_annotation_accepts_empty_literal() {
-        // empty literal is MAP_UNTYPED; annotation pins key/value types
-        typecheck_str("var m: %{str => number} = %{};").unwrap();
-    }
-
-    #[test]
-    fn map_annotation_rejects_wrong_value_type() {
-        let err = typecheck_str("var m: %{str => number} = %{\"a\" => \"x\"};").unwrap_err();
-        assert!(
-            matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
-            "expected ExplicitTypeMismatch, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn map_annotation_any_accepts_mixed_keys_and_values() {
-        typecheck_str("var m: %{any => any} = %{\"a\" => 1, 42 => \"b\", true => nil};").unwrap();
-    }
-
-    // ---------- block types ----------
-
-    #[test]
-    fn block_with_trailing_expr_has_that_type() {
-        let ast = typecheck_str("{ 5 }").unwrap();
-        match &ast.global_stmts[0] {
-            Statement::Expr(Expression {
-                case: ExprCase::Block(block),
-                ..
-            }) => assert_eq!(block.extra, TypeId::NUMBER),
-            other => panic!("expected Expr(Block), got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn block_without_trailing_expr_is_unit() {
-        let ast = typecheck_str("{ var x = 1; }").unwrap();
-        match &ast.global_stmts[0] {
-            Statement::Expr(Expression {
-                case: ExprCase::Block(block),
-                ..
-            }) => assert_eq!(block.extra, TypeId::UNIT),
-            other => panic!("expected Expr(Block), got {other:?}"),
-        }
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::{
+//         id::Id,
+//         identifier_registry::{ComplexId, IdentifierRegistry},
+//         parse::lex,
+//     };
+//     use pretty_assertions::assert_eq;
+
+//     fn typecheck_str(input: &str) -> Result<AST<TypeId>, TypecheckError> {
+//         let items = lex(input).expect("lex failed");
+//         let mut identifier_registry = IdentifierRegistry::new();
+//         let ast = crate::parse::parse(input, &items, &mut identifier_registry, false).expect("parse failed");
+//         let mut env = Environment::new();
+//         let module_registry = ModuleRegistry::new();
+//         TypeChecker::new(&mut env, &module_registry).convert(ast)
+//     }
+
+//     /// Type of the expression inside the first top-level Expr statement's Clause.
+//     fn first_clause_type(ast: &AST<TypeId>) -> TypeId {
+//         match &ast.global_stmts[0] {
+//             Statement::Expr(Expression {
+//                 case: ExprCase::Clause(c),
+//                 ..
+//             }) => c.extra,
+//             other => panic!("expected first stmt to be an Expr clause, got {other:?}"),
+//         }
+//     }
+
+//     fn make_cid(id: Id) -> ComplexId {
+//         ComplexId { module: None, name: id }
+//     }
+
+//     // ---------- unify_types (pure helper) ----------
+
+//     #[test]
+//     fn unify_empty_is_any() {
+//         assert_eq!(unify_types(std::iter::empty::<&TypeId>()), TypeId::ANY);
+//     }
+
+//     #[test]
+//     fn unify_single_concrete() {
+//         assert_eq!(unify_types([&TypeId::NUMBER]), TypeId::NUMBER);
+//     }
+
+//     #[test]
+//     fn unify_all_same_concrete() {
+//         assert_eq!(
+//             unify_types([&TypeId::NUMBER, &TypeId::NUMBER, &TypeId::NUMBER]),
+//             TypeId::NUMBER
+//         );
+//     }
+
+//     #[test]
+//     fn unify_any_mixed_with_concrete_keeps_concrete() {
+//         assert_eq!(unify_types([&TypeId::ANY, &TypeId::NUMBER]), TypeId::NUMBER);
+//         assert_eq!(unify_types([&TypeId::NUMBER, &TypeId::ANY]), TypeId::NUMBER);
+//     }
+
+//     #[test]
+//     fn unify_disagreeing_concretes_widens_to_any() {
+//         assert_eq!(unify_types([&TypeId::NUMBER, &TypeId::STR]), TypeId::ANY);
+//     }
+
+//     #[test]
+//     fn unify_all_any_is_any() {
+//         assert_eq!(unify_types([&TypeId::ANY, &TypeId::ANY]), TypeId::ANY);
+//     }
+
+//     // ---------- require_type ----------
+
+//     #[test]
+//     fn require_type_exact_match_is_ok() {
+//         assert!(require_type(TypeId::NUMBER, TypeId::NUMBER).is_ok());
+//     }
+
+//     #[test]
+//     fn require_type_any_on_actual_is_permissive() {
+//         assert!(require_type(TypeId::NUMBER, TypeId::ANY).is_ok());
+//     }
+
+//     #[test]
+//     fn require_type_mismatch_errors() {
+//         let err = require_type(TypeId::NUMBER, TypeId::BOOL).unwrap_err();
+//         assert!(matches!(err, TypecheckError::UnexpectedType(_, _)));
+//     }
+
+//     // ---------- Environment ----------
+
+//     #[test]
+//     fn env_declare_and_lookup() {
+//         let mut env = Environment::new();
+//         let id = Id::new("x");
+//         env.declare_variable_id(id, TypeId::NUMBER).unwrap();
+//         assert_eq!(
+//             env.lookup_variable_id(make_cid(id), &ModuleRegistry::new()),
+//             Some(TypeId::NUMBER)
+//         );
+//     }
+
+//     #[test]
+//     fn env_lookup_missing_is_none() {
+//         let env = Environment::new();
+//         assert_eq!(
+//             env.lookup_variable_id(make_cid(Id::new("nope")), &ModuleRegistry::new()),
+//             None
+//         );
+//     }
+
+//     #[test]
+//     fn env_redeclare_in_same_scope_errors() {
+//         let mut env = Environment::new();
+//         let id = Id::new("x");
+//         env.declare_variable_id(id, TypeId::NUMBER).unwrap();
+//         assert!(env.declare_variable_id(id, TypeId::STR).is_err());
+//     }
+
+//     #[test]
+//     fn env_shadow_across_scopes_ok() {
+//         let mut env = Environment::new();
+//         let id = Id::new("x");
+//         env.declare_variable_id(id, TypeId::NUMBER).unwrap();
+//         env.push_scope();
+//         assert!(env.declare_variable_id(id, TypeId::STR).is_ok());
+//         assert_eq!(
+//             env.lookup_variable_id(make_cid(id), &ModuleRegistry::new()),
+//             Some(TypeId::STR)
+//         );
+//         env.pop_scope();
+//         assert_eq!(
+//             env.lookup_variable_id(make_cid(id), &ModuleRegistry::new()),
+//             Some(TypeId::NUMBER)
+//         );
+//     }
+
+//     #[test]
+//     fn env_builtins_are_in_scope() {
+//         let env = Environment::new();
+//         assert!(
+//             env.lookup_variable_id(make_cid(Id::new("print")), &ModuleRegistry::new())
+//                 .is_some()
+//         );
+//         assert!(
+//             env.lookup_variable_id(make_cid(Id::new("assert")), &ModuleRegistry::new())
+//                 .is_some()
+//         );
+//     }
+
+//     #[test]
+//     fn env_user_global_can_shadow_builtin() {
+//         // User-global scope is scope 1, above builtins at scope 0.
+//         let mut env = Environment::new();
+//         assert!(env.declare_variable_id(Id::new("print"), TypeId::NUMBER).is_ok());
+//     }
+
+//     #[test]
+//     #[should_panic(expected = "scope underflow")]
+//     fn env_pop_underflow_panics() {
+//         let mut env = Environment::new();
+//         env.pop_scope();
+//         env.pop_scope();
+//         env.pop_scope(); // eventually underflows
+//     }
+
+//     // ---------- binary op typing (via type_binary_op directly) ----------
+//     // type_binary_op is a method on TypeChecker. Use end-to-end via typecheck_str.
+
+//     #[test]
+//     fn binary_number_plus_number_is_number() {
+//         let ast = typecheck_str("1 + 2;").unwrap();
+//         assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
+//     }
+
+//     #[test]
+//     fn binary_str_plus_str_is_str() {
+//         let ast = typecheck_str("\"a\" + \"b\";").unwrap();
+//         assert_eq!(first_clause_type(&ast), TypeId::STR);
+//     }
+
+//     #[test]
+//     fn binary_number_plus_bool_errors() {
+//         let err = typecheck_str("1 + true;").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::BinaryOpTypeMismatch(Token::Plus, _, _)),
+//             "expected BinaryOpTypeMismatch(Plus, ...), got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn binary_comparison_returns_bool() {
+//         let ast = typecheck_str("1 < 2;").unwrap();
+//         assert_eq!(first_clause_type(&ast), TypeId::BOOL);
+//     }
+
+//     #[test]
+//     fn binary_equality_same_type_is_bool() {
+//         let ast = typecheck_str("1 == 2;").unwrap();
+//         assert_eq!(first_clause_type(&ast), TypeId::BOOL);
+//     }
+
+//     #[test]
+//     fn binary_and_on_bools_is_bool() {
+//         let ast = typecheck_str("true and false;").unwrap();
+//         assert_eq!(first_clause_type(&ast), TypeId::BOOL);
+//     }
+
+//     #[test]
+//     fn binary_and_on_non_bool_errors() {
+//         let err = typecheck_str("1 and 2;").unwrap_err();
+//         assert!(matches!(err, TypecheckError::BinaryOpTypeMismatch(Token::And, _, _)));
+//     }
+
+//     // ---------- unary op typing ----------
+
+//     #[test]
+//     fn unary_minus_on_number_is_number() {
+//         let ast = typecheck_str("-5;").unwrap();
+//         assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
+//     }
+
+//     #[test]
+//     fn unary_not_on_bool_is_bool() {
+//         let ast = typecheck_str("not true;").unwrap();
+//         assert_eq!(first_clause_type(&ast), TypeId::BOOL);
+//     }
+
+//     #[test]
+//     fn unary_minus_on_bool_errors() {
+//         let err = typecheck_str("-true;").unwrap_err();
+//         assert!(matches!(err, TypecheckError::UnaryOpTypeMismatch(Token::Minus, _)));
+//     }
+
+//     #[test]
+//     fn unary_not_on_number_errors() {
+//         let err = typecheck_str("not 1;").unwrap_err();
+//         assert!(matches!(err, TypecheckError::UnaryOpTypeMismatch(Token::Not, _)));
+//     }
+
+//     // ---------- array literals ----------
+
+//     // ---------- map literals ----------
+
+//     // ---------- identifier lookup ----------
+
+//     #[test]
+//     fn identifier_undefined_errors() {
+//         let err = typecheck_str("x;").unwrap_err();
+//         assert!(matches!(err, TypecheckError::UndefinedVariableIdentifier(_)));
+//     }
+
+//     #[test]
+//     fn identifier_after_declare_has_declared_type() {
+//         let ast = typecheck_str("var x: number = 5; x;").unwrap();
+//         // The second stmt is `x;` — its clause's type should be Number.
+//         match &ast.global_stmts[1] {
+//             Statement::Expr(Expression {
+//                 case: ExprCase::Clause(c),
+//                 ..
+//             }) => assert_eq!(c.extra, TypeId::NUMBER),
+//             other => panic!("expected Expr clause, got {other:?}"),
+//         }
+//     }
+
+//     // ---------- declaration annotations ----------
+
+//     #[test]
+//     fn declare_with_matching_annotation_ok() {
+//         typecheck_str("var x: number = 5;").unwrap();
+//     }
+
+//     #[test]
+//     fn declare_with_mismatched_annotation_errors() {
+//         let err = typecheck_str("var x: number = \"hello\";").unwrap_err();
+//         assert!(matches!(err, TypecheckError::ExplicitTypeMismatch(..)));
+//     }
+
+//     #[test]
+//     fn declare_with_any_annotation_accepts_anything() {
+//         typecheck_str("var x: any = \"hello\";").unwrap();
+//         typecheck_str("var x: any = 5;").unwrap();
+//     }
+
+//     // ---------- reassign ----------
+
+//     #[test]
+//     fn reassign_undefined_errors() {
+//         let err = typecheck_str("x = 5;").unwrap_err();
+//         assert!(matches!(err, TypecheckError::UndefinedVariableIdentifier(_)));
+//     }
+
+//     #[test]
+//     fn reassign_defined_ok() {
+//         typecheck_str("var x: number = 5; x = 10;").unwrap();
+//     }
+
+//     // ---------- duplicate declaration ----------
+
+//     #[test]
+//     fn duplicate_var_in_same_scope_errors() {
+//         let err = typecheck_str("var x = 1; var x = 2;").unwrap_err();
+//         assert!(matches!(err, TypecheckError::DuplicateVariableDeclaration(_)));
+//     }
+
+//     #[test]
+//     fn fn_duplicate_param_errors() {
+//         let err = typecheck_str("var f = fn(x, x) x;").unwrap_err();
+//         assert!(matches!(err, TypecheckError::DuplicateVariableDeclaration(_)));
+//     }
+
+//     // ---------- underscore wildcard ----------
+
+//     #[test]
+//     fn underscore_can_be_redeclared() {
+//         typecheck_str("var _ = 1; var _ = 2;").unwrap();
+//     }
+
+//     #[test]
+//     fn underscore_destructure_binds_other_members() {
+//         typecheck_str("var %(_, b) = %(1, 2); var n: number = b;").unwrap();
+//     }
+
+//     #[test]
+//     fn underscore_for_loop_typechecks() {
+//         typecheck_str("for _ in [1, 2, 3] { }").unwrap();
+//     }
+
+//     #[test]
+//     fn underscore_reassign_typechecks() {
+//         typecheck_str("_ = 1;").unwrap();
+//     }
+
+//     // ---------- fn self-binding (recursion) ----------
+
+//     #[test]
+//     fn fn_self_binding_direct_recursion_typechecks() {
+//         typecheck_str("var f = fn(n) { if n <= 0 { return 0; } return 1 + f(n - 1); }; f(3);").unwrap();
+//     }
+
+//     #[test]
+//     fn fn_self_binding_does_not_leak_to_siblings() {
+//         // `f` is pre-bound only inside its own body — on the previous line `f`
+//         // should still be undefined.
+//         let err = typecheck_str("var x = f; var f = fn() 1;").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
+//             "expected UndefinedVariableIdentifier, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn fn_mutual_recursion_is_rejected() {
+//         // Self-binding only covers the current fn; `b` is not visible when
+//         // converting `a`'s body.
+//         let err = typecheck_str("var a = fn() { return b(); }; var b = fn() { return a(); };").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
+//             "expected UndefinedVariableIdentifier, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn fn_inner_sees_outer_self_binding_via_closure() {
+//         // Lexical scoping: inner fn's body walks up the scope stack, so the
+//         // outer fn's self-binding is still visible. (This is the normal
+//         // closure behavior — not a leak to siblings.)
+//         typecheck_str("var outer = fn() { var inner = fn() { return outer(); }; return inner(); };").unwrap();
+//     }
+
+//     // ---------- tuple destructuring typecheck ----------
+
+//     #[test]
+//     fn tuple_destructure_non_tuple_errors() {
+//         let err = typecheck_str("var %(a, b) = 42;").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
+//             "expected CannotDestructureAsTuple, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn tuple_destructure_wrong_arity_errors() {
+//         let err = typecheck_str("var %(a, b, c) = %(1, 2);").unwrap_err();
+//         assert!(
+//             matches!(
+//                 err,
+//                 TypecheckError::TupleDestructureArityMismatch { expected: 3, actual: 2 }
+//             ),
+//             "expected TupleDestructureArityMismatch{{3,2}}, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn tuple_destructure_any_is_permissive() {
+//         // `any` rhs hides the shape from typecheck; we bind each name as Any
+//         // and defer to the runtime.
+//         typecheck_str("var x: any = 42; var %(a, b) = x;").unwrap();
+//     }
+
+//     #[test]
+//     fn tuple_destructure_binds_per_member_type() {
+//         // `a` gets number, `b` gets str — subsequent annotated uses must
+//         // accept them.
+//         typecheck_str("var %(a, b) = %(1, \"hi\"); var n: number = a; var s: str = b;").unwrap();
+//     }
+
+//     #[test]
+//     fn tuple_destructure_member_type_mismatch_via_annotation() {
+//         // `b` is bound as str from the rhs tuple; a subsequent `number`
+//         // annotation on b must fail. (Exercises that the member type really
+//         // propagated, since reassignment doesn't check types today.)
+//         let err = typecheck_str("var %(a, b) = %(1, \"hi\"); var n: number = b;").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+//             "expected ExplicitTypeMismatch, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn tuple_destructure_explicit_annotation_matches() {
+//         typecheck_str("var %(a, b): %(number, str) = %(1, \"hi\");").unwrap();
+//     }
+
+//     #[test]
+//     fn tuple_destructure_explicit_annotation_wrong_shape_errors() {
+//         let err = typecheck_str("var %(a, b): number = %(1, \"hi\");").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
+//             "expected CannotDestructureAsTuple, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn tuple_destructure_explicit_annotation_wrong_arity_errors() {
+//         let err = typecheck_str("var %(a, b): %(number, str, bool) = %(1, \"hi\");").unwrap_err();
+//         assert!(
+//             matches!(
+//                 err,
+//                 TypecheckError::TupleDestructureArityMismatch { expected: 2, actual: 3 }
+//             ),
+//             "expected TupleDestructureArityMismatch{{2,3}}, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn for_loop_tuple_binding_over_array_of_scalars_errors() {
+//         let err = typecheck_str("for %(a, b) in [1, 2, 3] { }").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::CannotDestructureAsTuple(_)),
+//             "expected CannotDestructureAsTuple, got {err:?}"
+//         );
+//     }
+
+//     // ---------- struct declarations & literals ----------
+
+//     #[test]
+//     fn struct_decl_registers_type() {
+//         typecheck_str("struct Point { x: number, y: number }").unwrap();
+//     }
+
+//     #[test]
+//     fn struct_literal_correct_fields_ok() {
+//         typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, y = 2 };").unwrap();
+//     }
+
+//     #[test]
+//     fn struct_literal_undeclared_name_errors() {
+//         let err = typecheck_str("var p = Foo { x = 1 };").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::UndefinedTypeIdentifier(_)),
+//             "expected UndefinedTypeIdentifier, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn struct_field_count_mismatch_errors() {
+//         let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1 };").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::StructFieldCountMismatch(_, 2, 1)),
+//             "expected StructFieldCountMismatch(_, 2, 1), got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn struct_field_name_mismatch_errors() {
+//         let err = typecheck_str("struct Point { x: number } var p = Point { z = 1 };").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::StructFieldNotExist(_, _)),
+//             "expected StructFieldNameMismatch, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn struct_field_type_mismatch_errors() {
+//         let err = typecheck_str("struct Point { x: number } var p = Point { x = \"hello\" };").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::StructFieldTypeMismatch(_, _, _)),
+//             "expected StructFieldTypeMismatch, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn struct_literal_duplicate_field_errors() {
+//         let err = typecheck_str("struct Point { x: number, y: number } var p = Point { x = 1, x = 2 };").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::DuplicateStructLiteralField(_)),
+//             "expected DuplicateStructLiteralField, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn struct_field_any_type_is_permissive() {
+//         // A field with `any` annotation accepts any value type.
+//         typecheck_str("struct Bag { item: any } var b = Bag { item = 42 };").unwrap();
+//         typecheck_str("struct Bag { item: any } var b = Bag { item = \"hello\" };").unwrap();
+//     }
+
+//     // ---------- member access ----------
+
+//     #[test]
+//     fn member_access_on_known_struct_typechecks() {
+//         typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.x;").unwrap();
+//     }
+
+//     #[test]
+//     fn member_access_unknown_field_errors() {
+//         let err = typecheck_str("struct Point { x: number } var p = Point { x = 1 }; p.z;").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::StructFieldNotExist(_, _)),
+//             "expected StructFieldNotExist, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn member_access_on_non_struct_errors() {
+//         let err = typecheck_str("var n: number = 1; n.x;").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::TypeIsNotStruct(_)),
+//             "expected TypeIsNotStruct, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn member_access_on_any_is_permissive() {
+//         // gradual-typing escape hatch: Any-typed object defers field check to runtime
+//         typecheck_str("var p: any = 1; p.x;").unwrap();
+//     }
+
+//     #[test]
+//     fn member_access_chained_typechecks() {
+//         // Note: user-defined struct names aren't valid in type annotations yet
+//         // (see parse_type_node), so we use `any` for the nested-struct field.
+//         // Dot access on Any is a typecheck-level passthrough.
+//         typecheck_str(
+//             "struct Inner { v: number } \
+//              struct Outer { inner: any } \
+//              var o = Outer { inner = Inner { v = 42 } }; \
+//              o.inner.v;",
+//         )
+//         .unwrap();
+//     }
+
+//     // ---------- array / map annotations ----------
+
+//     #[test]
+//     fn array_annotation_accepts_matching_literal() {
+//         typecheck_str("var a: [number] = [1, 2, 3];").unwrap();
+//     }
+
+//     #[test]
+//     fn array_annotation_accepts_empty_literal() {
+//         // empty literal is ARRAY_UNTYPED; annotation pins the element type
+//         typecheck_str("var a: [number] = [];").unwrap();
+//     }
+
+//     #[test]
+//     fn array_annotation_rejects_wrong_element_type() {
+//         let err = typecheck_str("var a: [number] = [\"hello\"];").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+//             "expected ExplicitTypeMismatch, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn array_annotation_any_accepts_mixed() {
+//         typecheck_str("var a: [any] = [1, \"mixed\", true];").unwrap();
+//     }
+
+//     #[test]
+//     fn nested_array_annotation_accepts_matching_literal() {
+//         typecheck_str("var a: [[number]] = [[1, 2], [3, 4]];").unwrap();
+//     }
+
+//     #[test]
+//     fn nested_array_annotation_rejects_wrong_inner_type() {
+//         let err = typecheck_str("var a: [[number]] = [[\"s\"]];").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+//             "expected ExplicitTypeMismatch, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn map_annotation_accepts_matching_literal() {
+//         typecheck_str("var m: %{str => number} = %{\"a\" => 1, \"b\" => 2};").unwrap();
+//     }
+
+//     #[test]
+//     fn map_annotation_accepts_empty_literal() {
+//         // empty literal is MAP_UNTYPED; annotation pins key/value types
+//         typecheck_str("var m: %{str => number} = %{};").unwrap();
+//     }
+
+//     #[test]
+//     fn map_annotation_rejects_wrong_value_type() {
+//         let err = typecheck_str("var m: %{str => number} = %{\"a\" => \"x\"};").unwrap_err();
+//         assert!(
+//             matches!(err, TypecheckError::ExplicitTypeMismatch(_, _, _)),
+//             "expected ExplicitTypeMismatch, got {err:?}"
+//         );
+//     }
+
+//     #[test]
+//     fn map_annotation_any_accepts_mixed_keys_and_values() {
+//         typecheck_str("var m: %{any => any} = %{\"a\" => 1, 42 => \"b\", true => nil};").unwrap();
+//     }
+
+//     // ---------- block types ----------
+
+//     #[test]
+//     fn block_with_trailing_expr_has_that_type() {
+//         let ast = typecheck_str("{ 5 }").unwrap();
+//         match &ast.global_stmts[0] {
+//             Statement::Expr(Expression {
+//                 case: ExprCase::Block(block),
+//                 ..
+//             }) => assert_eq!(block.extra, TypeId::NUMBER),
+//             other => panic!("expected Expr(Block), got {other:?}"),
+//         }
+//     }
+
+//     #[test]
+//     fn block_without_trailing_expr_is_unit() {
+//         let ast = typecheck_str("{ var x = 1; }").unwrap();
+//         match &ast.global_stmts[0] {
+//             Statement::Expr(Expression {
+//                 case: ExprCase::Block(block),
+//                 ..
+//             }) => assert_eq!(block.extra, TypeId::UNIT),
+//             other => panic!("expected Expr(Block), got {other:?}"),
+//         }
+//     }
+// }

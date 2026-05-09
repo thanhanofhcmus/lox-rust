@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::values::Value;
 use crate::{
     id::Id,
+    identifier_registry::ComplexId,
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
@@ -41,6 +42,10 @@ impl Scope {
 
     fn insert_variable(&mut self, id: Id, value: Value) -> Option<Value> {
         self.variables.insert(id, value)
+    }
+
+    fn insert_multiple_variables(&mut self, variables: HashMap<Id, Value>) {
+        self.variables.extend(variables)
     }
 }
 
@@ -89,7 +94,7 @@ impl ScopeStack {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Module {
     variables: HashMap<Id, Value>,
 }
@@ -99,11 +104,14 @@ pub type ModuleRegistry = GenericModuleRegistry<Module>;
 const SCOPE_SIZE_LIMIT: usize = 100;
 
 #[derive(derive_more::Debug)]
-pub struct Environment {
+pub struct Environment<'a> {
     pub(super) heap: Heap,
     scope_stack: ScopeStack,
     imported_modules: HashMap<Id, ModuleMetadata>,
+
+    // TODO: move preludes to shared
     preludes: Scope,
+    module_registry: &'a ModuleRegistry,
 }
 
 macro_rules! decl_gc_type_methods {
@@ -134,14 +142,22 @@ macro_rules! decl_gc_type_methods {
     };
 }
 
-impl Environment {
-    pub fn new() -> Self {
+impl<'a> Environment<'a> {
+    pub fn new(module_registry: &'a ModuleRegistry) -> Self {
         Self {
             heap: Heap::new(),
             scope_stack: ScopeStack::new(),
             imported_modules: HashMap::new(),
             preludes: Scope::from_map(prelude::create(), true),
+            module_registry,
         }
+    }
+
+    pub fn from_module(Module { variables }: Module, module_registry: &'a ModuleRegistry) -> Self {
+        let mut env = Self::new(module_registry);
+        assert!(env.scope_stack.len() == 1, "env should only have the global scope here");
+        env.scope_stack.get_current_mut().insert_multiple_variables(variables);
+        env
     }
 
     pub(super) fn collect_all_variables(&self) -> Vec<Value> {
@@ -200,10 +216,10 @@ impl Environment {
         self.scope_stack.get_current().get_variable(id)
     }
 
-    pub fn get_variable_all_scope(&self, id: Id) -> Option<(Value, bool /* is_readonly */)> {
+    pub fn get_variable_all_scope(&self, cid: ComplexId) -> Option<(Value, bool /* is_readonly */)> {
         // check scopes/stacks
         for scope in self.scope_stack.iter_outward() {
-            if let Some(value) = scope.get_variable(id) {
+            if let Some(value) = scope.get_variable(cid.name) {
                 return Some((value, scope.is_readonly));
             }
         }
@@ -211,22 +227,14 @@ impl Environment {
         // from now on, the variable is always readonly
 
         // get from built-in
-        if let Some(value) = self.preludes.get_variable(id) {
+        if let Some(value) = self.preludes.get_variable(cid.name) {
             return Some((value, true));
         }
 
-        None
-    }
-
-    pub fn get_variable_module_scope(
-        &self,
-        module: &Id,
-        member: Id,
-        module_registry: &ModuleRegistry,
-    ) -> Option<Value> {
-        let metadata = self.imported_modules.get(module)?;
-        let module = module_registry.get(metadata)?;
-        module.variables.get(&member).copied()
+        let module_id = cid.module?;
+        let metadata = self.imported_modules.get(&module_id)?;
+        let module = self.module_registry.get(metadata)?;
+        module.variables.get(&module_id).map(|v| (*v, true))
     }
 
     pub fn insert_variable(&mut self, id: Id, value: Value) -> Option<Value> {
@@ -314,20 +322,18 @@ impl Environment {
 mod tests {
     use super::*;
 
-    fn make_env() -> Environment {
-        Environment::new()
-    }
-
     #[test]
     fn push_and_pop_scope_ok() {
-        let mut env = make_env();
+        let module_restritry = ModuleRegistry::new();
+        let mut env = Environment::new(&module_restritry);
         env.push_scope(false).unwrap();
         env.pop_scope().unwrap();
     }
 
     #[test]
     fn pop_beyond_empty_returns_underflow() {
-        let mut env = make_env();
+        let module_restritry = ModuleRegistry::new();
+        let mut env = Environment::new(&module_restritry);
         // ScopeStack starts with one scope; first pop succeeds, second triggers underflow.
         env.pop_scope().unwrap();
         let err = env.pop_scope().unwrap_err();
@@ -339,7 +345,8 @@ mod tests {
 
     #[test]
     fn scope_overflow_returns_error() {
-        let mut env = make_env();
+        let module_restritry = ModuleRegistry::new();
+        let mut env = Environment::new(&module_restritry);
         // Push past SCOPE_SIZE_LIMIT (100) to trigger overflow.
         for _ in 0..SCOPE_SIZE_LIMIT {
             env.push_scope(false).unwrap();
@@ -355,7 +362,8 @@ mod tests {
     fn variable_visible_in_inner_scope() {
         use crate::id::Id;
 
-        let mut env = make_env();
+        let module_restritry = ModuleRegistry::new();
+        let mut env = Environment::new(&module_restritry);
         let id = Id::new("x");
         env.insert_variable(id, Value::make_bool(true));
         env.push_scope(false).unwrap();
@@ -372,7 +380,8 @@ mod tests {
         use crate::id::Id;
         use crate::interpret::values::Scalar;
 
-        let mut env = make_env();
+        let module_restritry = ModuleRegistry::new();
+        let mut env = Environment::new(&module_restritry);
         env.push_scope(false).unwrap();
         let id = Id::new("x");
         env.insert_variable(id, Value::make_bool(false));
@@ -383,7 +392,9 @@ mod tests {
         assert!(found);
 
         env.pop_scope().unwrap();
-        let (val, is_readonly) = env.get_variable_all_scope(id).unwrap();
+        let (val, is_readonly) = env
+            .get_variable_all_scope(ComplexId { module: None, name: id })
+            .unwrap();
         assert!(matches!(val, Value::Scalar(Scalar::Bool(true))));
         assert!(!is_readonly);
     }

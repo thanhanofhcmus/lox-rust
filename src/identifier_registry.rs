@@ -2,6 +2,41 @@ use std::collections::HashMap;
 
 use crate::{id::Id, span::Span};
 
+pub struct ComplexId {
+    pub module: Option<Id>,
+    pub name: Id,
+}
+
+impl From<ComplexIdentifier> for ComplexId {
+    fn from(value: ComplexIdentifier) -> Self {
+        Self {
+            module: value.module.map(|v| v.id),
+            name: value.name.id,
+        }
+    }
+}
+
+impl From<Identifier> for ComplexId {
+    fn from(value: Identifier) -> Self {
+        Self {
+            module: None,
+            name: value.id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComplexIdentifier {
+    pub module: Option<Identifier>,
+    pub name: Identifier,
+}
+
+impl From<Identifier> for ComplexIdentifier {
+    fn from(name: Identifier) -> Self {
+        Self { module: None, name }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identifier {
     pub span: Span,

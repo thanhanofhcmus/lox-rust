@@ -1,8 +1,5 @@
-use crate::identifier_registry::Identifier;
-use crate::identifier_registry::IdentifierRegistry;
-use crate::module::ModuleMetadata;
-use crate::types::TypeId;
-use crate::{ast::*, string_utils};
+use crate::identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry};
+use crate::{ast::*, module::ModuleMetadata, string_utils, types::TypeId};
 
 use super::context::Context;
 use super::error::ParseError;
@@ -114,10 +111,10 @@ fn parse_type_node(state: &mut Context) -> Result<TypeNode, ParseError> {
         Token::TypeBool => next(TypeId::BOOL),
         Token::TypeNumber => next(TypeId::NUMBER),
         Token::TypeStr => next(TypeId::STR),
-        // Named
+        // Named , Point or module_name::Point
         Token::Identifier => {
-            state.advance();
-            Ok(TypeNode::Named(state.create_identifier(li)))
+            let iden_module = parse_complex_identifier(state)?;
+            Ok(TypeNode::Named(iden_module))
         }
         // Array
         Token::LSquareParen => {
@@ -229,12 +226,7 @@ fn parse_binding_node(state: &mut Context) -> Result<DeclareBindingNode, ParseEr
             Ok(DeclareBindingNode::Identifier(state.create_identifier(id_item)))
         }
         Token::PercentLRoundParen => {
-            let members = parse_comma_list(
-                state,
-                Token::PercentLRoundParen,
-                Token::RRoundParen,
-                parse_identifier_node,
-            )?;
+            let members = parse_comma_list(state, Token::PercentLRoundParen, Token::RRoundParen, parse_identifier)?;
             Ok(DeclareBindingNode::Tuple { members })
         }
         _ => Err(ParseError::UnexpectedToken(li.token, li.span, None)),
@@ -407,7 +399,7 @@ fn get_binding_power(token: Token) -> Option<(BindingPower, BindingPower)> {
         Star | Slash | Percentage => (FactorLeft, FactorRight),
 
         // postfix operators, we will only extract the left part
-        LSquareParen | LRoundParen | ColonColon | Dot => (ChainLeft, ChainRight),
+        LSquareParen | LRoundParen | Dot => (ChainLeft, ChainRight),
         _ => return Option::None,
     };
     Some(bp)
@@ -447,18 +439,6 @@ fn parse_pratt_infix(
 ) -> Result<ClauseNode<()>, ParseError> {
     let li = state.get_curr().copied()?;
     match li.token {
-        // Module access
-        Token::ColonColon => {
-            state.consume_token(li.token)?;
-            let ClauseCase::Identifier(module_iden) = lhs.case else {
-                unimplemented!()
-            };
-            let member_li = state.consume_token(Token::Identifier)?;
-            Ok(ClauseNode::new(ClauseCase::ModuleAccess(ModuleAccessNode {
-                module: module_iden,
-                member: state.create_identifier(member_li),
-            })))
-        }
         // Struct/Tuple member access
         Token::Dot => {
             state.consume_token(li.token)?;
@@ -560,16 +540,16 @@ fn parse_recursive_unary(state: &mut Context, match_token: Token) -> Result<Clau
 
 fn parse_primary(state: &mut Context) -> Result<ClauseNode<()>, ParseError> {
     let base = if state.peek(&[Token::Identifier]) {
-        // Struct literal: `Name { field = value }`.
+        // Struct literal: `Name { field = value } or module::Name { field = value}`.
         // Only attempted when the context allows it (disabled in if/while/for conditions
         // to avoid ambiguity with block expressions — same restriction as Rust).
-        let is_struct_literal = state.allow_struct_literal && state.peek_2_token(&[Token::LPointParen]);
+        let ciden = parse_complex_identifier(state)?;
+        let is_struct_literal = state.allow_struct_literal && state.peek(&[Token::LPointParen]);
         if is_struct_literal {
-            let node = parse_struct_literal_node(state)?;
+            let node = parse_struct_literal_node_continue(state, ciden)?;
             ClauseCase::RawValue(RawValueNode::StructLiteral(node))
         } else {
-            let node = parse_identifier_node(state)?;
-            ClauseCase::Identifier(node)
+            ClauseCase::Identifier(ciden)
         }
     } else if state.peek(&[Token::LRoundParen]) {
         let node = parse_group(state)?;
@@ -626,21 +606,39 @@ fn parse_struct_field_literal_node(state: &mut Context) -> Result<StructLiteralF
     })
 }
 
-fn parse_struct_literal_node(state: &mut Context) -> Result<StructLiteralNode<()>, ParseError> {
-    let li = state.consume_token(Token::Identifier)?;
+fn parse_struct_literal_node_continue(
+    state: &mut Context,
+    ciden: ComplexIdentifier,
+) -> Result<StructLiteralNode<()>, ParseError> {
     let fields = parse_comma_list(
         state,
         Token::LPointParen,
         Token::RPointParen,
         parse_struct_field_literal_node,
     )?;
-    Ok(StructLiteralNode {
-        iden: state.create_identifier(li),
-        fields,
-    })
+    Ok(StructLiteralNode { ciden, fields })
 }
 
-fn parse_identifier_node(state: &mut Context) -> Result<Identifier, ParseError> {
+fn parse_complex_identifier(state: &mut Context) -> Result<ComplexIdentifier, ParseError> {
+    let li = state.consume_token(Token::Identifier)?;
+    let name_or_module = state.create_identifier(li);
+    if state.peek(&[Token::ColonColon]) {
+        state.consume_token(Token::ColonColon)?;
+        let namespace_li = state.consume_token(Token::Identifier)?;
+        let name = state.create_identifier(namespace_li);
+        Ok(ComplexIdentifier {
+            name,
+            module: Some(name_or_module),
+        })
+    } else {
+        Ok(ComplexIdentifier {
+            module: None,
+            name: name_or_module,
+        })
+    }
+}
+
+fn parse_identifier(state: &mut Context) -> Result<Identifier, ParseError> {
     let li = state.consume_token(Token::Identifier)?;
     Ok(state.create_identifier(li))
 }
@@ -899,7 +897,13 @@ fn convert_chaining(
                 follows.push(ChainStep::Member(member));
                 clause = *object;
             }
-            ClauseCase::Identifier(node) => break node,
+            ClauseCase::Identifier(ciden) => {
+                if ciden.module.is_some() {
+                    // TODO: we do not allow reassign across module boundary
+                    unimplemented!()
+                }
+                break ciden.name;
+            }
             // Anything else (FnCall, Binary, Group, etc.) is not a valid lvalue.
             _ => return Err(ParseError::ReassignRootIsNotAnIdentifier),
         }
