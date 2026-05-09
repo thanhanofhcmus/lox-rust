@@ -519,7 +519,7 @@ mod tests {
         // serde/Copy semantics is not safe. Instead, construct through our own
         // interner — intentionally inlined to avoid a heap dependency.
         use crate::interpret::heap::HeapStringInterner;
-        let mut interner = HeapStringInterner::new();
+        let mut interner = HeapStringInterner::default();
         let id: StrId = interner.intern("hello");
         let k = MapKey::convert_from_value(Value::Str(id)).unwrap();
         assert_eq!(k.get_str_id(), Some(id));

@@ -1,6 +1,7 @@
 use crate::id::Id;
 use crate::identifier_registry::Identifier;
 use crate::identifier_registry::IdentifierRegistry;
+use crate::module::ModuleStringInterner;
 use crate::token::Token;
 
 use super::error::ParseError;
@@ -17,6 +18,7 @@ pub struct Context<'a> {
     items: &'a [LexItem],
 
     identifier_registry: &'a mut IdentifierRegistry,
+    pub module_string_interner: &'a mut ModuleStringInterner,
 
     curr_pos: usize,
 
@@ -42,12 +44,14 @@ impl<'a> Context<'a> {
         input: &'a str,
         items: &'a [LexItem],
         identifier_registry: &'a mut IdentifierRegistry,
+        module_string_interner: &'a mut ModuleStringInterner,
         should_eval_string: bool,
     ) -> Self {
         Self {
             input,
             items,
             identifier_registry,
+            module_string_interner,
             curr_pos: 0,
             should_eval_string,
             fn_depth: 0,

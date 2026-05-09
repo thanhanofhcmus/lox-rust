@@ -1,22 +1,26 @@
-use crate::id::Id;
+use crate::{
+    id::Id,
+    string_interner::{StringInterner, SymbolId},
+};
 use std::collections::HashMap;
+
+pub struct ModuleMarker;
+
+pub type ModuleStrId = SymbolId<ModuleMarker>;
+pub type ModuleStringInterner = StringInterner<ModuleMarker>;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ModuleMetadata {
-    pub path: String,
+    pub path: ModuleStrId,
     pub package: Id,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ModuleRegistry<T> {
     map: HashMap<ModuleMetadata, T>,
 }
 
 impl<T> ModuleRegistry<T> {
-    pub fn new() -> Self {
-        Self { map: HashMap::new() }
-    }
-
     pub fn insert(&mut self, metadata: ModuleMetadata, module: T) {
         self.map.insert(metadata, module);
     }

@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn push_and_pop_scope_ok() {
-        let module_restritry = ModuleRegistry::new();
+        let module_restritry = ModuleRegistry::default();
         let mut env = Environment::new(&module_restritry);
         env.push_scope(false).unwrap();
         env.pop_scope().unwrap();
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn pop_beyond_empty_returns_underflow() {
-        let module_restritry = ModuleRegistry::new();
+        let module_restritry = ModuleRegistry::default();
         let mut env = Environment::new(&module_restritry);
         // ScopeStack starts with one scope; first pop succeeds, second triggers underflow.
         env.pop_scope().unwrap();
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn scope_overflow_returns_error() {
-        let module_restritry = ModuleRegistry::new();
+        let module_restritry = ModuleRegistry::default();
         let mut env = Environment::new(&module_restritry);
         // Push past SCOPE_SIZE_LIMIT (100) to trigger overflow.
         for _ in 0..SCOPE_SIZE_LIMIT {
@@ -362,7 +362,7 @@ mod tests {
     fn variable_visible_in_inner_scope() {
         use crate::id::Id;
 
-        let module_restritry = ModuleRegistry::new();
+        let module_restritry = ModuleRegistry::default();
         let mut env = Environment::new(&module_restritry);
         let id = Id::new("x");
         env.insert_variable(id, Value::make_bool(true));
@@ -380,7 +380,7 @@ mod tests {
         use crate::id::Id;
         use crate::interpret::values::Scalar;
 
-        let module_restritry = ModuleRegistry::new();
+        let module_restritry = ModuleRegistry::default();
         let mut env = Environment::new(&module_restritry);
         env.push_scope(false).unwrap();
         let id = Id::new("x");

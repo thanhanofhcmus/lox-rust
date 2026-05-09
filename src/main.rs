@@ -25,7 +25,7 @@ use crate::{
     id::Id,
     identifier_registry::IdentifierRegistry,
     interpret::InterpretError,
-    module::ModuleMetadata,
+    module::{ModuleMetadata, ModuleStringInterner},
     parse::ParseError,
     typecheck::TypecheckError,
     types::{TypeId, TypeInterner},
@@ -53,6 +53,7 @@ struct RunnerContext {
     typecheck_module_registry: typecheck::ModuleRegistry,
     interpret_module_registry: interpret::ModuleRegistry,
     type_interner: TypeInterner,
+    module_string_interner: ModuleStringInterner,
 
     parse_cache: HashMap<ModuleMetadata, AST<()>>,
     typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
@@ -66,11 +67,11 @@ struct RunnerContext {
 impl RunnerContext {
     fn new(strict_assert: bool) -> Self {
         let type_interner = TypeInterner::new();
-        let typecheck_module_registry = typecheck::ModuleRegistry::new();
         Self {
-            global_identifier_registry: IdentifierRegistry::new(),
-            typecheck_module_registry,
-            interpret_module_registry: interpret::ModuleRegistry::new(),
+            global_identifier_registry: IdentifierRegistry::default(),
+            typecheck_module_registry: typecheck::ModuleRegistry::default(),
+            interpret_module_registry: interpret::ModuleRegistry::default(),
+            module_string_interner: ModuleStringInterner::default(),
             type_interner,
 
             parse_cache: HashMap::new(),
@@ -102,7 +103,14 @@ impl RunnerContext {
         }
 
         debug!("Parsing start");
-        let ast = parse::parse(input, &tokens, &mut self.global_identifier_registry, is_in_repl).map_err(|err| {
+        let ast = parse::parse(
+            input,
+            &tokens,
+            &mut self.global_identifier_registry,
+            &mut self.module_string_interner,
+            is_in_repl,
+        )
+        .map_err(|err| {
             error!("Parse error:\n{}", err.generate_user_facing_error(source_name, input));
             RunError::Parse(err)
         })?;
@@ -213,7 +221,7 @@ impl RunnerContext {
         let root_module_metadata = ModuleMetadata {
             package: Id::SELF,
             // The REPL module or file
-            path: source_name.unwrap_or(".").to_string(),
+            path: self.module_string_interner.intern(source_name.unwrap_or(".")),
         };
 
         let root_module_node_id = module_dag.add_node(root_module_metadata.clone());
@@ -232,7 +240,8 @@ impl RunnerContext {
                 continue;
             }
 
-            let path = &node_metadata.path;
+            let path_id = node_metadata.path;
+            let path = self.module_string_interner.get(path_id).unwrap().to_string();
 
             if node_metadata.package != Id::SELF {
                 unimplemented!();
@@ -246,7 +255,7 @@ impl RunnerContext {
             }
 
             let content = std::fs::read_to_string(file_path).unwrap();
-            let untyped_ast = self.lex_and_parse(&content, Some(path), true)?;
+            let untyped_ast = self.lex_and_parse(&content, Some(&path), true)?;
 
             for imp in &untyped_ast.imports {
                 let md_node_id = module_dag.add_node(imp.metadata.clone());

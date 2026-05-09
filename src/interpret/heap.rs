@@ -184,7 +184,7 @@ impl Heap {
         Self {
             slots: vec![],
             free_list: vec![],
-            string_interner: StringInterner::new(),
+            string_interner: StringInterner::default(),
         }
     }
 

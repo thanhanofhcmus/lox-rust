@@ -1,4 +1,5 @@
 use crate::identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry};
+use crate::module::ModuleStringInterner;
 use crate::{ast::*, module::ModuleMetadata, string_utils, types::TypeId};
 
 use super::context::Context;
@@ -12,9 +13,16 @@ pub fn parse(
     input: &str,
     items: &[LexItem],
     identifier_registry: &mut IdentifierRegistry,
+    module_string_interner: &mut ModuleStringInterner,
     should_eval_string: bool,
 ) -> Result<AST<()>, ParseError> {
-    let mut state = Context::new(input, items, identifier_registry, should_eval_string);
+    let mut state = Context::new(
+        input,
+        items,
+        identifier_registry,
+        module_string_interner,
+        should_eval_string,
+    );
     let mut imports = vec![];
     let mut global_stmts = vec![];
     let mut is_parsing_import = true;
@@ -81,7 +89,7 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
     Ok(ImportNode {
         metadata: ModuleMetadata {
             package: package_iden.id,
-            path,
+            path: state.module_string_interner.intern(&path),
         },
         iden: state.create_identifier(iden_li),
     })
@@ -924,15 +932,17 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn parse_str(input: &str) -> AST<()> {
-        let mut identifier_registry = IdentifierRegistry::new();
+        let mut ir = IdentifierRegistry::default();
+        let mut msi = ModuleStringInterner::default();
         let items = lex(input).expect("lex failed");
-        parse(input, &items, &mut identifier_registry, false).expect("parse failed")
+        parse(input, &items, &mut ir, &mut msi, false).expect("parse failed")
     }
 
     fn parse_err(input: &str) -> ParseError {
-        let mut identifier_registry = IdentifierRegistry::new();
+        let mut ir = IdentifierRegistry::default();
         let items = lex(input).expect("lex failed");
-        parse(input, &items, &mut identifier_registry, false).expect_err("expected parse error")
+        let mut msi = ModuleStringInterner::default();
+        parse(input, &items, &mut ir, &mut msi, false).expect_err("expected parse error")
     }
 
     /// Extract the first top-level expression statement's inner clause.

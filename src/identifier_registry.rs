@@ -43,16 +43,12 @@ pub struct Identifier {
     pub id: Id,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct IdentifierRegistry {
     map: HashMap<Id, String>,
 }
 
 impl IdentifierRegistry {
-    pub fn new() -> Self {
-        Self { map: HashMap::new() }
-    }
-
     pub fn insert(&mut self, id: Id, name: String) {
         match self.map.get(&id) {
             Some(existing) if existing == &name => {}
@@ -84,7 +80,7 @@ mod tests {
 
     #[test]
     fn insert_same_name_twice_is_idempotent() {
-        let mut r = IdentifierRegistry::new();
+        let mut r = IdentifierRegistry::default();
         let id = Id::new("foo");
         r.insert(id, "foo".to_string());
         r.insert(id, "foo".to_string());
@@ -97,7 +93,7 @@ mod tests {
         // Construct two IDs that share a hash but originate from different
         // names. The public `Id::new` is collision-resistant for short
         // strings, so we forge a collision by reusing the hash byte-for-byte.
-        let mut r = IdentifierRegistry::new();
+        let mut r = IdentifierRegistry::default();
         let original = Id::new("alpha");
         r.insert(original, "alpha".to_string());
         // Reinsert the same Id but claim it's "beta" — simulates a real hash

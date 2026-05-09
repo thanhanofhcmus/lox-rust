@@ -14,8 +14,8 @@ pub struct StringInterner<T> {
     mark_to_keep: HashSet<SymbolId<T>>,
 }
 
-impl<T> StringInterner<T> {
-    pub fn new() -> Self {
+impl<T> Default for StringInterner<T> {
+    fn default() -> Self {
         Self {
             string_to_id: HashMap::new(),
             id_to_string: HashMap::new(),
@@ -23,7 +23,9 @@ impl<T> StringInterner<T> {
             mark_to_keep: HashSet::new(),
         }
     }
+}
 
+impl<T> StringInterner<T> {
     pub fn intern(&mut self, s: &str) -> SymbolId<T> {
         if let Some(id) = self.string_to_id.get(s) {
             return *id;
@@ -70,7 +72,7 @@ mod tests {
 
     #[test]
     fn interning_same_string_returns_same_id() {
-        let mut interner = SI::new();
+        let mut interner = SI::default();
         let a = interner.intern("hello");
         let b = interner.intern("hello");
         assert_eq!(a, b);
@@ -78,7 +80,7 @@ mod tests {
 
     #[test]
     fn interning_different_strings_returns_different_ids() {
-        let mut interner = SI::new();
+        let mut interner = SI::default();
         let a = interner.intern("hello");
         let b = interner.intern("world");
         assert_ne!(a, b);
@@ -86,14 +88,14 @@ mod tests {
 
     #[test]
     fn get_returns_interned_string() {
-        let mut interner = SI::new();
+        let mut interner = SI::default();
         let id = interner.intern("foo");
         assert_eq!(interner.get(id), Some("foo"));
     }
 
     #[test]
     fn get_unknown_id_returns_none() {
-        let interner = SI::new();
+        let interner = SI::default();
         // Construct an id that was never interned by fabricating via next_id behavior:
         // since StrId is not publicly constructible outside this module, we instead
         // intern once and then sweep it away, then try to get it.
@@ -105,7 +107,7 @@ mod tests {
 
     #[test]
     fn sweep_without_marks_clears_all() {
-        let mut interner = SI::new();
+        let mut interner = SI::default();
         let a = interner.intern("a");
         let b = interner.intern("b");
         interner.sweep();
@@ -115,7 +117,7 @@ mod tests {
 
     #[test]
     fn sweep_preserves_marked_removes_unmarked() {
-        let mut interner = SI::new();
+        let mut interner = SI::default();
         let keep = interner.intern("keep");
         let drop = interner.intern("drop");
         interner.mark_to_keep(keep);
@@ -126,7 +128,7 @@ mod tests {
 
     #[test]
     fn reset_marks_then_sweep_clears_everything() {
-        let mut interner = SI::new();
+        let mut interner = SI::default();
         let id = interner.intern("x");
         interner.mark_to_keep(id);
         interner.reset_marks();
@@ -138,7 +140,7 @@ mod tests {
     fn re_intern_after_sweep_can_reuse_or_get_new_id() {
         // The interner uses monotonic next_id — after sweep, re-interning the same
         // string produces a *new* id (not reuse of the old one).
-        let mut interner = SI::new();
+        let mut interner = SI::default();
         let first = interner.intern("foo");
         interner.sweep();
         let second = interner.intern("foo");
