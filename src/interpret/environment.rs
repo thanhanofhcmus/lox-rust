@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use super::values::Value;
 use crate::{
     id::Id,
-    identifier_registry::Identifier,
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
@@ -22,7 +21,7 @@ struct Scope {
 
 impl Scope {
     fn make_global() -> Self {
-        Self::new(true)
+        Self::new(false)
     }
 
     fn new(is_readonly: bool) -> Self {
@@ -201,9 +200,7 @@ impl Environment {
         self.scope_stack.get_current().get_variable(id)
     }
 
-    pub fn get_variable_all_scope(&self, node: &Identifier) -> Option<(Value, bool /* is_readonly */)> {
-        let id = node.id;
-
+    pub fn get_variable_all_scope(&self, id: Id) -> Option<(Value, bool /* is_readonly */)> {
         // check scopes/stacks
         for scope in self.scope_stack.iter_outward() {
             if let Some(value) = scope.get_variable(id) {
@@ -357,11 +354,10 @@ mod tests {
     #[test]
     fn variable_visible_in_inner_scope() {
         use crate::id::Id;
-        use crate::interpret::values::Scalar;
 
         let mut env = make_env();
         let id = Id::new("x");
-        env.insert_variable(id, Value::Scalar(Scalar::Bool(true)));
+        env.insert_variable(id, Value::make_bool(true));
         env.push_scope(false).unwrap();
 
         // Variable is not in the inner scope's own slot.
@@ -377,16 +373,18 @@ mod tests {
         use crate::interpret::values::Scalar;
 
         let mut env = make_env();
+        env.push_scope(false).unwrap();
         let id = Id::new("x");
-        env.insert_variable(id, Value::Scalar(Scalar::Bool(false)));
+        env.insert_variable(id, Value::make_bool(false));
 
         // Push a readonly scope on top — replace must skip it and update the outer scope.
         env.push_scope(true).unwrap();
-        let found = env.replace_variable(id, Value::Scalar(Scalar::Bool(true)));
+        let found = env.replace_variable(id, Value::make_bool(true));
         assert!(found);
 
         env.pop_scope().unwrap();
-        let val = env.get_variable_current_scope(id).unwrap();
+        let (val, is_readonly) = env.get_variable_all_scope(id).unwrap();
         assert!(matches!(val, Value::Scalar(Scalar::Bool(true))));
+        assert!(!is_readonly);
     }
 }

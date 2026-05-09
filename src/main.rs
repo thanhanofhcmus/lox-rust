@@ -42,12 +42,12 @@ type DynResult = Result<(), Box<dyn std::error::Error>>;
 
 /// Encapsulates the runtime environment to avoid duplicating setup across modes.
 struct RunnerContext {
-    identifier_registry: IdentifierRegistry,
-    repl_typecheck_env: typecheck::Environment,
-    repl_typecheck_module_registry: typecheck::ModuleRegistry,
-
-    interpret_env: interpret::Environment,
+    global_identifier_registry: IdentifierRegistry,
+    typecheck_module_registry: typecheck::ModuleRegistry,
     interpret_module_registry: interpret::ModuleRegistry,
+
+    repl_typecheck_env: typecheck::Environment,
+    repl_interpret_env: interpret::Environment,
 
     parse_cache: HashMap<ModuleMetadata, AST<()>>,
     typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
@@ -58,12 +58,13 @@ struct RunnerContext {
 impl RunnerContext {
     fn new(strict_assert: bool) -> Self {
         Self {
-            repl_typecheck_env: typecheck::Environment::new(),
-            interpret_env: interpret::Environment::new(),
-
-            identifier_registry: IdentifierRegistry::new(),
-            repl_typecheck_module_registry: typecheck::ModuleRegistry::new(),
+            global_identifier_registry: IdentifierRegistry::new(),
+            typecheck_module_registry: typecheck::ModuleRegistry::new(),
             interpret_module_registry: interpret::ModuleRegistry::new(),
+
+            repl_typecheck_env: typecheck::Environment::new(),
+            repl_interpret_env: interpret::Environment::new(),
+
             parse_cache: HashMap::new(),
             typecheck_cache: HashMap::new(),
             strict_assert,
@@ -89,7 +90,7 @@ impl RunnerContext {
         }
 
         debug!("Parsing start");
-        let ast = parse::parse(input, &tokens, &mut self.identifier_registry, is_in_repl).map_err(|err| {
+        let ast = parse::parse(input, &tokens, &mut self.global_identifier_registry, is_in_repl).map_err(|err| {
             error!("Parse error:\n{}", err.generate_user_facing_error(source_name, input));
             RunError::Parse(err)
         })?;
@@ -109,7 +110,7 @@ impl RunnerContext {
         debug!("type checking start");
 
         let mut typechecker =
-            typecheck::TypeChecker::new(&mut self.repl_typecheck_env, &self.repl_typecheck_module_registry);
+            typecheck::TypeChecker::new(&mut self.repl_typecheck_env, &self.typecheck_module_registry);
 
         match typechecker.convert(ast) {
             Err(err) => {
@@ -118,7 +119,7 @@ impl RunnerContext {
                     err.generate_user_facing_error(
                         source_name,
                         input,
-                        &self.identifier_registry,
+                        &self.global_identifier_registry,
                         self.repl_typecheck_env.get_type_interner()
                     )
                 );
@@ -140,7 +141,7 @@ impl RunnerContext {
         debug!("type checking start");
 
         let mut type_check_env = typecheck::Environment::new();
-        let mut typechecker = typecheck::TypeChecker::new(&mut type_check_env, &self.repl_typecheck_module_registry);
+        let mut typechecker = typecheck::TypeChecker::new(&mut type_check_env, &self.typecheck_module_registry);
 
         match typechecker.convert(ast) {
             Err(err) => {
@@ -149,7 +150,7 @@ impl RunnerContext {
                     err.generate_user_facing_error(
                         source_name,
                         input,
-                        &self.identifier_registry,
+                        &self.global_identifier_registry,
                         self.repl_typecheck_env.get_type_interner()
                     )
                 );
@@ -168,9 +169,9 @@ impl RunnerContext {
         debug!("interpreting start");
         let print_writer = Rc::new(RefCell::new(std::io::stdout()));
         let mut interpreter = interpret::Interpreter::new(
-            &mut self.interpret_env,
+            &mut self.repl_interpret_env,
             &self.interpret_module_registry,
-            &mut self.identifier_registry,
+            &mut self.global_identifier_registry,
             input,
             print_writer,
             self.strict_assert,
@@ -184,7 +185,12 @@ impl RunnerContext {
             Err(err) => {
                 error!(
                     "Interpreter error:\n{}",
-                    err.generate_user_facing_error(source_name, input, &self.interpret_env, &self.identifier_registry,)
+                    err.generate_user_facing_error(
+                        source_name,
+                        input,
+                        &self.repl_interpret_env,
+                        &self.global_identifier_registry,
+                    )
                 );
                 Err(RunError::Interpret(err))
             }
@@ -203,7 +209,7 @@ impl RunnerContext {
         let mut interpreter = interpret::Interpreter::new(
             &mut interpreter_env,
             &self.interpret_module_registry,
-            &mut self.identifier_registry,
+            &mut self.global_identifier_registry,
             input,
             print_writer,
             self.strict_assert,
@@ -217,7 +223,12 @@ impl RunnerContext {
             Err(err) => {
                 error!(
                     "Interpreter error:\n{}",
-                    err.generate_user_facing_error(source_name, input, &self.interpret_env, &self.identifier_registry,)
+                    err.generate_user_facing_error(
+                        source_name,
+                        input,
+                        &self.repl_interpret_env,
+                        &self.global_identifier_registry,
+                    )
                 );
                 Err(RunError::Interpret(err))
             }
@@ -258,7 +269,7 @@ impl RunnerContext {
 
             let path = &node_metadata.path;
             if node_metadata.package != Id::SELF {
-                unimplemented!()
+                unimplemented!();
             }
 
             // read the file
@@ -300,7 +311,7 @@ impl RunnerContext {
             } else {
                 let (typed_ast, module) = self.type_check(untyped_ast, input, source_name)?;
                 self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
-                self.repl_typecheck_module_registry.insert(node_metadata, module);
+                self.typecheck_module_registry.insert(node_metadata, module);
             }
         }
 

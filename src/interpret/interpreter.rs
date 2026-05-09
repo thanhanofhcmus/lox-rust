@@ -254,7 +254,7 @@ impl<'e, 's> Interpreter<'e, 's> {
 
         let iden = &node.base;
 
-        let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden) else {
+        let Some((current_root_value, is_readonly)) = self.environment.get_variable_all_scope(iden.id) else {
             return Err(InterpretError::NotFoundVariable(*iden));
         };
         if is_readonly {
@@ -407,7 +407,7 @@ impl<'e, 's> Interpreter<'e, 's> {
             ClauseCase::ModuleAccess(node) => self.interpret_module_access(node),
             ClauseCase::Identifier(node) => self
                 .environment
-                .get_variable_all_scope(node)
+                .get_variable_all_scope(node.id)
                 .map(|v| Ok(v.0))
                 .unwrap_or_else(|| Err(InterpretError::NotFoundVariable(*node))),
         }
