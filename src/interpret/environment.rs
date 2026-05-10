@@ -105,7 +105,7 @@ const SCOPE_SIZE_LIMIT: usize = 100;
 
 #[derive(derive_more::Debug)]
 pub struct Environment<'a> {
-    pub(super) heap: Heap,
+    pub(super) heap: &'a mut Heap,
     scope_stack: ScopeStack,
     imported_modules: HashMap<Id, ModuleMetadata>,
 
@@ -143,9 +143,9 @@ macro_rules! decl_gc_type_methods {
 }
 
 impl<'a> Environment<'a> {
-    pub fn new(module_registry: &'a ModuleRegistry) -> Self {
+    pub fn new(heap: &'a mut Heap, module_registry: &'a ModuleRegistry) -> Self {
         Self {
-            heap: Heap::new(),
+            heap,
             scope_stack: ScopeStack::new(),
             imported_modules: HashMap::new(),
             preludes: Scope::from_map(prelude::create(), true),
@@ -153,30 +153,36 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn from_module(Module { variables }: Module, module_registry: &'a ModuleRegistry) -> Self {
-        let mut env = Self::new(module_registry);
+    pub fn from_module(
+        Module { variables }: Module,
+        heap: &'a mut Heap,
+        module_registry: &'a ModuleRegistry,
+    ) -> Self {
+        let mut env = Self::new(heap, module_registry);
         assert!(env.scope_stack.len() == 1, "env should only have the global scope here");
         env.scope_stack.get_current_mut().insert_multiple_variables(variables);
         env
     }
 
     pub(super) fn collect_all_variables(&self) -> Vec<Value> {
-        self.scope_stack
+        let mut variables = self
+            .scope_stack
             .iter_all()
             .flat_map(|s| s.variables.values().copied())
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
 
-        // TODO: marks all variable in the modules, *all* modules, not just the one imported in this SELF
+        // Collect variables from all imported modules so the GC sweep keeps
+        // them alive.  TODO: this only covers modules that are *directly*
+        // imported by the currently-running module.  If module A imports B
+        // but the current module only imports A, B's exported variables are
+        // not collected here.  We need a full transitive walk in the future.
+        for metadata in self.imported_modules.values() {
+            if let Some(module) = self.module_registry.get(metadata) {
+                variables.extend(module.variables.values().copied());
+            }
+        }
 
-        // let mut variables = self
-        //     .scope_stack
-        //     .iter_all()
-        //     .flat_map(|s| s.variables.values().copied())
-        //     .collect::<Vec<_>>();
-        // let module_vars = self.modules.iter().flat_map(|(_, v)| v.variables.values().copied());
-        // variables.extend(module_vars);
-
-        // variables
+        variables
     }
 
     // Module functions
@@ -325,7 +331,8 @@ mod tests {
     #[test]
     fn push_and_pop_scope_ok() {
         let module_restritry = ModuleRegistry::default();
-        let mut env = Environment::new(&module_restritry);
+        let mut heap = Heap::new();
+        let mut env = Environment::new(&mut heap, &module_restritry);
         env.push_scope(false).unwrap();
         env.pop_scope().unwrap();
     }
@@ -333,7 +340,8 @@ mod tests {
     #[test]
     fn pop_beyond_empty_returns_underflow() {
         let module_restritry = ModuleRegistry::default();
-        let mut env = Environment::new(&module_restritry);
+        let mut heap = Heap::new();
+        let mut env = Environment::new(&mut heap, &module_restritry);
         // ScopeStack starts with one scope; first pop succeeds, second triggers underflow.
         env.pop_scope().unwrap();
         let err = env.pop_scope().unwrap_err();
@@ -346,7 +354,8 @@ mod tests {
     #[test]
     fn scope_overflow_returns_error() {
         let module_restritry = ModuleRegistry::default();
-        let mut env = Environment::new(&module_restritry);
+        let mut heap = Heap::new();
+        let mut env = Environment::new(&mut heap, &module_restritry);
         // Push past SCOPE_SIZE_LIMIT (100) to trigger overflow.
         for _ in 0..SCOPE_SIZE_LIMIT {
             env.push_scope(false).unwrap();
@@ -363,7 +372,8 @@ mod tests {
         use crate::id::Id;
 
         let module_restritry = ModuleRegistry::default();
-        let mut env = Environment::new(&module_restritry);
+        let mut heap = Heap::new();
+        let mut env = Environment::new(&mut heap, &module_restritry);
         let id = Id::new("x");
         env.insert_variable(id, Value::make_bool(true));
         env.push_scope(false).unwrap();
@@ -381,7 +391,8 @@ mod tests {
         use crate::interpret::values::Scalar;
 
         let module_restritry = ModuleRegistry::default();
-        let mut env = Environment::new(&module_restritry);
+        let mut heap = Heap::new();
+        let mut env = Environment::new(&mut heap, &module_restritry);
         env.push_scope(false).unwrap();
         let id = Id::new("x");
         env.insert_variable(id, Value::make_bool(false));

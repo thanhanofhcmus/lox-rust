@@ -8,4 +8,5 @@ mod values;
 
 pub use environment::{Environment, Module, ModuleRegistry};
 pub use error::InterpretError;
+pub(crate) use heap::Heap;
 pub use interpreter::Interpreter;

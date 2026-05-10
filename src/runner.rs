@@ -9,7 +9,7 @@ use crate::{
     dag::{DAG, NodeId},
     id::Id,
     identifier_registry::IdentifierRegistry,
-    interpret::{self, InterpretError},
+    interpret::{self, Heap, InterpretError},
     module::{ModuleMetadata, ModuleStringInterner},
     parse::{self, ParseError},
     typecheck::{self, TypecheckError},
@@ -51,6 +51,7 @@ pub struct RunnerContext {
     interpret_module_registry: interpret::ModuleRegistry,
     type_interner: TypeInterner,
     module_string_interner: ModuleStringInterner,
+    interpret_heap: interpret::Heap,
 
     parse_cache: HashMap<ModuleMetadata, AST<()>>,
     typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
@@ -70,6 +71,7 @@ impl RunnerContext {
             interpret_module_registry: interpret::ModuleRegistry::default(),
             module_string_interner: ModuleStringInterner::default(),
             type_interner,
+            interpret_heap: Heap::new(),
 
             parse_cache: HashMap::new(),
             typecheck_cache: HashMap::new(),
@@ -180,9 +182,9 @@ impl RunnerContext {
         let strict_assert = self.strict_assert;
         let interpret_env = if is_repl_module {
             let repl_module = std::mem::take(&mut self.repl_interpreter_module);
-            interpret::Environment::from_module(repl_module, &self.interpret_module_registry)
+            interpret::Environment::from_module(repl_module, &mut self.interpret_heap, &self.interpret_module_registry)
         } else {
-            interpret::Environment::new(&self.interpret_module_registry)
+            interpret::Environment::new(&mut self.interpret_heap, &self.interpret_module_registry)
         };
 
         let mut interpreter = interpret::Interpreter::new(
@@ -257,7 +259,7 @@ impl RunnerContext {
         source_name: &str,
         is_in_repl: bool,
     ) -> Result<(DAG<ModuleMetadata>, ModuleMetadata), RunError> {
-        let mut module_dag = DAG::new();
+        let mut module_dag: DAG<ModuleMetadata> = DAG::new();
         let mut import_queue = vec![];
 
         let ast = self.lex_and_parse(input, source_name, is_in_repl)?;
