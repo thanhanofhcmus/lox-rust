@@ -43,6 +43,9 @@ fixture_tests! {
     structs:              "17_structs.lox",
     tuples:               "18_tuples.lox",
     underscore:           "19_underscore.lox",
+    import_basic:         "20_import.lox",
+    multi_import:         "21_multi_import.lox",
+    import_struct:        "22_import_struct.lox",
 }
 
 // ---------- negative-path: must return an error containing a specific message ----------
@@ -78,4 +81,6 @@ error_tests! {
     // `any` rhs hides the shape/arity from typecheck; runtime must catch.
     error_tuple_destructure_non_tuple_runtime: "errors/tuple_destructure_non_tuple_runtime.lox" contains "cannot be destructured as a tuple",
     error_tuple_destructure_arity_runtime:  "errors/tuple_destructure_arity_runtime.lox" contains "destructuring expected",
+    error_module_not_found:                 "errors/module_not_found.lox"                contains "module not found",
+    error_circular_import:                  "errors/circular_main.lox"                    contains "circular import",
 }

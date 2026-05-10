@@ -1,0 +1,2 @@
+import "self:tests/fixtures/errors/circular_a.lox" as a;
+var b_func = fn() { return a::a_func(); };

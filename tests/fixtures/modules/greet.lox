@@ -1,0 +1,1 @@
+var greet = fn(name) { return "Hello, " + name + "!"; };

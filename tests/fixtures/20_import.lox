@@ -1,0 +1,4 @@
+import "self:tests/fixtures/modules/math.lox" as math;
+
+assert(math::add(1, 2) == 3, "imported add function works");
+assert(math::mul(3, 4) == 12, "imported mul function works");

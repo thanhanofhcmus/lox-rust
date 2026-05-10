@@ -1,0 +1,9 @@
+import "self:tests/fixtures/modules/geometry.lox" as geo;
+
+var p = geo::Point { x = 3, y = 4 };
+assert(p.x == 3, "imported struct field x");
+assert(p.y == 4, "imported struct field y");
+
+var origin = geo::zero();
+assert(origin.x == 0, "imported factory function x");
+assert(origin.y == 0, "imported factory function y");

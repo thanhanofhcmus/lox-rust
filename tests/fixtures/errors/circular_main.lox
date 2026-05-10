@@ -1,0 +1,1 @@
+import "self:tests/fixtures/errors/circular_a.lox" as a;
