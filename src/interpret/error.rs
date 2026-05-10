@@ -57,13 +57,13 @@ pub enum InterpretError {
 impl InterpretError {
     pub fn generate_user_facing_error(
         &self,
-        source_name: Option<&str>,
+        source_name: &str,
         input: &str,
         env: &Environment,
         ir: &IdentifierRegistry,
     ) -> String {
         let description = self.resolve_description(env, ir);
-        let source_name = source_name.map(|s| format!("\n  --> {s}\n")).unwrap_or("".to_string());
+        let source_name = format!("\n  --> {source_name}\n");
 
         // Interpret errors don't carry source spans, so show just the message
         // unless a future variant adds span support

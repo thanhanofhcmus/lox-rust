@@ -35,19 +35,18 @@ pub enum TypecheckError {
 impl TypecheckError {
     pub fn generate_user_facing_error(
         &self,
-        source_name: Option<&str>,
+        source_name: &str,
         input: &str,
         ir: &IdentifierRegistry,
         interner: &TypeInterner,
     ) -> String {
         let line_position = if let Some((line, col)) = self.get_source_start(input) {
-            let source_name = source_name.map(|v| format!("{}:", v)).unwrap_or_default();
             let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
             let line_label = line.to_string();
             let gutter = " ".repeat(line_label.len());
             let pointer = " ".repeat(col.saturating_sub(1));
             format!(
-                "\n  at {source_name}{line}:{col}\n\
+                "\n  at {source_name}:{line}:{col}\n\
                  {gutter} |\n\
                  {line_label} | {source_line}\n\
                  {gutter} | {pointer}^--- here"

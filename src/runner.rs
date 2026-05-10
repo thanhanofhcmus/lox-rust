@@ -16,6 +16,9 @@ use crate::{
     types::{TypeId, TypeInterner},
 };
 
+const REPL_LINE: &str = "<line>";
+const PROMPT_LINE: &str = "<prompt>";
+
 /// Internal control-flow signal for "the script failed".
 /// Each variant carries a user-facing message and the underlying error.
 #[derive(Debug, Error)]
@@ -78,7 +81,7 @@ impl RunnerContext {
         }
     }
 
-    fn lex_and_parse(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> Result<AST<()>, RunError> {
+    fn lex_and_parse(&mut self, input: &str, source_name: &str, is_in_repl: bool) -> Result<AST<()>, RunError> {
         trace!("Lexing start");
 
         let tokens = parse::lex(input).map_err(|err| {
@@ -136,7 +139,7 @@ impl RunnerContext {
         &mut self,
         ast: AST<()>,
         input: &str,
-        source_name: Option<&str>,
+        source_name: &str,
         is_repl_module: bool,
     ) -> Result<(AST<TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
@@ -169,7 +172,7 @@ impl RunnerContext {
         &mut self,
         ast: AST<TypeId>,
         input: &str,
-        source_name: Option<&str>,
+        source_name: &str,
         is_repl_module: bool,
     ) -> Result<interpret::Module, RunError> {
         debug!("interpreting start");
@@ -212,8 +215,8 @@ impl RunnerContext {
         }
     }
 
-    fn run_stmt(&mut self, input: &str, source_name: Option<&str>) -> RunResult {
-        let is_in_repl = source_name.is_none();
+    fn run_stmt(&mut self, input: &str, source_name: &str) -> RunResult {
+        let is_in_repl = source_name == REPL_LINE;
 
         let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name, is_in_repl)?;
 
@@ -251,7 +254,7 @@ impl RunnerContext {
     fn parse_module_tree(
         &mut self,
         input: &str,
-        source_name: Option<&str>,
+        source_name: &str,
         is_in_repl: bool,
     ) -> Result<(DAG<ModuleMetadata>, ModuleMetadata), RunError> {
         let mut module_dag = DAG::new();
@@ -261,7 +264,7 @@ impl RunnerContext {
 
         let root_module_metadata = ModuleMetadata {
             package: Id::SELF,
-            path: self.module_string_interner.intern(source_name.unwrap_or(".")),
+            path: self.module_string_interner.intern(source_name),
         };
 
         let root_module_node_id = module_dag.add_node(root_module_metadata.clone());
@@ -302,7 +305,7 @@ impl RunnerContext {
             }
 
             let content = std::fs::read_to_string(file_path)?;
-            let untyped_ast = self.lex_and_parse(&content, Some(&path), false)?;
+            let untyped_ast = self.lex_and_parse(&content, &path, false)?;
 
             for imp in &untyped_ast.imports {
                 let md_node_id = module_dag.add_node(imp.metadata.clone());
@@ -323,7 +326,7 @@ impl RunnerContext {
         order: &[NodeId<ModuleMetadata>],
         root_module_metadata: &ModuleMetadata,
         input: &str,
-        source_name: Option<&str>,
+        source_name: &str,
         is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
@@ -359,7 +362,7 @@ impl RunnerContext {
         order: &[NodeId<ModuleMetadata>],
         root_module_metadata: &ModuleMetadata,
         input: &str,
-        source_name: Option<&str>,
+        source_name: &str,
         is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
@@ -390,14 +393,14 @@ impl RunnerContext {
 
 pub fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
     info!("Running in Prompt mode");
-    ctx.run_stmt(line, Some("<prompt>"))
+    ctx.run_stmt(line, PROMPT_LINE)
         .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
 pub fn run_file(ctx: &mut RunnerContext, file_path: &str) -> DynResult {
     info!("Read from file: {}", file_path);
     let contents = std::fs::read_to_string(file_path)?;
-    ctx.run_stmt(&contents, Some(file_path))
+    ctx.run_stmt(&contents, file_path)
         .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
@@ -410,16 +413,16 @@ pub fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynRes
 
     if let Some(line) = initial_line {
         rl.add_history_entry(&line)?;
-        // error is aready reported un run_stmt
-        _ = ctx.run_stmt(line.trim_end(), None);
+        // error is already reported in run_stmt
+        _ = ctx.run_stmt(line.trim_end(), REPL_LINE);
     }
 
     loop {
         match rl.readline("> ") {
             Ok(line) => {
                 rl.add_history_entry(&line)?;
-                // error is aready reported un run_stmt
-                _ = ctx.run_stmt(line.trim_end(), None);
+                // error is already reported in run_stmt
+                _ = ctx.run_stmt(line.trim_end(), REPL_LINE);
             }
             Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => break,
             Err(err) => return Err(Box::new(err)),
