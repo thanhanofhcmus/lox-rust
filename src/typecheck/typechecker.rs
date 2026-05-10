@@ -1083,10 +1083,10 @@ mod tests {
     use crate::{
         id::Id,
         identifier_registry::{ComplexId, IdentifierRegistry},
-        module::ModuleStringInterner,
+        module::{ModuleMetadata, ModuleStringInterner},
         parse::lex,
         typecheck::ModuleRegistry,
-        types::TypeInterner,
+        types::{StructField, Type, TypeInterner, TypeScope},
     };
     use pretty_assertions::assert_eq;
 
@@ -1730,5 +1730,219 @@ mod tests {
             }) => assert_eq!(block.extra, TypeId::UNIT),
             other => panic!("expected Expr(Block), got {other:?}"),
         }
+    }
+
+    // ---------- module imports ----------
+
+    /// Build a mock `Module` with the given symbol bindings.
+    fn mock_module(symbols: &[(&str, TypeId)]) -> Module {
+        let mut symbol_scope = TypeScope::new();
+        for (name, type_id) in symbols {
+            symbol_scope.associate(Id::new(name), *type_id);
+        }
+        Module {
+            symbol_scope,
+            struct_scope: TypeScope::new(),
+        }
+    }
+
+    /// Typecheck `input` with a pre-registered module.
+    fn typecheck_with_module(
+        input: &str,
+        import_path: &str,
+        module: Module,
+    ) -> Result<AST<TypeId>, TypecheckError> {
+        let items = lex(input).expect("lex failed");
+        let mut ir = IdentifierRegistry::default();
+        let mut msi = ModuleStringInterner::default();
+        let mut ti = TypeInterner::new();
+        let mut mr = ModuleRegistry::default();
+
+        let metadata = ModuleMetadata {
+            package: Id::SELF,
+            path: msi.intern(import_path),
+        };
+        mr.insert(metadata, module);
+
+        let env = Environment::new(&mut ti, &mr);
+        let ast = crate::parse::parse(input, &items, &mut ir, &mut msi, false).expect("parse failed");
+        TypeChecker::new(env).convert(ast)
+    }
+
+    #[test]
+    fn import_and_use_module_variable() {
+        let module = mock_module(&[("x", TypeId::NUMBER)]);
+        let ast = typecheck_with_module(
+            "import \"self:mod\" as m; m::x;",
+            "mod",
+            module,
+        )
+        .unwrap();
+        assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
+    }
+
+    #[test]
+    fn import_and_use_module_variable_in_expr() {
+        let module = mock_module(&[("x", TypeId::NUMBER)]);
+        let ast = typecheck_with_module(
+            "import \"self:mod\" as m; m::x + 1;",
+            "mod",
+            module,
+        )
+        .unwrap();
+        assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
+    }
+
+    #[test]
+    fn import_module_variable_not_exported_errors() {
+        let module = mock_module(&[("x", TypeId::NUMBER)]);
+        let err = typecheck_with_module(
+            "import \"self:mod\" as m; m::y;",
+            "mod",
+            module,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
+            "expected UndefinedVariableIdentifier, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn use_module_without_import_errors() {
+        let module = mock_module(&[("x", TypeId::NUMBER)]);
+        // Pre-register the module but don't import it in the source; `m` is undefined.
+        let err = typecheck_with_module("m::x;", "mod", module).unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
+            "expected UndefinedVariableIdentifier, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn import_and_access_module_struct_field() {
+        let struct_type = Type::Struct(StructType {
+            id: Id::new("Point"),
+            fields: vec![
+                StructField {
+                    id: Id::new("x"),
+                    type_: TypeId::NUMBER,
+                },
+                StructField {
+                    id: Id::new("y"),
+                    type_: TypeId::NUMBER,
+                },
+            ],
+        });
+        let mut ti = TypeInterner::new();
+        let point_type_id = ti.intern_type(&struct_type).0;
+
+        let mut module = Module::default();
+        module
+            .struct_scope
+            .associate(Id::new("Point"), point_type_id);
+        module
+            .symbol_scope
+            .associate(Id::new("origin"), point_type_id);
+
+        let items = lex("import \"self:mod\" as m; m::origin.x;").expect("lex failed");
+        let mut ir = IdentifierRegistry::default();
+        let mut msi = ModuleStringInterner::default();
+        let mut mr = ModuleRegistry::default();
+        let metadata = ModuleMetadata {
+            package: Id::SELF,
+            path: msi.intern("mod"),
+        };
+        mr.insert(metadata, module);
+        let env = Environment::new(&mut ti, &mr);
+        let ast =
+            crate::parse::parse("import \"self:mod\" as m; m::origin.x;", &items, &mut ir, &mut msi, false)
+                .expect("parse failed");
+        let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
+        assert_eq!(first_clause_type(&typed_ast), TypeId::NUMBER);
+    }
+
+    #[test]
+    fn import_two_modules_and_use_both() {
+        let mod_a = mock_module(&[("x", TypeId::NUMBER)]);
+        let mod_b = mock_module(&[("y", TypeId::BOOL)]);
+
+        let items =
+            lex("import \"self:a\" as a; import \"self:b\" as b; a::x + 1;").expect("lex failed");
+        let mut ir = IdentifierRegistry::default();
+        let mut msi = ModuleStringInterner::default();
+        let mut ti = TypeInterner::new();
+        let mut mr = ModuleRegistry::default();
+
+        mr.insert(
+            ModuleMetadata {
+                package: Id::SELF,
+                path: msi.intern("a"),
+            },
+            mod_a,
+        );
+        mr.insert(
+            ModuleMetadata {
+                package: Id::SELF,
+                path: msi.intern("b"),
+            },
+            mod_b,
+        );
+
+        let env = Environment::new(&mut ti, &mr);
+        let ast = crate::parse::parse(
+            "import \"self:a\" as a; import \"self:b\" as b; a::x + 1;",
+            &items,
+            &mut ir,
+            &mut msi,
+            false,
+        )
+        .expect("parse failed");
+        let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
+        assert_eq!(first_clause_type(&typed_ast), TypeId::NUMBER);
+    }
+
+    #[test]
+    fn import_module_does_not_leak_symbols_to_unqualified_lookup() {
+        let module = mock_module(&[("x", TypeId::NUMBER)]);
+        // `x` is only accessible through the module alias, not unqualified.
+        let err = typecheck_with_module(
+            "import \"self:mod\" as m; x + 1;",
+            "mod",
+            module,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::UndefinedVariableIdentifier(_)),
+            "expected UndefinedVariableIdentifier, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn module_qualified_lookup_not_affected_by_local_shadow() {
+        // Module exports `x: NUMBER`. A local `x: BOOL` shadows the name,
+        // but `m::x` must resolve to the module's NUMBER, not the local BOOL.
+        let module = mock_module(&[("x", TypeId::NUMBER)]);
+        let ast = typecheck_with_module(
+            "import \"self:mod\" as m; m::x; var x = true;",
+            "mod",
+            module,
+        )
+        .unwrap();
+        assert_eq!(first_clause_type(&ast), TypeId::NUMBER);
+    }
+
+    #[test]
+    fn module_qualified_lookup_ignores_prelude_shadow() {
+        // A local variable shadows a prelude builtin — but `m::print` must
+        // still resolve through the module, not be affected by the local.
+        let module = mock_module(&[("print", TypeId::STR)]);
+        let ast = typecheck_with_module(
+            "import \"self:mod\" as m; m::print; var print = 42;",
+            "mod",
+            module,
+        )
+        .unwrap();
+        assert_eq!(first_clause_type(&ast), TypeId::STR);
     }
 }

@@ -11,8 +11,8 @@ pub type ModuleRegistry = GenericModuleRegistry<Module>;
 
 #[derive(Debug, Default)]
 pub struct Module {
-    symbol_scope: TypeScope,
-    struct_scope: TypeScope,
+    pub(crate) symbol_scope: TypeScope,
+    pub(crate) struct_scope: TypeScope,
 }
 
 /// Scoped symbol table mapping `Id` → `Type` for typechecking.

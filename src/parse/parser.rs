@@ -1489,6 +1489,84 @@ mod tests {
         assert_eq!(ast.global_stmts.len(), 0);
     }
 
+    #[test]
+    fn parse_multiple_imports_then_stmt() {
+        let ast = parse_str(
+            "import \"self:mod/a\" as a;\nimport \"self:mod/b\" as b;\nvar x = 1;",
+        );
+        assert_eq!(ast.imports.len(), 2);
+        assert_eq!(ast.global_stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_import_with_deep_path() {
+        let ast = parse_str("import \"self:sub/deep/dir/mod.lox\" as m;");
+        assert_eq!(ast.imports.len(), 1);
+    }
+
+    #[test]
+    fn parse_import_multiple_statements_only() {
+        let ast = parse_str("import \"self:a\" as a; import \"self:b\" as b; import \"self:c\" as c;");
+        assert_eq!(ast.imports.len(), 3);
+        assert_eq!(ast.global_stmts.len(), 0);
+    }
+
+    // ---------- imports (error cases) ----------
+
+    #[test]
+    fn parse_import_missing_package_colon() {
+        let err = parse_err("import \"foo.lox\" as foo;");
+        assert!(
+            matches!(err, ParseError::ImportPathDoesNotHavePackage(_)),
+            "expected ImportPathDoesNotHavePackage, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_import_missing_as_keyword() {
+        // import "self:foo.lox" alias;  (no `as` keyword)
+        parse_err("import \"self:foo\" alias;");
+    }
+
+    #[test]
+    fn parse_import_missing_alias_identifier() {
+        // import "self:foo" as ;  (no identifier after `as`)
+        parse_err("import \"self:foo\" as ;");
+    }
+
+    #[test]
+    fn parse_import_missing_semicolon() {
+        parse_err("import \"self:foo\" as foo");
+    }
+
+    #[test]
+    fn parse_import_mixed_with_other_stmt_errors() {
+        // import after a non-import statement
+        let err = parse_err("var x = 1; import \"self:foo\" as foo;");
+        assert!(
+            matches!(err, ParseError::ImportNotAtTheTop(_)),
+            "expected ImportNotAtTheTop, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_import_then_stmt_then_import_errors() {
+        // import, then stmt, then import again — the last import is not at top
+        let err = parse_err("import \"self:a\" as a; var x = 1; import \"self:b\" as b;");
+        assert!(
+            matches!(err, ParseError::ImportNotAtTheTop(_)),
+            "expected ImportNotAtTheTop, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_import_complex_identifier_usage() {
+        // An expression using a complex identifier like `m::foo` should parse.
+        let ast = parse_str("m::foo(1, 2);");
+        assert_eq!(ast.imports.len(), 0);
+        assert_eq!(ast.global_stmts.len(), 1);
+    }
+
     // ---------- struct declarations ----------
 
     #[test]
