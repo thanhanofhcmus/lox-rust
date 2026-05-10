@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::{
     ast::AST,
-    dag::DAG,
+    dag::{DAG, NodeId},
     id::Id,
     identifier_registry::IdentifierRegistry,
     interpret::{self, InterpretError},
@@ -16,17 +16,26 @@ use crate::{
     types::{TypeId, TypeInterner},
 };
 
-/// Internal control-flow signal for "the script failed and the formatted
-/// error was already printed to stderr via `error!(...)`". Display is empty
-/// on purpose — main suppresses it and just exits non-zero.
+/// Internal control-flow signal for "the script failed".
+/// Each variant carries a user-facing message and the underlying error.
 #[derive(Debug, Error)]
 pub enum RunError {
-    #[error("")]
-    Parse(ParseError),
-    #[error("")]
-    Typecheck(TypecheckError),
-    #[error("")]
-    Interpret(InterpretError),
+    #[error("{message}")]
+    Parse {
+        message: String,
+        #[source]
+        inner: ParseError,
+    },
+    #[error("{message}")]
+    Typecheck { message: String, inner: TypecheckError },
+    #[error("{message}")]
+    Interpret { message: String, inner: InterpretError },
+    #[error("circular import detected")]
+    CircularImport,
+    #[error("module not found: {0}")]
+    ModuleNotFound(String),
+    #[error("failed to read module: {0}")]
+    ModuleReadError(#[from] std::io::Error),
 }
 
 pub type RunResult = Result<(), RunError>;
@@ -56,7 +65,8 @@ impl Config {
         };
 
         if args.is_empty() {
-            panic!("expect a mode (-i, -p, -f)");
+            eprintln!("error: expect a mode (-i, -p, -f)");
+            std::process::exit(1);
         }
 
         let mode_str = args.remove(0);
@@ -65,12 +75,21 @@ impl Config {
                 initial_line: args.into_iter().next(),
             },
             "-p" => Mode::Prompt {
-                line: args.into_iter().next().expect("must provide prompt line"),
+                line: args.into_iter().next().unwrap_or_else(|| {
+                    eprintln!("error: must provide prompt line for -p mode");
+                    std::process::exit(1);
+                }),
             },
             "-f" => Mode::File {
-                path: args.into_iter().next().expect("must provide file name"),
+                path: args.into_iter().next().unwrap_or_else(|| {
+                    eprintln!("error: must provide file name for -f mode");
+                    std::process::exit(1);
+                }),
             },
-            _ => panic!("unknown mode: {}", mode_str),
+            _ => {
+                eprintln!("error: unknown mode: {mode_str}");
+                std::process::exit(1);
+            }
         };
 
         Self { mode, strict_assert }
@@ -114,20 +133,16 @@ impl RunnerContext {
         }
     }
 
-    fn lex_and_parse(
-        &mut self,
-        input: &str,
-        source_name: Option<&str>,
-        is_in_repl: bool,
-    ) -> Result<AST<()>, RunError> {
+    fn lex_and_parse(&mut self, input: &str, source_name: Option<&str>, is_in_repl: bool) -> Result<AST<()>, RunError> {
         trace!("Lexing start");
 
         let tokens = parse::lex(input).map_err(|err| {
-            error!(
-                "Lex error:\n{}",
-                err.generate_user_facing_error(source_name, input)
-            );
-            RunError::Parse(err)
+            let msg = err.generate_user_facing_error(source_name, input);
+            error!("Lex error:\n{}", msg);
+            RunError::Parse {
+                message: msg,
+                inner: err,
+            }
         })?;
 
         debug!("Lexing done, with tokens:");
@@ -149,11 +164,12 @@ impl RunnerContext {
             is_in_repl,
         )
         .map_err(|err| {
-            error!(
-                "Parse error:\n{}",
-                err.generate_user_facing_error(source_name, input)
-            );
-            RunError::Parse(err)
+            let msg = err.generate_user_facing_error(source_name, input);
+            error!("Parse error:\n{}", msg);
+            RunError::Parse {
+                message: msg,
+                inner: err,
+            }
         })?;
 
         debug!("Parsing done");
@@ -168,11 +184,7 @@ impl RunnerContext {
 
     fn create_repl_typecheck_env(&mut self) -> typecheck::Environment<'_> {
         let repl_module = std::mem::take(&mut self.repl_typecheck_module);
-        typecheck::Environment::from_module(
-            repl_module,
-            &mut self.type_interner,
-            &self.typecheck_module_registry,
-        )
+        typecheck::Environment::from_module(repl_module, &mut self.type_interner, &self.typecheck_module_registry)
     }
 
     fn type_check(
@@ -180,28 +192,25 @@ impl RunnerContext {
         ast: AST<()>,
         input: &str,
         source_name: Option<&str>,
-        is_repl: bool,
+        is_repl_module: bool,
     ) -> Result<(AST<TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
-        let typecheck_env = if is_repl {
-            self.create_repl_typecheck_env()
-        } else {
-            self.create_typecheck_env()
-        };
+        let typecheck_env = if is_repl_module { self.create_repl_typecheck_env() } else { self.create_typecheck_env() };
         let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
 
         match typechecker.convert(ast) {
             Err(err) => {
-                error!(
-                    "Typecheck error:\n{}",
-                    err.generate_user_facing_error(
-                        source_name,
-                        input,
-                        &self.global_identifier_registry,
-                        &self.type_interner,
-                    )
+                let msg = err.generate_user_facing_error(
+                    source_name,
+                    input,
+                    &self.global_identifier_registry,
+                    &self.type_interner,
                 );
-                Err(RunError::Typecheck(err))
+                error!("Typecheck error:\n{}", msg);
+                Err(RunError::Typecheck {
+                    message: msg,
+                    inner: err,
+                })
             }
             Ok(ast) => {
                 debug!("type checking done");
@@ -216,12 +225,12 @@ impl RunnerContext {
         ast: AST<TypeId>,
         input: &str,
         source_name: Option<&str>,
-        is_repl: bool,
+        is_repl_module: bool,
     ) -> Result<interpret::Module, RunError> {
         debug!("interpreting start");
         let print_writer = Rc::new(RefCell::new(std::io::stdout()));
         let strict_assert = self.strict_assert;
-        let interpret_env = if is_repl {
+        let interpret_env = if is_repl_module {
             let repl_module = std::mem::take(&mut self.repl_interpreter_module);
             interpret::Environment::from_module(repl_module, &self.interpret_module_registry)
         } else {
@@ -243,25 +252,63 @@ impl RunnerContext {
                 Ok(module)
             }
             Err(err) => {
-                error!(
-                    "Interpreter error:\n{}",
-                    err.generate_user_facing_error(
-                        source_name,
-                        input,
-                        interpreter.get_env(),
-                        interpreter.get_identifer_registry(),
-                    )
+                let msg = err.generate_user_facing_error(
+                    source_name,
+                    input,
+                    interpreter.get_env(),
+                    interpreter.get_identifer_registry(),
                 );
-                Err(RunError::Interpret(err))
+                error!("Interpreter error:\n{}", msg);
+                Err(RunError::Interpret {
+                    message: msg,
+                    inner: err,
+                })
             }
         }
     }
 
     fn run_stmt(&mut self, input: &str, source_name: Option<&str>) -> RunResult {
-        // for a module, we should only be: Parse once - Typecheck once - Interpret once
-
         let is_in_repl = source_name.is_none();
 
+        let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name, is_in_repl)?;
+
+        if module_dag.has_cycle() {
+            error!("Circular import detected");
+            return Err(RunError::CircularImport);
+        }
+        module_dag.transitive_reduce();
+
+        let order = module_dag.get_leaf_first_order();
+
+        self.typecheck_module_tree(
+            &module_dag,
+            &order,
+            &root_module_metadata,
+            input,
+            source_name,
+            is_in_repl,
+        )?;
+
+        self.interpret_module_tree(
+            &module_dag,
+            &order,
+            &root_module_metadata,
+            input,
+            source_name,
+            is_in_repl,
+        )?;
+
+        Ok(())
+    }
+
+    /// Parse the root module and discover + parse all imported modules.
+    /// Returns the module DAG and the root module's metadata.
+    fn parse_module_tree(
+        &mut self,
+        input: &str,
+        source_name: Option<&str>,
+        is_in_repl: bool,
+    ) -> Result<(DAG<ModuleMetadata>, ModuleMetadata), RunError> {
         let mut module_dag = DAG::new();
         let mut import_queue = vec![];
 
@@ -269,10 +316,7 @@ impl RunnerContext {
 
         let root_module_metadata = ModuleMetadata {
             package: Id::SELF,
-            // The REPL module or file
-            path: self
-                .module_string_interner
-                .intern(source_name.unwrap_or(".")),
+            path: self.module_string_interner.intern(source_name.unwrap_or(".")),
         };
 
         let root_module_node_id = module_dag.add_node(root_module_metadata.clone());
@@ -282,40 +326,38 @@ impl RunnerContext {
             import_queue.push(md_node_id);
         }
 
-        self.parse_cache
-            .insert(root_module_metadata.clone(), ast);
+        self.parse_cache.insert(root_module_metadata.clone(), ast);
 
-        // both parse and build the module DAG
+        // discover and parse all imported modules (BFS)
         while let Some(current_node_id) = import_queue.pop() {
             let node_metadata = module_dag
                 .get_node(current_node_id)
-                .unwrap()
+                .expect("import queue should only contain valid DAG node ids")
                 .data
                 .clone();
             if self.parse_cache.contains_key(&node_metadata) {
                 continue;
             }
 
-            let path_id = node_metadata.path;
             let path = self
                 .module_string_interner
-                .get(path_id)
-                .unwrap()
+                .get(node_metadata.path)
+                .expect("import path id should have been interned during parsing")
                 .to_string();
 
             if node_metadata.package != Id::SELF {
-                unimplemented!();
+                error!("External packages are not yet supported: {path}");
+                return Err(RunError::ModuleNotFound(path));
             }
 
-            // read the file
             // TODO: move file loader to an interface
             let file_path = Path::new(&path);
             if !file_path.exists() || !file_path.is_file() {
-                panic!("path is point to no file");
+                return Err(RunError::ModuleNotFound(path));
             }
 
-            let content = std::fs::read_to_string(file_path).unwrap();
-            let untyped_ast = self.lex_and_parse(&content, Some(&path), true)?;
+            let content = std::fs::read_to_string(file_path)?;
+            let untyped_ast = self.lex_and_parse(&content, Some(&path), false)?;
 
             for imp in &untyped_ast.imports {
                 let md_node_id = module_dag.add_node(imp.metadata.clone());
@@ -326,55 +368,74 @@ impl RunnerContext {
             self.parse_cache.insert(node_metadata, untyped_ast);
         }
 
-        if module_dag.has_cycle() {
-            unimplemented!()
-        }
-        module_dag.transitive_reduce();
+        Ok((module_dag, root_module_metadata))
+    }
 
-        let order = module_dag.get_leaf_first_order();
-
-        // we might want to have just a single global registry that contains every symbols there is
-
-        // typecheck
-        for &current_node_id in &order {
+    /// Typecheck every module in leaf-first order.
+    fn typecheck_module_tree(
+        &mut self,
+        module_dag: &DAG<ModuleMetadata>,
+        order: &[NodeId<ModuleMetadata>],
+        root_module_metadata: &ModuleMetadata,
+        input: &str,
+        source_name: Option<&str>,
+        is_in_repl: bool,
+    ) -> RunResult {
+        for &current_node_id in order {
             let node_metadata = module_dag
                 .get_node(current_node_id)
-                .unwrap()
+                .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
-            let untyped_ast = self.parse_cache.get(&node_metadata).unwrap().clone();
+            let untyped_ast = self
+                .parse_cache
+                .get(&node_metadata)
+                .expect("parse_cache should be populated for every module before typecheck")
+                .clone();
 
-            let is_repl = is_in_repl && root_module_metadata == node_metadata;
+            let is_repl_module = is_in_repl && *root_module_metadata == node_metadata;
 
-            let (typed_ast, module) =
-                self.type_check(untyped_ast, input, source_name, is_repl)?;
-            self.typecheck_cache
-                .insert(node_metadata.clone(), typed_ast);
-            if is_repl {
+            let (typed_ast, module) = self.type_check(untyped_ast, input, source_name, is_repl_module)?;
+            self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
+            if is_repl_module {
                 self.repl_typecheck_module = module;
             } else {
-                self.typecheck_module_registry
-                    .insert(node_metadata, module);
+                self.typecheck_module_registry.insert(node_metadata, module);
             }
         }
 
-        // interpret
-        for &current_node_id in &order {
+        Ok(())
+    }
+
+    /// Interpret every module in leaf-first order.
+    fn interpret_module_tree(
+        &mut self,
+        module_dag: &DAG<ModuleMetadata>,
+        order: &[NodeId<ModuleMetadata>],
+        root_module_metadata: &ModuleMetadata,
+        input: &str,
+        source_name: Option<&str>,
+        is_in_repl: bool,
+    ) -> RunResult {
+        for &current_node_id in order {
             let node_metadata = module_dag
                 .get_node(current_node_id)
-                .unwrap()
+                .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
-            let typed_ast = self.typecheck_cache.get(&node_metadata).unwrap().clone();
+            let typed_ast = self
+                .typecheck_cache
+                .get(&node_metadata)
+                .expect("typecheck_cache should be populated for every module before interpret")
+                .clone();
 
-            let is_repl = is_in_repl && root_module_metadata == node_metadata;
+            let is_repl_module = is_in_repl && *root_module_metadata == node_metadata;
 
-            let module = self.interpret(typed_ast, input, source_name, is_repl)?;
-            if is_repl {
+            let module = self.interpret(typed_ast, input, source_name, is_repl_module)?;
+            if is_repl_module {
                 self.repl_interpreter_module = module;
             } else {
-                self.interpret_module_registry
-                    .insert(node_metadata, module);
+                self.interpret_module_registry.insert(node_metadata, module);
             }
         }
 
@@ -384,7 +445,8 @@ impl RunnerContext {
 
 pub fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
     info!("Running in Prompt mode");
-    ctx.run_stmt(line, None).map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+    ctx.run_stmt(line, Some("<prompt>"))
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
 pub fn run_file(ctx: &mut RunnerContext, file_path: &str) -> DynResult {
@@ -403,14 +465,16 @@ pub fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynRes
 
     if let Some(line) = initial_line {
         rl.add_history_entry(&line)?;
-        let _ = ctx.run_stmt(line.trim_end(), None);
+        // error is aready reported un run_stmt
+        _ = ctx.run_stmt(line.trim_end(), None);
     }
 
     loop {
         match rl.readline("> ") {
             Ok(line) => {
                 rl.add_history_entry(&line)?;
-                let _ = ctx.run_stmt(line.trim_end(), None);
+                // error is aready reported un run_stmt
+                _ = ctx.run_stmt(line.trim_end(), None);
             }
             Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => break,
             Err(err) => return Err(Box::new(err)),
