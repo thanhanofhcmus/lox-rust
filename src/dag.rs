@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::type_index::TypeIndex;
 
@@ -14,6 +14,7 @@ pub struct Node<T> {
 #[allow(clippy::upper_case_acronyms)]
 pub struct DAG<T> {
     nodes: Vec<Node<T>>,
+    node_index: HashMap<T, usize>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -23,18 +24,31 @@ enum NodeCycleState {
     Done,
 }
 
-impl<T> DAG<T> {
+impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
     pub fn new() -> Self {
-        Self { nodes: vec![] }
+        Self {
+            nodes: vec![],
+            node_index: HashMap::new(),
+        }
     }
 
     pub fn get_node(&self, id: NodeId<T>) -> Option<&Node<T>> {
         self.nodes.get(id.get())
     }
 
-    /// Create a new node in the DAG
+    /// Add a node to the DAG.
+    ///
+    /// If a node with the same data already exists, returns the existing
+    /// [`NodeId`] instead of creating a duplicate.  This guarantees that
+    /// every unique `T` value corresponds to at most one node, which is
+    /// essential for correct cycle detection when multiple modules import
+    /// the same dependency through different paths.
     pub fn add_node(&mut self, data: T) -> NodeId<T> {
+        if let Some(&idx) = self.node_index.get(&data) {
+            return NodeId::new(idx);
+        }
         let id = NodeId::new(self.nodes.len());
+        self.node_index.insert(data.clone(), id.get());
         let neighbors = HashSet::new();
         self.nodes.push(Node { data, neighbors });
         id
