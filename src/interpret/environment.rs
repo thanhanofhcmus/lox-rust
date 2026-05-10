@@ -234,7 +234,7 @@ impl<'a> Environment<'a> {
         let module_id = cid.module?;
         let metadata = self.imported_modules.get(&module_id)?;
         let module = self.module_registry.get(metadata)?;
-        module.variables.get(&module_id).map(|v| (*v, true))
+        module.variables.get(&cid.name).copied().map(|v| (v, true))
     }
 
     pub fn insert_variable(&mut self, id: Id, value: Value) -> Option<Value> {
