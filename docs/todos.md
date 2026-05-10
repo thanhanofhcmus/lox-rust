@@ -12,16 +12,10 @@
 - [ ] **`typechecker.rs` `convert_struct_literal`** — `Type::Any` arm is unreachable; prior `ok_or(UndefinedIdentifier)` always fires first
 
 ### Modules
-- [ ] **`environment.rs` `get_variable()`** — un-imported module access silently returns `nil` instead of erroring
+- [ ] **Re-export / transitive module GC** — `collect_all_variables` only marks directly-imported modules, not transitive dependencies. A module imported by A but not the current module could lose its GC objects.
 
 ### Collections
 - [ ] **`Map = BTreeMap<MapKey, Value>`** — `MapKey::Str` orders by `StrId` (interner insertion order), not string bytes; iteration order non-deterministic across runs. Switch to `IndexMap` or order by actual bytes
-
-### Lexer & Parsing
-- [ ] **`string_utils.rs::unescape`** — panics on trailing `\`; tighten or return an error
-
-### Identifiers
-- [ ] **`id.rs` `Id`** — uses 64-bit `DefaultHasher` only; silent collisions possible. Pair the hash with a string id
 
 ---
 
@@ -31,18 +25,12 @@
 - [ ] **GC trigger removed** — only `_dbg_gc_mark_sweep()` reclaims today. Add adaptive trigger (double threshold per collection)
 - [ ] **Reference counting is vestigial** — `HeapEntry::new` starts at 1, scope insert bumps to 2, `pop_scope` decrements to 1 (never 0). Bump policy inconsistent across insert vs push/insert operations. Decide: full RC or full mark-sweep
 
-### Runtime Internals
-- [ ] **`Function` values cloned per evaluation and per call** — wrap in `Rc<Function>`
-- [ ] **`ValueReturn` (`interpreter.rs:14`)** — hand-rolled exception; replace with `Result<_, ReturnOrError>` / `ControlFlow`
-- [ ] **`ScopeStack::push()` recursion limit** — hard-coded `SCOPE_SIZE_LIMIT = 100`; recursion beyond that aborts rather than TCO-ing
-
 ### AST & Parser
 - [ ] **AST has both `Expression` and `ClauseNode`** — distinction isn't named; "consume semicolon for Clause/Return" is duplicated
-- [ ] **Token names** — rename before external consumers lock in: `LPointParen`/`RPointParen` for `{}`, `Percentage` for `%`, `PercentLPointParent` for `%{`
 
 ### Modules
-- [ ] **Module resolution only handles 2-part chains** — deeper chains silently misbehave
-- [ ] **No circular-import detection** in `interpret_import_stmt`
+- [ ] **Module resolution only handles flat imports** — `a::b::c` chained access not supported; `ComplexIdentifier` stores at most one `module` level
+- [ ] **No external package support** — `std:` and `thirdparty:` packages are parsed but `Self` is the only package implemented
 
 ---
 
@@ -66,8 +54,9 @@
 - [ ] Module member access — `math::sin`. Type-associated calls — `Car::new()`. Both use double-colon infix
 
 ### Modules & Imports
-- [ ] Import system — `import "std:math.lox" as math;`, `import "self:relative/path"`. Notions of `package`, `self`, `std`
-- [ ] Rework module loader — file loader interface, circular-import detection, deeper resolution chains
+- [ ] External packages — support `std:` and `thirdparty:` package prefixes (currently parsed but not loaded)
+- [ ] Chained module access — `a::b::c` (beyond single `module::name`)
+- [ ] File loader interface — abstract over filesystem vs. embedded
 
 ### Collections
 - [ ] Map comprehension — `%{ for %(k, v) in map if k * v == 10 : k => v }`
@@ -81,13 +70,20 @@
 
 ### Errors & CLI
 - [ ] Better error messages — source info pointing exactly to where the error is
+- [ ] Consider using miette
 - [ ] CLI — show a nice error message when no arguments are given
 
 ### Testing & Docs
 - [ ] More tests & fuzzing
 - [ ] More docs
 
-### Infrastructure & Tooling
+### Modules & Imports
+- [X] Basic import system — `import "self:relative/path.lox" as name;` with `package`, `self`, `std`, `thirdparty` parsing
+- [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; BFS transitive discovery
+- [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking
+- [X] Module-qualified variable lookup — `module::name` resolves through typecheck and interpret `ModuleRegistry`
+
+### Infrastructure & Refactoring
 - [ ] On-demand parsing
 - [ ] Bytecode VM experiment
 - [ ] Tree-sitter grammar
@@ -102,7 +98,6 @@
 - [X] Multiline string — newlines inside `"..."` and `r"..."` consumed as-is
 - [X] String escape sequences (`\n`, `\t`, `\r`, `\"`, `\\`)
 - [X] Lexer disambiguation for tuple / member access — `p.0.1` lexes as chained tuple indices; hard-errors on ambiguous cases
-- [X] `parse/lex.rs` `lex_string` escape-end check — uses `*offset >= input.len()`
 
 ### Types & Type Checker
 - [X] Type annotation + type checker — gradual typing with `Any` as top type; two-phase AST (`AST<()>` → `AST<TypeId>`)
@@ -149,4 +144,4 @@
 - [X] Add prelude
 - [X] Implement node-id
 - [X] Parser recursion depth limit — `MAX_RECURSION_DEPTH = 256` + `RecursionLimitExceeded`
-
+- [X] Shared interpret heap — single `&'a mut Heap` borrowed by all module environments
