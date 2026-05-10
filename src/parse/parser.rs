@@ -1,6 +1,6 @@
 use crate::identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry};
 use crate::module::ModuleStringInterner;
-use crate::{ast::*, module::ModuleMetadata, string_utils, types::TypeId};
+use crate::{ast::*, module::ModuleMetadata, types::TypeId};
 
 use super::context::Context;
 use super::error::ParseError;
@@ -14,15 +14,8 @@ pub fn parse(
     items: &[LexItem],
     identifier_registry: &mut IdentifierRegistry,
     module_string_interner: &mut ModuleStringInterner,
-    should_eval_string: bool,
 ) -> Result<AST<()>, ParseError> {
-    let mut state = Context::new(
-        input,
-        items,
-        identifier_registry,
-        module_string_interner,
-        should_eval_string,
-    );
+    let mut state = Context::new(input, items, identifier_registry, module_string_interner);
     let mut imports = vec![];
     let mut global_stmts = vec![];
     let mut is_parsing_import = true;
@@ -818,16 +811,12 @@ fn parse_string(state: &mut Context) -> Result<ScalarNode, ParseError> {
     // Don't use the `next` closure here, the borrow checker will complain
     state.advance();
     let span = Span::new(span_start, span_end);
-    if state.get_should_eval_string() {
-        let string = if is_raw {
-            span.string_from_source(state.get_input())
-        } else {
-            string_utils::unescape(span.str_from_source(state.get_input()))
-        };
-        Ok(ScalarNode::LiteralStr(string))
+    let string = if is_raw {
+        span.string_from_source(state.get_input())
     } else {
-        Ok(ScalarNode::LazyStr { span, is_raw })
-    }
+        unescape(span.str_from_source(state.get_input()))
+    };
+    Ok(ScalarNode::Str(string))
 }
 
 fn parse_repeated_with_separator<F, T>(
@@ -922,6 +911,32 @@ fn convert_chaining(
     Ok(ChainingReassignTargetNode { base, follows })
 }
 
+/// Process backslash escape sequences (`\n`, `\t`, `\"`, etc.) in a string literal.
+/// The lexer guarantees the input is well-formed, so a trailing lone backslash is a bug.
+fn unescape(input: &str) -> String {
+    let mut iter = input.chars();
+    let mut result = String::with_capacity(input.len());
+
+    while let Some(c) = iter.next() {
+        if c != '\\' {
+            result.push(c);
+            continue;
+        }
+        let Some(nc) = iter.next() else {
+            panic!("Unclosed escape \\\" chars should already be caught at the lexing stage");
+        };
+        match nc {
+            'r' => result.push('\r'),
+            'n' => result.push('\n'),
+            't' => result.push('\t'),
+            '"' => result.push('"'),
+            '\\' => result.push('\\'),
+            _ => result.push(nc),
+        }
+    }
+
+    result
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -935,14 +950,14 @@ mod tests {
         let mut ir = IdentifierRegistry::default();
         let mut msi = ModuleStringInterner::default();
         let items = lex(input).expect("lex failed");
-        parse(input, &items, &mut ir, &mut msi, false).expect("parse failed")
+        parse(input, &items, &mut ir, &mut msi).expect("parse failed")
     }
 
     fn parse_err(input: &str) -> ParseError {
         let mut ir = IdentifierRegistry::default();
         let items = lex(input).expect("lex failed");
         let mut msi = ModuleStringInterner::default();
-        parse(input, &items, &mut ir, &mut msi, false).expect_err("expected parse error")
+        parse(input, &items, &mut ir, &mut msi).expect_err("expected parse error")
     }
 
     /// Extract the first top-level expression statement's inner clause.
@@ -1011,7 +1026,7 @@ mod tests {
         let ast = parse_str("\"hello\";");
         assert!(matches!(
             first_clause(&ast),
-            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::LazyStr { .. }))
+            ClauseCase::RawValue(RawValueNode::Scalar(ScalarNode::Str(_)))
         ));
     }
 
@@ -1491,9 +1506,7 @@ mod tests {
 
     #[test]
     fn parse_multiple_imports_then_stmt() {
-        let ast = parse_str(
-            "import \"self:mod/a\" as a;\nimport \"self:mod/b\" as b;\nvar x = 1;",
-        );
+        let ast = parse_str("import \"self:mod/a\" as a;\nimport \"self:mod/b\" as b;\nvar x = 1;");
         assert_eq!(ast.imports.len(), 2);
         assert_eq!(ast.global_stmts.len(), 1);
     }
@@ -1779,5 +1792,63 @@ mod tests {
         let depth = 50;
         let input = format!("{}1{};", "(".repeat(depth), ")".repeat(depth));
         let _ast = parse_str(&input);
+    }
+
+    // ---------- string escape ----------
+
+    #[test]
+    fn unescape_empty_is_empty() {
+        assert_eq!(super::unescape(""), "");
+    }
+
+    #[test]
+    fn unescape_no_escape_passes_through() {
+        assert_eq!(super::unescape("hello world"), "hello world");
+    }
+
+    #[test]
+    fn unescape_newline() {
+        assert_eq!(super::unescape("a\\nb"), "a\nb");
+    }
+
+    #[test]
+    fn unescape_tab() {
+        assert_eq!(super::unescape("a\\tb"), "a\tb");
+    }
+
+    #[test]
+    fn unescape_carriage_return() {
+        assert_eq!(super::unescape("a\\rb"), "a\rb");
+    }
+
+    #[test]
+    fn unescape_quote() {
+        assert_eq!(super::unescape("say \\\"hi\\\""), "say \"hi\"");
+    }
+
+    #[test]
+    fn unescape_backslash() {
+        assert_eq!(super::unescape("path\\\\to"), "path\\to");
+    }
+
+    #[test]
+    fn unescape_unknown_drops_backslash() {
+        assert_eq!(super::unescape("\\z"), "z");
+    }
+
+    #[test]
+    fn unescape_consecutive() {
+        assert_eq!(super::unescape("\\n\\t\\r"), "\n\t\r");
+    }
+
+    #[test]
+    fn unescape_at_start_and_end() {
+        assert_eq!(super::unescape("\\nhello\\n"), "\nhello\n");
+    }
+
+    #[test]
+    #[should_panic(expected = "Unclosed escape")]
+    fn unescape_trailing_backslash_panics() {
+        super::unescape("abc\\");
     }
 }

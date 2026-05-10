@@ -8,7 +8,6 @@ use crate::interpret::heap::GcHandle;
 
 use crate::identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry};
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple};
-use crate::string_utils;
 use crate::token::Token;
 use crate::types::TypeId;
 use std::cell::RefCell;
@@ -63,7 +62,6 @@ impl ValueReturn {
 pub struct Interpreter<'e, 's> {
     environment: Environment<'e>,
     identifier_registry: &'s mut IdentifierRegistry,
-    input: &'s str,
 
     print_writer: Rc<RefCell<dyn std::io::Write>>,
 
@@ -77,14 +75,12 @@ where
     pub fn new(
         environment: Environment<'e>,
         identifier_registry: &'s mut IdentifierRegistry,
-        input: &'s str,
         print_writer: Rc<RefCell<dyn std::io::Write>>,
         strict_assert: bool,
     ) -> Self {
         Self {
             environment,
             identifier_registry,
-            input,
             print_writer,
             strict_assert,
         }
@@ -434,15 +430,7 @@ where
             ScalarNode::Bool(v) => Value::make_bool(*v),
             ScalarNode::Integer(v) => Value::make_number(Number::Integer(*v)),
             ScalarNode::Floating(v) => Value::make_number(Number::Floating(*v)),
-            ScalarNode::LiteralStr(v) => self.environment.insert_string_variable(v.to_owned()),
-            ScalarNode::LazyStr { span, is_raw } => {
-                let string = if *is_raw {
-                    span.string_from_source(self.input)
-                } else {
-                    string_utils::unescape(span.str_from_source(self.input))
-                };
-                self.environment.insert_string_variable(string)
-            }
+            ScalarNode::Str(v) => self.environment.insert_string_variable(v.to_owned()),
         }
     }
 

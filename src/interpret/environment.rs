@@ -153,11 +153,7 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn from_module(
-        Module { variables }: Module,
-        heap: &'a mut Heap,
-        module_registry: &'a ModuleRegistry,
-    ) -> Self {
+    pub fn from_module(Module { variables }: Module, heap: &'a mut Heap, module_registry: &'a ModuleRegistry) -> Self {
         let mut env = Self::new(heap, module_registry);
         assert!(env.scope_stack.len() == 1, "env should only have the global scope here");
         env.scope_stack.get_current_mut().insert_multiple_variables(variables);

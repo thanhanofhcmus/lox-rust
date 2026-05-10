@@ -1,7 +1,6 @@
 use crate::{
     identifier_registry::{ComplexIdentifier, Identifier},
     module::ModuleMetadata,
-    span::Span,
     token::Token,
     types::TypeId,
 };
@@ -225,12 +224,7 @@ pub enum ScalarNode {
     Bool(bool),
     Integer(i64),
     Floating(f64),
-    LazyStr {
-        span: Span,
-        is_raw: bool,
-    },
-    /// Store the actual string, for REPL interpreter
-    LiteralStr(String),
+    Str(String),
 }
 
 #[derive(Debug, Clone)]

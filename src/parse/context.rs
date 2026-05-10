@@ -22,11 +22,6 @@ pub struct Context<'a> {
 
     curr_pos: usize,
 
-    /// Tell the parser to copy the string content to the AST node
-    /// or defer later, use full in the case of running in a REPL
-    /// when the source might got already deleted when the actual string is needed
-    should_eval_string: bool,
-
     pub fn_depth: usize,
 
     /// Current parser recursion depth. Incremented/decremented by
@@ -45,7 +40,6 @@ impl<'a> Context<'a> {
         items: &'a [LexItem],
         identifier_registry: &'a mut IdentifierRegistry,
         module_string_interner: &'a mut ModuleStringInterner,
-        should_eval_string: bool,
     ) -> Self {
         Self {
             input,
@@ -53,7 +47,6 @@ impl<'a> Context<'a> {
             identifier_registry,
             module_string_interner,
             curr_pos: 0,
-            should_eval_string,
             fn_depth: 0,
             recursion_depth: 0,
             allow_struct_literal: true,
@@ -74,10 +67,6 @@ impl<'a> Context<'a> {
     /// a stray extra call doesn't underflow on buggy code paths.
     pub fn leave_recursion(&mut self) {
         self.recursion_depth = self.recursion_depth.saturating_sub(1);
-    }
-
-    pub fn get_should_eval_string(&self) -> bool {
-        self.should_eval_string
     }
 
     pub fn get_input(&self) -> &'a str {

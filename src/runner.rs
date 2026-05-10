@@ -83,7 +83,7 @@ impl RunnerContext {
         }
     }
 
-    fn lex_and_parse(&mut self, input: &str, source_name: &str, is_in_repl: bool) -> Result<AST<()>, RunError> {
+    fn lex_and_parse(&mut self, input: &str, source_name: &str) -> Result<AST<()>, RunError> {
         trace!("Lexing start");
 
         let tokens = parse::lex(input).map_err(|err| {
@@ -111,7 +111,6 @@ impl RunnerContext {
             &tokens,
             &mut self.global_identifier_registry,
             &mut self.module_string_interner,
-            is_in_repl,
         )
         .map_err(|err| {
             let msg = err.generate_user_facing_error(source_name, input);
@@ -190,7 +189,6 @@ impl RunnerContext {
         let mut interpreter = interpret::Interpreter::new(
             interpret_env,
             &mut self.global_identifier_registry,
-            input,
             print_writer,
             strict_assert,
         );
@@ -220,7 +218,7 @@ impl RunnerContext {
     pub fn run_stmt(&mut self, input: &str, source_name: &str) -> RunResult {
         let is_in_repl = source_name == REPL_LINE;
 
-        let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name, is_in_repl)?;
+        let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name)?;
 
         if module_dag.has_cycle() {
             error!("Circular import detected");
@@ -257,12 +255,11 @@ impl RunnerContext {
         &mut self,
         input: &str,
         source_name: &str,
-        is_in_repl: bool,
     ) -> Result<(DAG<ModuleMetadata>, ModuleMetadata), RunError> {
         let mut module_dag: DAG<ModuleMetadata> = DAG::new();
         let mut import_queue = vec![];
 
-        let ast = self.lex_and_parse(input, source_name, is_in_repl)?;
+        let ast = self.lex_and_parse(input, source_name)?;
 
         let root_module_metadata = ModuleMetadata {
             package: Id::SELF,
@@ -307,7 +304,7 @@ impl RunnerContext {
             }
 
             let content = std::fs::read_to_string(file_path)?;
-            let untyped_ast = self.lex_and_parse(&content, &path, false)?;
+            let untyped_ast = self.lex_and_parse(&content, &path)?;
 
             for imp in &untyped_ast.imports {
                 let md_node_id = module_dag.add_node(imp.metadata.clone());
