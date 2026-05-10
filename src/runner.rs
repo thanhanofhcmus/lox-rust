@@ -215,7 +215,7 @@ impl RunnerContext {
         }
     }
 
-    fn run_stmt(&mut self, input: &str, source_name: &str) -> RunResult {
+    pub fn run_stmt(&mut self, input: &str, source_name: &str) -> RunResult {
         let is_in_repl = source_name == REPL_LINE;
 
         let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name, is_in_repl)?;

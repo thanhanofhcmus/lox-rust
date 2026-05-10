@@ -10,201 +10,72 @@ mod common;
 
 use common::{assert_err_contains, assert_ok, run_fixture};
 
-// ---------- positive-path: every feature should run to exit 0 ----------
+// ---------- positive-path: every feature should run successfully ----------
 
-#[test]
-fn scalars() {
-    assert_ok(&run_fixture("01_scalars.lox"));
+macro_rules! fixture_tests {
+    ($($name:ident: $file:literal),* $(,)?) => {
+        $(
+            #[test]
+            fn $name() {
+                assert_ok(&run_fixture($file));
+            }
+        )*
+    };
 }
 
-#[test]
-fn arithmetic() {
-    assert_ok(&run_fixture("02_arithmetic.lox"));
+fixture_tests! {
+    scalars:              "01_scalars.lox",
+    arithmetic:           "02_arithmetic.lox",
+    boolean_logic:        "03_boolean_logic.lox",
+    comparisons:          "04_comparisons.lox",
+    variables_and_types:  "05_variables_and_types.lox",
+    strings:              "06_strings.lox",
+    blocks:               "07_blocks.lox",
+    if_else:              "08_if_else.lox",
+    while_loop:           "09_while_loop.lox",
+    for_loop:             "10_for_loop.lox",
+    when_expr:            "11_when_expr.lox",
+    arrays:               "12_arrays.lox",
+    maps:                 "13_maps.lox",
+    functions:            "14_functions.lox",
+    chaining:             "15_chaining.lox",
+    json_roundtrip:       "16_json.lox",
+    structs:              "17_structs.lox",
+    tuples:               "18_tuples.lox",
+    underscore:           "19_underscore.lox",
 }
 
-#[test]
-fn boolean_logic() {
-    assert_ok(&run_fixture("03_boolean_logic.lox"));
+// ---------- negative-path: must return an error containing a specific message ----------
+
+macro_rules! error_tests {
+    ($($name:ident: $file:literal contains $needle:literal),* $(,)?) => {
+        $(
+            #[test]
+            fn $name() {
+                let res = run_fixture($file);
+                assert_err_contains(&res, $needle);
+            }
+        )*
+    };
 }
 
-#[test]
-fn comparisons() {
-    assert_ok(&run_fixture("04_comparisons.lox"));
-}
-
-#[test]
-fn variables_and_types() {
-    assert_ok(&run_fixture("05_variables_and_types.lox"));
-}
-
-#[test]
-fn strings() {
-    assert_ok(&run_fixture("06_strings.lox"));
-}
-
-#[test]
-fn blocks() {
-    assert_ok(&run_fixture("07_blocks.lox"));
-}
-
-#[test]
-fn if_else() {
-    assert_ok(&run_fixture("08_if_else.lox"));
-}
-
-#[test]
-fn while_loop() {
-    assert_ok(&run_fixture("09_while_loop.lox"));
-}
-
-#[test]
-fn for_loop() {
-    assert_ok(&run_fixture("10_for_loop.lox"));
-}
-
-#[test]
-fn when_expr() {
-    assert_ok(&run_fixture("11_when_expr.lox"));
-}
-
-#[test]
-fn arrays() {
-    assert_ok(&run_fixture("12_arrays.lox"));
-}
-
-#[test]
-fn maps() {
-    assert_ok(&run_fixture("13_maps.lox"));
-}
-
-#[test]
-fn functions() {
-    assert_ok(&run_fixture("14_functions.lox"));
-}
-
-#[test]
-fn chaining() {
-    assert_ok(&run_fixture("15_chaining.lox"));
-}
-
-#[test]
-fn json_roundtrip() {
-    assert_ok(&run_fixture("16_json.lox"));
-}
-
-#[test]
-fn structs() {
-    assert_ok(&run_fixture("17_structs.lox"));
-}
-
-#[test]
-fn tuples() {
-    assert_ok(&run_fixture("18_tuples.lox"));
-}
-
-#[test]
-fn underscore() {
-    assert_ok(&run_fixture("19_underscore.lox"));
-}
-
-// ---------- negative-path: must exit non-zero with a specific message ----------
-
-#[test]
-fn error_div_by_zero() {
-    let res = run_fixture("errors/div_by_zero.lox");
-    assert_err_contains(&res, "Division by zero");
-}
-
-#[test]
-fn error_array_out_of_bounds() {
-    let res = run_fixture("errors/array_out_of_bounds.lox");
-    assert_err_contains(&res, "out of bounds");
-}
-
-#[test]
-fn error_assertion_failure_under_strict() {
-    let res = run_fixture("errors/assertion_failure.lox");
-    assert_err_contains(&res, "Assertion failed: deliberate");
-}
-
-#[test]
-fn error_struct_unknown_field() {
-    let res = run_fixture("errors/struct_unknown_field.lox");
-    assert_err_contains(&res, "has no field");
-}
-
-#[test]
-fn error_member_access_on_non_struct() {
-    let res = run_fixture("errors/member_access_on_non_struct.lox");
-    assert_err_contains(&res, "is not a struct");
-}
-
-#[test]
-fn error_member_access_any_runtime() {
-    let res = run_fixture("errors/member_access_any_runtime.lox");
-    assert_err_contains(&res, "not a struct or tuple");
-}
-
-#[test]
-fn error_fn_call_lvalue() {
-    let res = run_fixture("errors/fn_call_lvalue.lox");
-    assert_err_contains(&res, "must be a valid identifier");
-}
-
-#[test]
-fn error_struct_field_write_readonly() {
-    let res = run_fixture("errors/struct_field_write_readonly.lox");
-    assert_err_contains(&res, "read-only");
-}
-
-#[test]
-fn error_tuple_index_oob_static() {
-    let res = run_fixture("errors/tuple_index_oob_static.lox");
-    assert_err_contains(&res, "index at 5");
-}
-
-#[test]
-fn error_tuple_index_oob_runtime() {
-    let res = run_fixture("errors/tuple_index_oob_runtime.lox");
-    assert_err_contains(&res, "out of bounds");
-}
-
-#[test]
-fn error_tuple_as_map_key_annotation() {
-    let res = run_fixture("errors/tuple_as_map_key_annotation.lox");
-    assert_err_contains(&res, "Invalid map key type");
-}
-
-#[test]
-fn error_tuple_as_map_key_runtime() {
-    let res = run_fixture("errors/tuple_as_map_key_runtime.lox");
-    assert_err_contains(&res, "cannot be used as a key");
-}
-
-#[test]
-fn error_tuple_destructure_non_tuple() {
-    // Caught at typecheck under the new destructure rules.
-    let res = run_fixture("errors/tuple_destructure_non_tuple.lox");
-    assert_err_contains(&res, "cannot be destructured as a tuple");
-}
-
-#[test]
-fn error_tuple_destructure_arity() {
-    // Caught at typecheck under the new destructure rules.
-    let res = run_fixture("errors/tuple_destructure_arity.lox");
-    assert_err_contains(&res, "destructuring expected");
-}
-
-#[test]
-fn error_tuple_destructure_non_tuple_runtime() {
-    // `any` rhs hides the shape from typecheck; runtime must catch.
-    let res = run_fixture("errors/tuple_destructure_non_tuple_runtime.lox");
-    assert_err_contains(&res, "cannot be destructured as a tuple");
-}
-
-#[test]
-fn error_tuple_destructure_arity_runtime() {
-    // `any` rhs hides the arity from typecheck; runtime must catch.
-    let res = run_fixture("errors/tuple_destructure_arity_runtime.lox");
-    assert_err_contains(&res, "destructuring expected");
+error_tests! {
+    error_div_by_zero:                      "errors/div_by_zero.lox"                     contains "Division by zero",
+    error_array_out_of_bounds:              "errors/array_out_of_bounds.lox"             contains "out of bounds",
+    error_assertion_failure_under_strict:   "errors/assertion_failure.lox"               contains "Assertion failed: deliberate",
+    error_struct_unknown_field:             "errors/struct_unknown_field.lox"            contains "has no field",
+    error_member_access_on_non_struct:      "errors/member_access_on_non_struct.lox"     contains "is not a struct",
+    error_member_access_any_runtime:        "errors/member_access_any_runtime.lox"       contains "not a struct or tuple",
+    error_fn_call_lvalue:                   "errors/fn_call_lvalue.lox"                  contains "must be a valid identifier",
+    error_struct_field_write_readonly:      "errors/struct_field_write_readonly.lox"     contains "read-only",
+    error_tuple_index_oob_static:           "errors/tuple_index_oob_static.lox"          contains "index at 5",
+    error_tuple_index_oob_runtime:          "errors/tuple_index_oob_runtime.lox"         contains "out of bounds",
+    error_tuple_as_map_key_annotation:      "errors/tuple_as_map_key_annotation.lox"     contains "Invalid map key type",
+    error_tuple_as_map_key_runtime:         "errors/tuple_as_map_key_runtime.lox"        contains "cannot be used as a key",
+    // Caught at typecheck under the destructure rules.
+    error_tuple_destructure_non_tuple:      "errors/tuple_destructure_non_tuple.lox"     contains "cannot be destructured as a tuple",
+    error_tuple_destructure_arity:          "errors/tuple_destructure_arity.lox"         contains "destructuring expected",
+    // `any` rhs hides the shape/arity from typecheck; runtime must catch.
+    error_tuple_destructure_non_tuple_runtime: "errors/tuple_destructure_non_tuple_runtime.lox" contains "cannot be destructured as a tuple",
+    error_tuple_destructure_arity_runtime:  "errors/tuple_destructure_arity_runtime.lox" contains "destructuring expected",
 }
