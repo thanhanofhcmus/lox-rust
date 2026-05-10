@@ -104,20 +104,19 @@ impl<'a> Environment<'a> {
     }
 
     pub fn lookup_variable_id(&self, cid: ComplexId) -> Option<TypeId> {
-        if let Some(type_id) = self
-            .scopes
+        // Module-qualified name (e.g. `math::add`): ONLY search that module.
+        if let Some(module_id) = cid.module {
+            let metadata = self.imported_modules.get(&module_id)?;
+            let module = self.module_registry.get(metadata)?;
+            return module.symbol_scope.get_type_id(cid.name);
+        }
+
+        // Unqualified name: check local scopes, then preludes.
+        self.scopes
             .iter()
             .rev()
             .find_map(|s| s.get_type_id(cid.name))
             .or_else(|| self.preludes.get_type_id(cid.name))
-        {
-            return Some(type_id);
-        }
-
-        let module_id = cid.module?;
-        let metadata = self.imported_modules.get(&module_id)?;
-        let module = self.module_registry.get(metadata)?;
-        module.symbol_scope.get_type_id(cid.name)
     }
 
     /// Return only the TypeId
