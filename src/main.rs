@@ -266,7 +266,7 @@ impl RunnerContext {
             self.parse_cache.insert(node_metadata, untyped_ast);
         }
 
-        if module_dag.has_circle() {
+        if module_dag.has_cycle() {
             unimplemented!()
         }
         module_dag.transitive_reduce();
