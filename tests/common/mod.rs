@@ -15,8 +15,9 @@ pub type FixtureResult = Result<(), RunError>;
 /// Run a fixture file through the interpreter with `--strict-assert`.
 /// `relative` is resolved against `tests/fixtures/`.
 pub fn run_fixture(relative: &str) -> FixtureResult {
-    // Suppress log output (default level is Error, so only error!() shows).
-    let _ = env_logger::try_init();
+    // Suppress log output during tests (default level is Error, but
+    // `is_test(true)` tells env_logger to avoid printing to stderr).
+    let _ = env_logger::builder().is_test(true).try_init();
 
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

@@ -1904,4 +1904,135 @@ mod tests {
         let ast = typecheck_with_module("import \"self:mod\" as m; m::print; var print = 42;", "mod", module).unwrap();
         assert_eq!(first_clause_type(&ast), TypeId::STR);
     }
+
+    // ---------- module struct types ----------
+
+    fn typecheck_with_struct_module(input: &str) -> Result<AST<TypeId>, TypecheckError> {
+        let struct_type = Type::Struct(StructType {
+            id: Id::new("Point"),
+            fields: vec![
+                StructField {
+                    id: Id::new("x"),
+                    type_: TypeId::NUMBER,
+                },
+                StructField {
+                    id: Id::new("y"),
+                    type_: TypeId::NUMBER,
+                },
+            ],
+        });
+        let mut ti = TypeInterner::new();
+        let point_type_id = ti.intern_type(&struct_type).0;
+
+        let mut module = Module::default();
+        module.struct_scope.associate(Id::new("Point"), point_type_id);
+        module.symbol_scope.associate(Id::new("origin"), point_type_id);
+
+        let items = lex(input).expect("lex failed");
+        let mut ir = IdentifierRegistry::default();
+        let mut msi = ModuleStringInterner::default();
+        let mut mr = ModuleRegistry::default();
+        mr.insert(
+            ModuleMetadata {
+                package: Id::SELF,
+                path: msi.intern("mod"),
+            },
+            module,
+        );
+        let env = Environment::new(&mut ti, &mr);
+        let ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
+        TypeChecker::new(env).convert(ast)
+    }
+
+    #[test]
+    fn import_struct_as_type_annotation() {
+        // `m::Point` used as the declared type for a local variable.
+        let ast = typecheck_with_struct_module("import \"self:mod\" as m; var p: m::Point = m::origin;").unwrap();
+        assert_eq!(ast.global_stmts.len(), 1);
+    }
+
+    #[test]
+    fn import_struct_construction_has_struct_type() {
+        let struct_type = Type::Struct(StructType {
+            id: Id::new("Point"),
+            fields: vec![
+                StructField {
+                    id: Id::new("x"),
+                    type_: TypeId::NUMBER,
+                },
+                StructField {
+                    id: Id::new("y"),
+                    type_: TypeId::NUMBER,
+                },
+            ],
+        });
+        let mut ti = TypeInterner::new();
+        let point_type_id = ti.intern_type(&struct_type).0;
+
+        let mut module = Module::default();
+        module.struct_scope.associate(Id::new("Point"), point_type_id);
+
+        let items = lex("import \"self:mod\" as m; m::Point { x = 1, y = 2 };").expect("lex failed");
+        let mut ir = IdentifierRegistry::default();
+        let mut msi = ModuleStringInterner::default();
+        let mut mr = ModuleRegistry::default();
+        mr.insert(
+            ModuleMetadata {
+                package: Id::SELF,
+                path: msi.intern("mod"),
+            },
+            module,
+        );
+        let env = Environment::new(&mut ti, &mr);
+        let ast = crate::parse::parse(
+            "import \"self:mod\" as m; m::Point { x = 1, y = 2 };",
+            &items,
+            &mut ir,
+            &mut msi,
+        )
+        .expect("parse failed");
+        let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
+        assert_eq!(first_clause_type(&typed_ast), point_type_id);
+    }
+
+    #[test]
+    fn import_struct_unknown_type_errors() {
+        let struct_type = Type::Struct(StructType {
+            id: Id::new("Point"),
+            fields: vec![StructField {
+                id: Id::new("x"),
+                type_: TypeId::NUMBER,
+            }],
+        });
+        let mut ti = TypeInterner::new();
+        let point_type_id = ti.intern_type(&struct_type).0;
+
+        let mut module = Module::default();
+        module.struct_scope.associate(Id::new("Point"), point_type_id);
+
+        let items = lex("import \"self:mod\" as m; m::NotAType { x = 1 };").expect("lex failed");
+        let mut ir = IdentifierRegistry::default();
+        let mut msi = ModuleStringInterner::default();
+        let mut mr = ModuleRegistry::default();
+        mr.insert(
+            ModuleMetadata {
+                package: Id::SELF,
+                path: msi.intern("mod"),
+            },
+            module,
+        );
+        let env = Environment::new(&mut ti, &mr);
+        let ast = crate::parse::parse(
+            "import \"self:mod\" as m; m::NotAType { x = 1 };",
+            &items,
+            &mut ir,
+            &mut msi,
+        )
+        .expect("parse failed");
+        let err = TypeChecker::new(env).convert(ast).unwrap_err();
+        assert!(
+            matches!(err, TypecheckError::UndefinedTypeIdentifier(_)),
+            "expected UndefinedTypeIdentifier, got {err:?}"
+        );
+    }
 }

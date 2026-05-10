@@ -46,6 +46,7 @@ fixture_tests! {
     import_basic:         "20_import.lox",
     multi_import:         "21_multi_import.lox",
     import_struct:        "22_import_struct.lox",
+    import_struct_type:   "23_import_struct_type.lox",
 }
 
 // ---------- negative-path: must return an error containing a specific message ----------

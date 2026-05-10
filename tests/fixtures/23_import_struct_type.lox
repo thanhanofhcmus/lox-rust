@@ -1,0 +1,6 @@
+import "self:tests/fixtures/modules/point.lox" as P;
+
+# Use imported struct as type annotation and construct it
+var p: P::Point = P::Point { x = 10, y = 20 };
+assert(p.x == 10, "struct type annotation + construction");
+assert(p.y == 20, "struct type from module");

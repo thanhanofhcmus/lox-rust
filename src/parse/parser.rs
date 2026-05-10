@@ -1580,6 +1580,41 @@ mod tests {
         assert_eq!(ast.global_stmts.len(), 1);
     }
 
+    #[test]
+    fn parse_import_struct_literal_module_qualified() {
+        // `m::Point { x = 1, y = 2 }` — struct literal with module-qualified name.
+        let ast = parse_str("m::Point { x = 1, y = 2 };");
+        assert_eq!(ast.imports.len(), 0);
+        assert_eq!(ast.global_stmts.len(), 1);
+        match first_clause(&ast) {
+            ClauseCase::RawValue(RawValueNode::StructLiteral(node)) => {
+                assert_eq!(node.fields.len(), 2);
+                assert!(node.ciden.module.is_some());
+            }
+            other => panic!("expected StructLiteral, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_import_type_annotation_module_qualified() {
+        // `var p: m::Point = 42;` — type annotation with module-qualified name.
+        let ast = parse_str("var p: m::Point = 42;");
+        match first_stmt(&ast) {
+            Statement::Declare(node) => {
+                assert!(node.explicit_type.is_some());
+            }
+            other => panic!("expected Declare, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_import_with_struct_construction() {
+        // Full import + struct usage.
+        let ast = parse_str("import \"self:mod\" as m; var p: m::Point = m::Point { x = 1, y = 2 };");
+        assert_eq!(ast.imports.len(), 1);
+        assert_eq!(ast.global_stmts.len(), 1);
+    }
+
     // ---------- struct declarations ----------
 
     #[test]
