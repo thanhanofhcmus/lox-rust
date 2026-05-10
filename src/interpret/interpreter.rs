@@ -1,3 +1,4 @@
+
 use super::environment::Environment;
 use super::error::InterpretError;
 use super::values::Value;
@@ -539,8 +540,8 @@ where
 
     fn interpret_fn_decl(&mut self, node: &FnDeclNode<TypeId>) -> Result<Value, InterpretError> {
         Ok(self.environment.insert_function_variable(Function {
-            params: node.params.clone(),
-            body: node.body.clone(),
+            params: Rc::new(node.params.clone()),
+            body: Rc::new(node.body.clone()),
         }))
     }
 
@@ -577,12 +578,8 @@ where
         args: &[Expression<TypeId>],
     ) -> Result<Value, InterpretError> {
         let func = self.environment.get_function(handle)?;
-
-        // Technically, we does not need the clone for args_ids and body here
-        // since when interpreting functions, we cannot create reassign it to an new value
-        // but we don't have a way in rust to formally express this
-        // TODO: find a way to express this
-        let Function { params, body } = func.clone();
+        let params = Rc::clone(&func.params);
+        let body = Rc::clone(&func.body);
 
         if params.len() != args.len() {
             return Err(InterpretError::WrongNumberOfArgument(

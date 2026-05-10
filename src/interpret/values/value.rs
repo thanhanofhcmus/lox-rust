@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 use crate::{
     ast::{BlockNode, ChainStep, FnParamNode},
@@ -18,8 +19,8 @@ pub type BuiltinFn = fn(&mut BorrowContext, Vec<Value>) -> Result<Value, Interpr
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub params: Vec<FnParamNode>,
-    pub body: BlockNode<TypeId>,
+    pub params: Rc<Vec<FnParamNode>>,
+    pub body: Rc<BlockNode<TypeId>>,
 }
 
 pub type Array = Vec<Value>;
