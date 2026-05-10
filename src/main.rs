@@ -1,22 +1,5 @@
-mod ast;
-mod cli;
-mod dag;
-mod id;
-mod identifier_registry;
-mod interpret;
-mod module;
-mod parse;
-mod runner;
-mod span;
-mod string_interner;
-mod string_utils;
-mod token;
-mod type_index;
-mod typecheck;
-mod types;
-
-use cli::{Config, Mode};
-use runner::{DynResult, RunError, RunnerContext, run_file, run_prompt, run_repl};
+use lox_rust::cli::{Config, Mode};
+use lox_rust::runner::{DynResult, RunError, RunnerContext, run_file, run_prompt, run_repl};
 
 fn main() -> DynResult {
     if let Err(e) = dotenvy::dotenv() {
