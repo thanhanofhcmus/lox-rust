@@ -1,4 +1,5 @@
 mod ast;
+mod cli;
 mod dag;
 mod id;
 mod identifier_registry;
@@ -14,7 +15,8 @@ mod type_index;
 mod typecheck;
 mod types;
 
-use runner::{Config, DynResult, Mode, RunError, RunnerContext, run_file, run_prompt, run_repl};
+use cli::{Config, Mode};
+use runner::{DynResult, RunError, RunnerContext, run_file, run_prompt, run_repl};
 
 fn main() -> DynResult {
     if let Err(e) = dotenvy::dotenv() {

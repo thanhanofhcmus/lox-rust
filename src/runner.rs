@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, env, path::Path, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
@@ -40,61 +40,6 @@ pub enum RunError {
 
 pub type RunResult = Result<(), RunError>;
 pub type DynResult = Result<(), Box<dyn std::error::Error>>;
-
-#[derive(Debug)]
-pub enum Mode {
-    Repl { initial_line: Option<String> },
-    Prompt { line: String },
-    File { path: String },
-}
-
-pub struct Config {
-    pub mode: Mode,
-    pub strict_assert: bool,
-}
-
-impl Config {
-    pub fn parse() -> Self {
-        let mut args: Vec<String> = env::args().skip(1).collect();
-
-        // Position-independent flag: consume it before mode dispatch.
-        let strict_assert = {
-            let before = args.len();
-            args.retain(|a| a != "--strict-assert");
-            args.len() != before
-        };
-
-        if args.is_empty() {
-            eprintln!("error: expect a mode (-i, -p, -f)");
-            std::process::exit(1);
-        }
-
-        let mode_str = args.remove(0);
-        let mode = match mode_str.as_str() {
-            "-i" => Mode::Repl {
-                initial_line: args.into_iter().next(),
-            },
-            "-p" => Mode::Prompt {
-                line: args.into_iter().next().unwrap_or_else(|| {
-                    eprintln!("error: must provide prompt line for -p mode");
-                    std::process::exit(1);
-                }),
-            },
-            "-f" => Mode::File {
-                path: args.into_iter().next().unwrap_or_else(|| {
-                    eprintln!("error: must provide file name for -f mode");
-                    std::process::exit(1);
-                }),
-            },
-            _ => {
-                eprintln!("error: unknown mode: {mode_str}");
-                std::process::exit(1);
-            }
-        };
-
-        Self { mode, strict_assert }
-    }
-}
 
 /// Encapsulates the runtime environment to avoid duplicating setup across modes.
 pub struct RunnerContext {
