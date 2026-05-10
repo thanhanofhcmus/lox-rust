@@ -271,15 +271,30 @@ equal, even with identical field names and values.
 
 ### Imports
 
-Modules are loaded from the filesystem. Imports must be at the top of the file.
+Imports must appear at the top of the file, before any other statements.
+Modules are discovered transitively, typechecked and interpreted in
+leaf-first order (dependencies before dependents).  Circular imports are
+rejected.
 
 ```
-import "./math.lox" as math;
-# Planned syntax for referring to an exported name is `math::add(...)`
-# using `::` — NOT `math.add(...)`. Dot (`.`) is reserved for struct
-# field access and (future) method calls on values, while `::` is
-# the module-path operator. Neither form is implemented yet.
+# syntax: import "self:relative/path/to/module.lox" as alias;
+
+import "self:lib/math.lox" as math;
+
+var result = math::add(2, 3);
+print(result);                         # 5
+
+# the `::` operator accesses module exports (variables, functions, structs)
+import "self:lib/geom.lox" as geo;
+var p = geo::Point { x = 10, y = 20 };
+print(p.x);                            # 10
 ```
+
+The `self:` prefix denotes the current package.  `std:` and `thirdparty:`
+are parsed but not yet supported.
+
+A module exports all of its top-level `var` declarations and `struct`
+declarations — there is no explicit `export` keyword.
 
 ### Built-in debug helpers
 
