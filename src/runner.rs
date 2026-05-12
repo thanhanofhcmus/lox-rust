@@ -47,12 +47,15 @@ pub type DynResult = Result<(), Box<dyn std::error::Error>>;
 /// Encapsulates the runtime environment to avoid duplicating setup across modes.
 pub struct RunnerContext {
     global_identifier_registry: IdentifierRegistry,
+
     typecheck_module_registry: typecheck::ModuleRegistry,
     interpret_module_registry: interpret::ModuleRegistry,
+
     type_interner: TypeInterner,
     module_string_interner: ModuleStringInterner,
     interpret_heap: interpret::Heap,
 
+    // we store the currently parse/typechecked AST but does not have a way to reuse them yet
     parse_cache: HashMap<ModuleMetadata, AST<()>>,
     typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
 
@@ -236,6 +239,10 @@ impl RunnerContext {
             source_name,
             is_in_repl,
         )?;
+
+        // TODO: if we typecheck done but have an error at interpret stage,
+        // the typecheck env/module will be out of sync with the interpret env/module.
+        // This most problematic in REPL mode
 
         self.interpret_module_tree(
             &module_dag,

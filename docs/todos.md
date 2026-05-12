@@ -1,93 +1,89 @@
 ## Bugs
 
 ### Memory & Reference Counting
-- [ ] **`Value: Copy` vs ref-counted handles** — assignment/pass-by-value duplicates handles without `shallow_copy_value`, making ref-counts non-authoritative. Either drop `Copy` or commit to mark-sweep and delete the RC scaffolding. *(Foundational — fix first)*
-- [ ] **`heap.rs` `update_ref_count`** — `ref_count.sub_assign(1)` can underflow; use saturating or checked sub
-- [ ] **`heap.rs` `deep_copy_reassign_object()`** — replaced intermediates dropped without ref-count decrement; chained `a[0][1] = x` leaks each sub-object
-- [ ] **`environment.rs` `deinit_module()`** — heap not handled; module-scope GC objects never disposed; ref-counts permanently skewed
+- **`Value: Copy` vs ref-counted handles** — assignment/pass-by-value duplicates handles without `shallow_copy_value`, making ref-counts non-authoritative. Either drop `Copy` or commit to mark-sweep and delete the RC scaffolding. *(Foundational — fix first)*
+- **`heap.rs` `update_ref_count`** — `ref_count.sub_assign(1)` can underflow; use saturating or checked sub
+- **`heap.rs` `deep_copy_reassign_object()`** — replaced intermediates dropped without ref-count decrement; chained `a[0][1] = x` leaks each sub-object
+- **`environment.rs` `deinit_module()`** — heap not handled; module-scope GC objects never disposed; ref-counts permanently skewed
 
 ### Type Checker
-- [ ] **Reassignment rhs type check** — `a = rhs` doesn't verify `rhs`'s type against `a`'s declared type; `var a: number = 1; a = "oops";` passes typecheck
-- [ ] **`typechecker.rs` `convert_fn_call`** — skips ALL argument validation for variadic functions; affects `print`, `to_json`, `array_push`, `array_insert`, etc.
-- [ ] **`typechecker.rs` `convert_struct_literal`** — `Type::Any` arm is unreachable; prior `ok_or(UndefinedIdentifier)` always fires first
+- **Reassignment rhs type check** — `a = rhs` doesn't verify `rhs`'s type against `a`'s declared type; `var a: number = 1; a = "oops";` passes typecheck
+- **`typechecker.rs` `convert_fn_call`** — skips ALL argument validation for variadic functions; affects `print`, `to_json`, `array_push`, `array_insert`, etc.
+- **`typechecker.rs` `convert_struct_literal`** — `Type::Any` arm is unreachable; prior `ok_or(UndefinedIdentifier)` always fires first
 
 ### Modules
-- [ ] **Re-export / transitive module GC** — `collect_all_variables` only marks directly-imported modules, not transitive dependencies. A module imported by A but not the current module could lose its GC objects.
+- **Re-export / transitive module GC** — `collect_all_variables` only marks directly-imported modules, not transitive dependencies. A module imported by A but not the current module could lose its GC objects.
 
 ### Collections
-- [ ] **`Map = BTreeMap<MapKey, Value>`** — `MapKey::Str` orders by `StrId` (interner insertion order), not string bytes; iteration order non-deterministic across runs. Switch to `IndexMap` or order by actual bytes
+- **`Map = BTreeMap<MapKey, Value>`** — `MapKey::Str` orders by `StrId` (interner insertion order), not string bytes; iteration order non-deterministic across runs. Switch to `IndexMap` or order by actual bytes
 
 ---
 
 ## Design Issues
 
 ### Memory & GC
-- [ ] **GC trigger removed** — only `_dbg_gc_mark_sweep()` reclaims today. Add adaptive trigger (double threshold per collection)
-- [ ] **Reference counting is vestigial** — `HeapEntry::new` starts at 1, scope insert bumps to 2, `pop_scope` decrements to 1 (never 0). Bump policy inconsistent across insert vs push/insert operations. Decide: full RC or full mark-sweep
+- **GC trigger removed** — only `_dbg_gc_mark_sweep()` reclaims today. Add adaptive trigger (double threshold per collection)
+- **Reference counting is vestigial** — `HeapEntry::new` starts at 1, scope insert bumps to 2, `pop_scope` decrements to 1 (never 0). Bump policy inconsistent across insert vs push/insert operations. Decide: full RC or full mark-sweep
 
 ### AST & Parser
-- [ ] **AST has both `Expression` and `ClauseNode`** — distinction isn't named; "consume semicolon for Clause/Return" is duplicated
+- **AST has both `Expression` and `ClauseNode`** — distinction isn't named; "consume semicolon for Clause/Return" is duplicated
 
 ### Modules
-- [ ] **Module resolution only handles flat imports** — `a::b::c` chained access not supported; `ComplexIdentifier` stores at most one `module` level
-- [ ] **No external package support** — `std:` and `thirdparty:` packages are parsed but `Self` is the only package implemented
+- **Module resolution only handles flat imports** — `a::b::c` chained access not supported; `ComplexIdentifier` stores at most one `module` level
+- **No external package support** — `std:` and `thirdparty:` packages are parsed but `Self` is the only package implemented
 
 ---
 
 ## TODO
 
 ### Type System & Destructuring
-- [ ] Struct destructuring — `var Point { x, y } = p;` (shorthand) and `var Point { x = px, y = py } = p;` (renamed). Partial destructuring, `Any` rhs
-- [ ] Nested / mixed destructuring — `var %(a, %(b, c)) = …;`, `var %(a, Point { x, y }) = …;`. Queue after struct destructuring
-- [ ] Recursive struct fields — `struct Node { next: Node }`. Needs `TypeInterner` reserve/finalize
-- [ ] `when` arm typecheck — unify arm types; if any arm has no value, none should
+- Struct destructuring — `var Point { x, y } = p;` (shorthand) and `var Point { x = px, y = py } = p;` (renamed). Partial destructuring, `Any` rhs
+- Nested / mixed destructuring — `var %(a, %(b, c)) = …;`, `var %(a, Point { x, y }) = …;`. Queue after struct destructuring
+- Recursive struct fields — `struct Node { next: Node }`. Needs `TypeInterner` reserve/finalize
+- `when` arm typecheck — unify arm types; if any arm has no value, none should
 
 ### Functions
-- [ ] Mutual recursion between fn declarations — needs a proper per-scope pre-pass
+- Mutual recursion between fn declarations — needs a proper per-scope pre-pass
 
 ### Structs
-- [ ] Struct runtime: `Statement::StructDecl` is still a runtime no-op — revisit if/when struct methods land
-- [ ] Struct display / JSON field order — switch runtime `Struct.fields` to `IndexMap` or derive order from `StructType.fields`
+- Struct runtime: `Statement::StructDecl` is still a runtime no-op — revisit if/when struct methods land
+- Struct display / JSON field order — switch runtime `Struct.fields` to `IndexMap` or derive order from `StructType.fields`
 
 ### Methods & UFCS
-- [ ] Method calls on values — `arr.push(v)`, `m.keys()`. UFCS in general
-- [ ] Module member access — `math::sin`. Type-associated calls — `Car::new()`. Both use double-colon infix
+- Method calls on values — `arr.push(v)`, `m.keys()`. UFCS in general
+- Module member access — `math::sin`. Type-associated calls — `Car::new()`. Both use double-colon infix
 
-### Modules & Imports
-- [ ] External packages — support `std:` and `thirdparty:` package prefixes (currently parsed but not loaded)
-- [ ] Chained module access — `a::b::c` (beyond single `module::name`)
-- [ ] File loader interface — abstract over filesystem vs. embedded
-
-### Collections
-- [ ] Map comprehension — `%{ for %(k, v) in map if k * v == 10 : k => v }`
+### Modules & Imports & Global
+- External packages — support `std:` and `thirdparty:` package prefixes (currently parsed but not loaded)
+- Chained module access — `a::b::c` (beyond single `module::name`)
+- File loader interface — abstract over filesystem vs. embedded
+- Parse import only. We only allow putting import in the top (except in REPL mode) so we should be good to parse a file until we meet a first non import statement, 
+    then we don't have to load all and parse the file all the way. This will means we will have 2 pass system.
+- Allow some kind of **hosting** for global variables (with functions) and struct name.
+    Meaning that in a file, we can have a variable of a type first, then declare the type somewhere alter.
+    For variables (and functions). They must have their type annotated so that we don't have to rely on type inference. Make an exception for REPL.
 
 ### Strings
-- [ ] Formatted strings
-- [ ] JSON deserialisation for structs / tuples — needs schema hint e.g. `from_json("...", Point)`
+- Formatted strings
+- JSON deserialisation for structs / tuples — needs schema hint e.g. `from_json("...", Point)`
 
 ### Standard Library
-- [ ] Standard library module
+- Standard library module
 
 ### Errors & CLI
-- [ ] Better error messages — source info pointing exactly to where the error is
-- [ ] Consider using miette
-- [ ] CLI — show a nice error message when no arguments are given
+- Better error messages — source info pointing exactly to where the error is
+- Consider using miette
+- CLI — show a nice error message when no arguments are given
 
 ### Testing & Docs
-- [ ] More tests & fuzzing
-- [ ] More docs
-
-### Modules & Imports
-- [X] Basic import system — `import "self:relative/path.lox" as name;` with `package`, `self`, `std`, `thirdparty` parsing
-- [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; BFS transitive discovery
-- [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking
-- [X] Module-qualified variable lookup — `module::name` resolves through typecheck and interpret `ModuleRegistry`
+- More tests & fuzzing
+- More docs
 
 ### Infrastructure & Refactoring
-- [ ] On-demand parsing
-- [ ] Bytecode VM experiment
-- [ ] Tree-sitter grammar
-- [ ] LSP
+- On-demand parsing
+- Bytecode VM experiment
+- Tree-sitter grammar
+- LSP
 
 ---
 
@@ -127,6 +123,7 @@
 - [X] Array for comprehension — `[for x in array: expr]` with optional `if` filter; loop variable readonly
 - [X] Array prelude functions — `array_len`, `array_push`, `array_pop`, `array_insert`
 - [X] Map prelude functions — `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`
+- [X] Map comprehension — `%{ for %(k, v) in map if k * v == 10 : k => v }`
 
 ### Control Flow & Scoping
 - [X] Block scoping — blocks create their own `ScopeKind::Block` scope; variables no longer leak
@@ -145,3 +142,10 @@
 - [X] Implement node-id
 - [X] Parser recursion depth limit — `MAX_RECURSION_DEPTH = 256` + `RecursionLimitExceeded`
 - [X] Shared interpret heap — single `&'a mut Heap` borrowed by all module environments
+
+### Modules & Imports
+- [X] Basic import system — `import "self:relative/path.lox" as name;` with `package`, `self`, `std`, `thirdparty` parsing
+- [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; BFS transitive discovery
+- [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking
+- [X] Module-qualified variable lookup — `module::name` resolves through typecheck and interpret `ModuleRegistry`
+
