@@ -205,6 +205,11 @@ impl<'a> Environment<'a> {
     }
 
     pub fn pop_scope(&mut self) -> Result<(), InterpretError> {
+        // Guard against popping the global (root) scope, which `make_module`
+        // relies on still being present when the module finishes interpreting.
+        if self.scope_stack.len() <= 1 {
+            return Err(InterpretError::ScopeUnderflow);
+        }
         let last_scope = self.scope_stack.pop()?;
         for (_, value) in last_scope.variables {
             self.heap.shallow_dispose_value(value);
@@ -334,12 +339,13 @@ mod tests {
     }
 
     #[test]
-    fn pop_beyond_empty_returns_underflow() {
+    fn pop_global_scope_returns_underflow() {
         let module_restritry = ModuleRegistry::default();
         let mut heap = Heap::new();
         let mut env = Environment::new(&mut heap, &module_restritry);
-        // ScopeStack starts with one scope; first pop succeeds, second triggers underflow.
-        env.pop_scope().unwrap();
+        // ScopeStack starts with the global scope only; pop must refuse rather
+        // than dropping it, since `make_module` and module variable lookups
+        // rely on the global scope still being present.
         let err = env.pop_scope().unwrap_err();
         assert!(
             matches!(err, InterpretError::ScopeUnderflow),

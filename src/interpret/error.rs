@@ -31,7 +31,6 @@ pub enum InterpretError {
     ValueMustBeUsize(Value),
     // TODO: add GcHandle to error to know which array is out of bound
     ArrayOutOfBound(usize, usize),
-
     ValueCannotBeUsedAsSourceInFor(Value),
     TypeIsNotSerializable(Value),
     SerializeFailed(Value, String),
@@ -46,7 +45,6 @@ pub enum InterpretError {
     StringNotFoundOnHeap(StrId),
     ScopeOverflow(usize),
     ScopeUnderflow,
-
     AssertionFailed(String),
     StructFieldNotFound(Id, Identifier),
     TupleIndexOutOfBound(usize, usize),
@@ -161,7 +159,6 @@ impl InterpretError {
             Self::ArrayOutOfBound(len, index) => {
                 format!("Index {index} is out of bounds: the array has length {len}.")
             }
-
             Self::ValueCannotBeUsedAsSourceInFor(val) => {
                 format!(
                     "Value `{}` cannot be used as a for-loop source",
@@ -222,7 +219,6 @@ impl InterpretError {
                 format!("Stack overflow: call depth exceeded the limit of {limit}.")
             }
             Self::ScopeUnderflow => "Internal error: attempted to pop the root scope.".to_string(),
-
             Self::AssertionFailed(msg) => {
                 format!("Assertion failed: {msg}")
             }

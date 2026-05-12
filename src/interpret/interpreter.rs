@@ -556,16 +556,9 @@ where
     }
 
     fn get_complex_identifier(&mut self, ciden: ComplexIdentifier) -> Result<Value, InterpretError> {
-        // ClauseCase::Identifier(node) => self
-        //     .environment
-        //     .get_variable_all_scope(node.id)
-        //     .map(|v| Ok(v.0))
-        //     .unwrap_or_else(|| Err(InterpretError::NotFoundVariable(*node))),
-
         self.environment
             .get_variable_all_scope(ciden.into())
             .map(|(v, _)| v)
-            // TODO: make error more okay, add the module part
             .ok_or(InterpretError::NotFoundVariable(ciden))
     }
 
