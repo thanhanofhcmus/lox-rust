@@ -17,7 +17,7 @@ pub struct DAG<T> {
     node_index: HashMap<T, usize>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeCycleState {
     Unvisited,
     Exploring,
@@ -70,6 +70,9 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
     pub fn has_cycle(&self) -> bool {
         let mut states = vec![NodeCycleState::Unvisited; self.nodes.len()];
         for node_idx in 0..self.nodes.len() {
+            if states[node_idx] == NodeCycleState::Unvisited {
+                continue;
+            }
             if self.detect_cycle_dfs(node_idx, &mut states) {
                 return true;
             }
