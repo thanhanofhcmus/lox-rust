@@ -86,7 +86,8 @@ impl<'a> Context<'a> {
 
     pub fn consume_token(&mut self, token: Token) -> Result<LexItem, ParseError> {
         if self.is_at_end() {
-            return Err(ParseError::Eof(Some(token)));
+            let span = self.items.last().map(|li| li.span);
+            return Err(ParseError::Eof(Some(token), span));
         }
         let li = *self.get_curr()?;
         if li.token != token {
@@ -126,7 +127,10 @@ impl<'a> Context<'a> {
     pub fn get_curr(&mut self) -> Result<&LexItem, ParseError> {
         match self.items.get(self.curr_pos) {
             Some(li) => Ok(li),
-            None => Err(ParseError::Eof(None)),
+            None => {
+                let span = self.items.last().map(|li| li.span);
+                Err(ParseError::Eof(None, span))
+            }
         }
     }
 

@@ -268,6 +268,8 @@ fn parse_declaration(state: &mut Context) -> Result<Statement<()>, ParseError> {
 }
 
 fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement<()>, ParseError> {
+    let lhs_start_span = state.get_curr()?.span;
+
     let expr = parse_expr(state)?;
 
     if !state.peek(&[Token::Equal]) {
@@ -276,7 +278,7 @@ fn parse_reassignment_or_expr(state: &mut Context) -> Result<Statement<()>, Pars
 
     state.consume_token(Token::Equal)?;
 
-    let node = convert_chaining(expr)?;
+    let node = convert_chaining(expr, lhs_start_span)?;
 
     let expr = parse_expr(state)?;
     state.consume_token(Token::Semicolon)?;
@@ -886,9 +888,10 @@ where
 
 fn convert_chaining(
     Expression { extra: _, case }: Expression<()>,
+    lhs_start_span: Span,
 ) -> Result<ChainingReassignTargetNode<()>, ParseError> {
     let ExprCase::Clause(clause) = case else {
-        return Err(ParseError::ReassignRootIsNotAnIdentifier);
+        return Err(ParseError::ReassignRootIsNotAnIdentifier(lhs_start_span));
     };
 
     // Walk the parsed expression from the outermost postfix inward. Each
@@ -915,7 +918,7 @@ fn convert_chaining(
                 break ciden.name;
             }
             // Anything else (FnCall, Binary, Group, etc.) is not a valid lvalue.
-            _ => return Err(ParseError::ReassignRootIsNotAnIdentifier),
+            _ => return Err(ParseError::ReassignRootIsNotAnIdentifier(lhs_start_span)),
         }
     };
 

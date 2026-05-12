@@ -148,19 +148,21 @@ impl TypecheckError {
             ),
 
             Self::UndefinedVariableIdentifier(ciden) => {
-                format!(
-                    "The variable '{}' is not defined in the visible scope.",
-                    // TODO: add module to the node name
-                    ir.get_or_unknown(ciden.name.id),
-                )
+                let name = if let Some(module) = ciden.module {
+                    format!("{}::{}", ir.get_or_unknown(module.id), ir.get_or_unknown(ciden.name.id))
+                } else {
+                    ir.get_or_unknown(ciden.name.id).to_string()
+                };
+                format!("The variable '{name}' is not defined in the visible scope.")
             }
 
             Self::UndefinedTypeIdentifier(ciden) => {
-                format!(
-                    "The type '{}' is not defined in the visible scope.",
-                    // TODO: add module to the node name
-                    ir.get_or_unknown(ciden.name.id),
-                )
+                let name = if let Some(module) = ciden.module {
+                    format!("{}::{}", ir.get_or_unknown(module.id), ir.get_or_unknown(ciden.name.id))
+                } else {
+                    ir.get_or_unknown(ciden.name.id).to_string()
+                };
+                format!("The type '{name}' is not defined in the visible scope.",)
             }
 
             Self::DuplicateVariableDeclaration(node) => {

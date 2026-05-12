@@ -23,13 +23,13 @@ pub enum ParseError {
     UnexpectedReturn(Span),
 
     #[error("Unexpected End of File (EOF): {}", format_expected(.0))]
-    Eof(Option<Token>),
+    Eof(Option<Token>, Option<Span>),
 
     #[error("Process halted: The parser reached the end of the logic but found trailing tokens starting with `{0}`.")]
     Unfinished(Token, Span),
 
     #[error("Assignment error: The left-hand side of a reassignment must be a valid identifier.")]
-    ReassignRootIsNotAnIdentifier,
+    ReassignRootIsNotAnIdentifier(Span),
 
     #[error("Assignment error: Cannot reassign values across a module boundary.")]
     ReassignAcrossModuleBoundary,
@@ -64,8 +64,13 @@ impl ParseError {
             | ImportPathDoesNotHavePackage(s)
             | ImportEmptyPackage(s)
             | ImportEmptyPath(s)
-            | InvalidMapKeyType(s) => s.to_start_row_col(input),
-            Eof(_) | ReassignRootIsNotAnIdentifier | ReassignAcrossModuleBoundary | RecursionLimitExceeded(_) => (0, 0),
+            | InvalidMapKeyType(s)
+            | ReassignRootIsNotAnIdentifier(s)
+            // For Eof, we are pointing to that last input if possible, this is a bit incorrect, we want to point to **after* the last input
+            | Eof(_, Some(s)) => s.to_start_row_col(input),
+            Eof(_, _) | ReassignAcrossModuleBoundary | RecursionLimitExceeded(_) => {
+                (0, 0)
+            }
         }
     }
 
