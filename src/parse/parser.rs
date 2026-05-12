@@ -59,11 +59,25 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
 
     state.consume_token(Token::Import)?;
     let path_li = state.consume_token(Token::String)?;
+    // `s` includes both quotes — s[0] = `"`, s[len-1] = `"`. So the package text lives at
+    // s[1..colon_pos] and the path text lives at s[colon_pos+1..len-1]. Spans in this
+    // codebase are inclusive on both ends, hence the `- 2` / `+ 2` offsets below.
     let s = path_li.span.str_from_source(state.get_input());
 
     let colon_pos = s
         .find(':')
         .ok_or(ParseError::ImportPathDoesNotHavePackage(path_li.span))?;
+
+    // Reject `":foo"` (empty package) and `"self:"` (empty path) explicitly — the offset
+    // math below would otherwise produce an inclusive Span with start > end.
+    // `s` includes both quotes, so the closing quote sits at `s.len() - 1` and the colon
+    // being adjacent to it (`colon_pos == s.len() - 2`) means the path is empty.
+    if colon_pos <= 1 {
+        return Err(ParseError::ImportEmptyPackage(path_li.span));
+    }
+    if colon_pos >= s.len() - 2 {
+        return Err(ParseError::ImportEmptyPath(path_li.span));
+    }
 
     let package_start = path_li.span.start + 1;
     let package_end = package_start + colon_pos - 2;
@@ -896,8 +910,7 @@ fn convert_chaining(
             }
             ClauseCase::Identifier(ciden) => {
                 if ciden.module.is_some() {
-                    // TODO: we do not allow reassign across module boundary
-                    unimplemented!()
+                    return Err(ParseError::ReassignAcrossModuleBoundary);
                 }
                 break ciden.name;
             }
@@ -912,7 +925,8 @@ fn convert_chaining(
 }
 
 /// Process backslash escape sequences (`\n`, `\t`, `\"`, etc.) in a string literal.
-/// The lexer guarantees the input is well-formed, so a trailing lone backslash is a bug.
+/// Called by `parse_string` for non-raw strings. The lexer guarantees the input is
+/// well-formed (no trailing lone backslash); a panic here indicates a lexer/parser bug.
 fn unescape(input: &str) -> String {
     let mut iter = input.chars();
     let mut result = String::with_capacity(input.len());

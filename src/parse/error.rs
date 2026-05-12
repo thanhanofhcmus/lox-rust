@@ -31,6 +31,15 @@ pub enum ParseError {
     #[error("Assignment error: The left-hand side of a reassignment must be a valid identifier.")]
     ReassignRootIsNotAnIdentifier,
 
+    #[error("Assignment error: Cannot reassign values across a module boundary.")]
+    ReassignAcrossModuleBoundary,
+
+    #[error("Import path must have a non-empty package name before a colon")]
+    ImportEmptyPackage(Span),
+
+    #[error("Import path must have a non-empty path after the colon")]
+    ImportEmptyPath(Span),
+
     #[error("Parser recursion limit ({0}) exceeded — expression is nested too deeply to parse safely.")]
     RecursionLimitExceeded(usize),
 
@@ -53,8 +62,10 @@ impl ParseError {
             | UnexpectedReturn(s)
             | Unfinished(_, s)
             | ImportPathDoesNotHavePackage(s)
+            | ImportEmptyPackage(s)
+            | ImportEmptyPath(s)
             | InvalidMapKeyType(s) => s.to_start_row_col(input),
-            Eof(_) | ReassignRootIsNotAnIdentifier | RecursionLimitExceeded(_) => (0, 0),
+            Eof(_) | ReassignRootIsNotAnIdentifier | ReassignAcrossModuleBoundary | RecursionLimitExceeded(_) => (0, 0),
         }
     }
 
