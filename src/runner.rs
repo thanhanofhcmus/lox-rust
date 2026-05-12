@@ -6,18 +6,21 @@ use thiserror::Error;
 
 use crate::{
     ast::AST,
-    dag::{DAG, NodeId},
+    dag::DAG,
     id::Id,
     identifier_registry::IdentifierRegistry,
     interpret::{self, Heap, InterpretError},
     module::{ModuleMetadata, ModuleStringInterner},
     parse::{self, ParseError},
+    type_index::Index,
     typecheck::{self, TypecheckError},
     types::{TypeId, TypeInterner},
 };
 
 const REPL_LINE: &str = "<line>";
 const PROMPT_LINE: &str = "<prompt>";
+
+crate::define_type_index!(pub struct ModuleDagId);
 
 /// Internal control-flow signal for "the script failed".
 /// Each variant carries a user-facing message and the underlying error.
@@ -262,8 +265,8 @@ impl RunnerContext {
         &mut self,
         input: &str,
         source_name: &str,
-    ) -> Result<(DAG<ModuleMetadata>, ModuleMetadata), RunError> {
-        let mut module_dag: DAG<ModuleMetadata> = DAG::new();
+    ) -> Result<(DAG<ModuleMetadata, ModuleDagId>, ModuleMetadata), RunError> {
+        let mut module_dag = DAG::new();
         let mut import_queue = vec![];
 
         let ast = self.lex_and_parse(input, source_name)?;
@@ -328,8 +331,8 @@ impl RunnerContext {
     /// Typecheck every module in leaf-first order.
     fn typecheck_module_tree(
         &mut self,
-        module_dag: &DAG<ModuleMetadata>,
-        order: &[NodeId<ModuleMetadata>],
+        module_dag: &DAG<ModuleMetadata, ModuleDagId>,
+        order: &[ModuleDagId],
         root_module_metadata: &ModuleMetadata,
         input: &str,
         source_name: &str,
@@ -364,8 +367,8 @@ impl RunnerContext {
     /// Interpret every module in leaf-first order.
     fn interpret_module_tree(
         &mut self,
-        module_dag: &DAG<ModuleMetadata>,
-        order: &[NodeId<ModuleMetadata>],
+        module_dag: &DAG<ModuleMetadata, ModuleDagId>,
+        order: &[ModuleDagId],
         root_module_metadata: &ModuleMetadata,
         input: &str,
         source_name: &str,

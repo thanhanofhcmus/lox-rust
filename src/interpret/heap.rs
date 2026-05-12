@@ -7,13 +7,13 @@ use crate::{
         error::InterpretError,
         values::{Array, Function, Map, MapKey, Struct, Tuple, Value},
     },
-    string_interner::{StringInterner, SymbolId},
+    string_interner::StringInterner,
+    type_index::Index,
 };
 
-pub struct HeapStringMarker;
+crate::define_type_index!(pub struct StrId);
 
-pub type StrId = SymbolId<HeapStringMarker>;
-pub type HeapStringInterner = StringInterner<HeapStringMarker>;
+pub type HeapStringInterner = StringInterner<StrId>;
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[debug("GcHandle({_0})")]

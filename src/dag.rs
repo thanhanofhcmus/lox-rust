@@ -1,19 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::type_index::TypeIndex;
-
-pub type NodeId<T> = TypeIndex<usize, T>;
+use crate::type_index::Index;
 
 #[derive(Debug, Clone)]
-pub struct Node<T> {
+pub struct Node<T, I: Index> {
     pub data: T,
-    neighbors: HashSet<NodeId<T>>,
+    neighbors: HashSet<I>,
 }
 
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
-pub struct DAG<T> {
-    nodes: Vec<Node<T>>,
+pub struct DAG<T, I: Index> {
+    nodes: Vec<Node<T, I>>,
     node_index: HashMap<T, usize>,
 }
 
@@ -24,7 +22,7 @@ enum NodeCycleState {
     Done,
 }
 
-impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
+impl<T: Clone + Eq + std::hash::Hash, I: Index> DAG<T, I> {
     pub fn new() -> Self {
         Self {
             nodes: vec![],
@@ -32,8 +30,8 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
         }
     }
 
-    pub fn get_node(&self, id: NodeId<T>) -> Option<&Node<T>> {
-        self.nodes.get(id.get())
+    pub fn get_node(&self, id: I) -> Option<&Node<T, I>> {
+        self.nodes.get(id.to_value())
     }
 
     /// Add a node to the DAG.
@@ -43,12 +41,12 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
     /// every unique `T` value corresponds to at most one node, which is
     /// essential for correct cycle detection when multiple modules import
     /// the same dependency through different paths.
-    pub fn add_node(&mut self, data: T) -> NodeId<T> {
+    pub fn add_node(&mut self, data: T) -> I {
         if let Some(&idx) = self.node_index.get(&data) {
-            return NodeId::new(idx);
+            return I::from_value(idx);
         }
-        let id = NodeId::new(self.nodes.len());
-        self.node_index.insert(data.clone(), id.get());
+        let id = I::from_value(self.nodes.len());
+        self.node_index.insert(data.clone(), id.to_value());
         let neighbors = HashSet::new();
         self.nodes.push(Node { data, neighbors });
         id
@@ -56,12 +54,12 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
 
     /// Set a node as the parent of an another node
     // TODO: return error if we encounter an invalid setup, including circle
-    pub fn add_edge(&mut self, parent: NodeId<T>, child: NodeId<T>) {
+    pub fn add_edge(&mut self, parent: I, child: I) {
         let len = self.nodes.len();
-        if parent.get() >= len || child.get() >= len {
+        if parent.to_value() >= len || child.to_value() >= len {
             // TODO: return error
         }
-        let parent_node = self.nodes.get_mut(parent.get()).unwrap();
+        let parent_node = self.nodes.get_mut(parent.to_value()).unwrap();
         parent_node.neighbors.insert(child);
     }
 
@@ -83,7 +81,7 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
     fn detect_cycle_dfs(&self, current_idx: usize, states: &mut [NodeCycleState]) -> bool {
         states[current_idx] = NodeCycleState::Exploring;
         for neighbor_node in &self.nodes[current_idx].neighbors {
-            let idx = neighbor_node.get();
+            let idx = neighbor_node.to_value();
             match states[idx] {
                 NodeCycleState::Unvisited => {
                     if self.detect_cycle_dfs(idx, states) {
@@ -98,7 +96,7 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
         false
     }
 
-    pub fn get_leaf_first_order(&self) -> Vec<NodeId<T>> {
+    pub fn get_leaf_first_order(&self) -> Vec<I> {
         let len = self.nodes.len();
         let mut order = Vec::with_capacity(len);
         let mut visited = vec![false; len];
@@ -110,15 +108,15 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
         order
     }
 
-    fn collect_post_order_dfs(&self, current_idx: usize, order: &mut Vec<NodeId<T>>, visited: &mut [bool]) {
+    fn collect_post_order_dfs(&self, current_idx: usize, order: &mut Vec<I>, visited: &mut [bool]) {
         visited[current_idx] = true;
         for neighbor_node in &self.nodes[current_idx].neighbors {
-            let idx = neighbor_node.get();
+            let idx = neighbor_node.to_value();
             if !visited[idx] {
                 self.collect_post_order_dfs(idx, order, visited);
             }
         }
-        order.push(NodeId::new(current_idx));
+        order.push(I::from_value(current_idx));
     }
 
     /// transitive_reduce mutate the current DAG inplace to simplify the dendepencies.
@@ -147,15 +145,21 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
         }
     }
 
-    fn has_path(&self, from: NodeId<T>, to: NodeId<T>) -> bool {
+    fn has_path(&self, from: I, to: I) -> bool {
         let mut visited = vec![false; self.nodes.len()];
-        let mut to_visit = self.nodes.get(from.get()).unwrap().neighbors.iter().collect::<Vec<_>>();
+        let mut to_visit = self
+            .nodes
+            .get(from.to_value())
+            .unwrap()
+            .neighbors
+            .iter()
+            .collect::<Vec<_>>();
 
         while let Some(&current_node) = to_visit.pop() {
             if current_node == to {
                 return true;
             }
-            let idx = current_node.get();
+            let idx = current_node.to_value();
             if visited[idx] {
                 continue;
             }
@@ -171,9 +175,12 @@ impl<T: Clone + Eq + std::hash::Hash> DAG<T> {
 mod tests {
     use super::*;
 
+    crate::define_type_index!(struct TestId);
+    type TDAG = DAG<&'static str, TestId>;
+
     #[test]
     fn test_add_nodes_and_edges() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
 
@@ -185,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_cycle_detection_positive() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -199,21 +206,21 @@ mod tests {
 
     #[test]
     fn test_cycle_detection_negative() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
 
         dag.add_edge(a, b);
         dag.add_edge(a, c);
-        dag.add_edge(b, c); // A points to both B and C, B points to C. Valid DAG.
+        dag.add_edge(b, c); // A points to both B and C, B points to C. Valid TDAG.
 
         assert!(!dag.has_cycle(), "A diamond shape is not a cycle");
     }
 
     #[test]
     fn test_leaf_first_order() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         let a = dag.add_node("Root");
         let b = dag.add_node("Middle");
         let c = dag.add_node("Leaf");
@@ -234,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_transitive_reduction() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -267,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_reduction_long_chain() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         // A -> B -> C -> D -> E
         // Additional redundant edges: A->C, A->D, A->E, B->D, B->E
         let a = dag.add_node("A");
@@ -300,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_reduction_diamond_with_shortcut() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         /*
                A
               / \
@@ -340,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_reduction_cross_dependencies() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         /*
             A -> B -> D
             |   /
@@ -372,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_reduction_idempotency() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -395,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_has_path() {
-        let mut dag = DAG::new();
+        let mut dag = TDAG::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -406,6 +413,6 @@ mod tests {
 
         assert!(dag.has_path(a, c), "Path exists from A to C via B");
         assert!(!dag.has_path(a, d), "No path should exist from A to D");
-        assert!(!dag.has_path(c, a), "No path should exist backwards in a DAG");
+        assert!(!dag.has_path(c, a), "No path should exist backwards in a TDAG");
     }
 }

@@ -1,20 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
-use derive_more::Debug;
-
-use crate::type_index::TypeIndex;
-
-pub type SymbolId<T> = TypeIndex<usize, T>;
+use crate::type_index::Index;
 
 #[derive(Debug, Clone)]
-pub struct StringInterner<T> {
-    string_to_id: HashMap<String, SymbolId<T>>,
-    id_to_string: HashMap<SymbolId<T>, String>,
+pub struct StringInterner<I: Index> {
+    string_to_id: HashMap<String, I>,
+    id_to_string: HashMap<I, String>,
     next_id: usize,
-    mark_to_keep: HashSet<SymbolId<T>>,
+    mark_to_keep: HashSet<I>,
 }
 
-impl<T> Default for StringInterner<T> {
+impl<I: Index + Default> Default for StringInterner<I> {
     fn default() -> Self {
         Self {
             string_to_id: HashMap::new(),
@@ -25,19 +21,19 @@ impl<T> Default for StringInterner<T> {
     }
 }
 
-impl<T> StringInterner<T> {
-    pub fn intern(&mut self, s: &str) -> SymbolId<T> {
+impl<I: Index> StringInterner<I> {
+    pub fn intern(&mut self, s: &str) -> I {
         if let Some(id) = self.string_to_id.get(s) {
             return *id;
         }
-        let id = SymbolId::new(self.next_id);
+        let id = I::from_value(self.next_id);
         self.next_id += 1;
         self.string_to_id.insert(s.into(), id);
         self.id_to_string.insert(id, s.into());
         id
     }
 
-    pub fn get(&self, id: SymbolId<T>) -> Option<&str> {
+    pub fn get(&self, id: I) -> Option<&str> {
         self.id_to_string.get(&id).map(|s| s.as_str())
     }
 
@@ -45,7 +41,7 @@ impl<T> StringInterner<T> {
         self.mark_to_keep.clear();
     }
 
-    pub fn mark_to_keep(&mut self, id: SymbolId<T>) {
+    pub fn mark_to_keep(&mut self, id: I) {
         self.mark_to_keep.insert(id);
     }
 
@@ -68,7 +64,9 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    type SI = StringInterner<()>;
+    crate::define_type_index!(struct TestId);
+
+    type SI = StringInterner<TestId>;
 
     #[test]
     fn interning_same_string_returns_same_id() {
