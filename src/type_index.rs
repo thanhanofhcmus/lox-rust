@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-pub trait Index: Clone + Copy + PartialEq + Eq + PartialEq + Ord + Hash {
+pub trait Index: Clone + Copy + Eq + Ord + Hash {
     fn from_value(value: usize) -> Self;
     fn to_value(&self) -> usize;
 }
@@ -17,7 +17,7 @@ macro_rules! define_type_index {
         )]
         $vis struct $name(pub(self) usize);
 
-        impl Index for $name {
+        impl $crate::type_index::Index for $name {
             fn from_value(value: usize) -> Self { Self(value) }
             fn to_value(&self) -> usize { self.0 }
         }

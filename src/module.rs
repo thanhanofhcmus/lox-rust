@@ -1,4 +1,4 @@
-use crate::{id::Id, string_interner::StringInterner, type_index::Index};
+use crate::{id::Id, string_interner::StringInterner};
 use std::collections::HashMap;
 
 crate::define_type_index!(pub struct StrId);

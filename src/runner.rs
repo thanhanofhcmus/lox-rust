@@ -12,7 +12,6 @@ use crate::{
     interpret::{self, Heap, InterpretError},
     module::{ModuleMetadata, ModuleStringInterner},
     parse::{self, ParseError},
-    type_index::Index,
     typecheck::{self, TypecheckError},
     types::{TypeId, TypeInterner},
 };

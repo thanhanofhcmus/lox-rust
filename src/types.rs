@@ -1,6 +1,6 @@
 use std::{collections::HashMap, hash::Hash};
 
-use crate::{define_type_index, id::Id, identifier_registry::IdentifierRegistry, type_index::Index};
+use crate::{define_type_index, id::Id, identifier_registry::IdentifierRegistry};
 
 define_type_index!(pub struct TypeId);
 

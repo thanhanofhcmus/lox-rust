@@ -8,7 +8,6 @@ use crate::{
         values::{Array, Function, Map, MapKey, Struct, Tuple, Value},
     },
     string_interner::StringInterner,
-    type_index::Index,
 };
 
 crate::define_type_index!(pub struct StrId);
