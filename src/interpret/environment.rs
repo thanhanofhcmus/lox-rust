@@ -94,7 +94,7 @@ impl ScopeStack {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Module {
     variables: HashMap<Id, Value>,
 }

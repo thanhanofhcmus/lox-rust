@@ -137,7 +137,7 @@ impl RunnerContext {
     }
 
     fn create_repl_typecheck_env(&mut self) -> typecheck::Environment<'_> {
-        let repl_module = std::mem::take(&mut self.repl_typecheck_module);
+        let repl_module = self.repl_typecheck_module.clone();
         typecheck::Environment::from_module(repl_module, &mut self.type_interner, &self.typecheck_module_registry)
     }
 
@@ -185,7 +185,7 @@ impl RunnerContext {
         let print_writer = Rc::new(RefCell::new(std::io::stdout()));
         let strict_assert = self.strict_assert;
         let interpret_env = if is_repl_module {
-            let repl_module = std::mem::take(&mut self.repl_interpreter_module);
+            let repl_module = self.repl_interpreter_module.clone();
             interpret::Environment::from_module(repl_module, &mut self.interpret_heap, &self.interpret_module_registry)
         } else {
             interpret::Environment::new(&mut self.interpret_heap, &self.interpret_module_registry)
@@ -223,6 +223,9 @@ impl RunnerContext {
     pub fn run_stmt(&mut self, input: &str, source_name: &str) -> RunResult {
         let is_in_repl = source_name == REPL_LINE;
 
+        let saved_tc = self.repl_typecheck_module.clone();
+        let saved_it = self.repl_interpreter_module.clone();
+
         let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name)?;
 
         if module_dag.has_cycle() {
@@ -233,29 +236,37 @@ impl RunnerContext {
 
         let order = module_dag.get_leaf_first_order();
 
-        self.typecheck_module_tree(
+        if let Err(e) = self.typecheck_module_tree(
             &module_dag,
             &order,
             &root_module_metadata,
             input,
             source_name,
             is_in_repl,
-        )?;
+        ) {
+            if is_in_repl {
+                self.repl_typecheck_module = saved_tc;
+            }
+            return Err(e);
+        }
 
-        // TODO: if we typecheck done but have an error at interpret stage,
-        // the typecheck env/module will be out of sync with the interpret env/module.
-        // This most problematic in REPL mode
-
-        self.interpret_module_tree(
+        match self.interpret_module_tree(
             &module_dag,
             &order,
             &root_module_metadata,
             input,
             source_name,
             is_in_repl,
-        )?;
-
-        Ok(())
+        ) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if is_in_repl {
+                    self.repl_typecheck_module = saved_tc;
+                    self.repl_interpreter_module = saved_it;
+                }
+                Err(e)
+            }
+        }
     }
 
     /// Parse the root module and discover + parse all imported modules.
@@ -438,4 +449,25 @@ pub fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynRes
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repl_state_preserved_after_runtime_error() {
+        let mut ctx = RunnerContext::new(true);
+
+        // Build up state over multiple REPL lines.
+        ctx.run_stmt("var x: number = 1;", REPL_LINE).unwrap();
+        ctx.run_stmt("var y: any = true;", REPL_LINE).unwrap();
+
+        // This typechecks but fails at runtime (int + bool).
+        let err = ctx.run_stmt("x + y;", REPL_LINE).unwrap_err();
+        assert!(matches!(err, RunError::Interpret { .. }));
+
+        // Previous state must still be intact.
+        assert!(ctx.run_stmt("print(x);", REPL_LINE).is_ok());
+    }
 }

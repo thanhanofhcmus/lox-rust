@@ -9,7 +9,7 @@ use crate::{
 
 pub type ModuleRegistry = GenericModuleRegistry<Module>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Module {
     pub(crate) symbol_scope: TypeScope,
     pub(crate) struct_scope: TypeScope,
