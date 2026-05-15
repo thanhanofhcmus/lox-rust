@@ -176,11 +176,11 @@ mod tests {
     use super::*;
 
     crate::define_type_index!(struct TestId);
-    type TDAG = DAG<&'static str, TestId>;
+    type TestDag = DAG<&'static str, TestId>;
 
     #[test]
     fn test_add_nodes_and_edges() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
 
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_cycle_detection_positive() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -206,21 +206,21 @@ mod tests {
 
     #[test]
     fn test_cycle_detection_negative() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
 
         dag.add_edge(a, b);
         dag.add_edge(a, c);
-        dag.add_edge(b, c); // A points to both B and C, B points to C. Valid TDAG.
+        dag.add_edge(b, c); // A points to both B and C, B points to C. Valid TestDag.
 
         assert!(!dag.has_cycle(), "A diamond shape is not a cycle");
     }
 
     #[test]
     fn test_leaf_first_order() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         let a = dag.add_node("Root");
         let b = dag.add_node("Middle");
         let c = dag.add_node("Leaf");
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_transitive_reduction() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_reduction_long_chain() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         // A -> B -> C -> D -> E
         // Additional redundant edges: A->C, A->D, A->E, B->D, B->E
         let a = dag.add_node("A");
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_reduction_diamond_with_shortcut() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         /*
                A
               / \
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_reduction_cross_dependencies() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         /*
             A -> B -> D
             |   /
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_reduction_idempotency() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_has_path() {
-        let mut dag = TDAG::new();
+        let mut dag = TestDag::new();
         let a = dag.add_node("A");
         let b = dag.add_node("B");
         let c = dag.add_node("C");
@@ -413,6 +413,6 @@ mod tests {
 
         assert!(dag.has_path(a, c), "Path exists from A to C via B");
         assert!(!dag.has_path(a, d), "No path should exist from A to D");
-        assert!(!dag.has_path(c, a), "No path should exist backwards in a TDAG");
+        assert!(!dag.has_path(c, a), "No path should exist backwards in a TestDag");
     }
 }
