@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     id::Id,
     identifier_registry::ComplexId,
-    module::{ModuleMetadata, ModuleRegistry as GenericModuleRegistry},
+    module::{ModuleIndex, ModuleRegistry as GenericModuleRegistry},
     types::{Type, TypeId, TypeInterner, TypeScope},
 };
 
@@ -20,7 +20,7 @@ pub struct Module {
 pub struct Environment<'a> {
     scopes: Vec<TypeScope>,
     local_struct_scope: TypeScope,
-    imported_modules: HashMap<Id, ModuleMetadata>,
+    imported_modules: HashMap<Id, ModuleIndex>,
     // TODO: move preludes to shared
     preludes: TypeScope,
     type_interner: &'a mut TypeInterner,
@@ -65,8 +65,8 @@ impl<'a> Environment<'a> {
         env
     }
 
-    pub fn add_module(&mut self, id: Id, metadata: ModuleMetadata) {
-        self.imported_modules.insert(id, metadata);
+    pub fn add_module(&mut self, id: Id, index: ModuleIndex) {
+        self.imported_modules.insert(id, index);
     }
 
     pub fn make_module(&mut self) -> Module {
@@ -106,8 +106,8 @@ impl<'a> Environment<'a> {
     pub fn lookup_variable_id(&self, cid: ComplexId) -> Option<TypeId> {
         // Module-qualified name (e.g. `math::add`): ONLY search that module.
         if let Some(module_id) = cid.module {
-            let metadata = self.imported_modules.get(&module_id)?;
-            let module = self.module_registry.get(metadata)?;
+            let index = self.imported_modules.get(&module_id)?;
+            let module = self.module_registry.get(index)?;
             return module.symbol_scope.get_type_id(cid.name);
         }
 
@@ -144,8 +144,8 @@ impl<'a> Environment<'a> {
 
     pub fn lookup_type_id(&self, cid: ComplexId) -> Option<TypeId> {
         let scope = if let Some(module_id) = cid.module {
-            let module_metadata = self.imported_modules.get(&module_id)?;
-            let module = self.module_registry.get(module_metadata)?;
+            let module_index = self.imported_modules.get(&module_id)?;
+            let module = self.module_registry.get(module_index)?;
             &module.struct_scope
         } else {
             &self.local_struct_scope

@@ -1,5 +1,5 @@
-import "self:tests/fixtures/modules/math.lox" as math;
-import "self:tests/fixtures/modules/greet.lox" as greet;
+import "self:modules/math.lox" as math;
+import "self:modules/greet.lox" as greet;
 
 assert(math::add(10, 20) == 30, "math::add across two imports");
 assert(greet::greet("World") == "Hello, World!", "greet::greet");

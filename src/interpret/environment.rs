@@ -11,7 +11,7 @@ use crate::{
         prelude,
         values::{Array, Function, Map, Struct, Tuple},
     },
-    module::{ModuleMetadata, ModuleRegistry as GenericModuleRegistry},
+    module::{ModuleIndex, ModuleRegistry as GenericModuleRegistry},
 };
 
 #[derive(Debug)]
@@ -107,7 +107,7 @@ const SCOPE_SIZE_LIMIT: usize = 100;
 pub struct Environment<'a> {
     pub(super) heap: &'a mut Heap,
     scope_stack: ScopeStack,
-    imported_modules: HashMap<Id, ModuleMetadata>,
+    imported_modules: HashMap<Id, ModuleIndex>,
 
     // TODO: move preludes to shared
     preludes: Scope,
@@ -172,8 +172,8 @@ impl<'a> Environment<'a> {
         // imported by the currently-running module.  If module A imports B
         // but the current module only imports A, B's exported variables are
         // not collected here.  We need a full transitive walk in the future.
-        for metadata in self.imported_modules.values() {
-            if let Some(module) = self.module_registry.get(metadata) {
+        for index in self.imported_modules.values() {
+            if let Some(module) = self.module_registry.get(index) {
                 variables.extend(module.variables.values().copied());
             }
         }
@@ -183,8 +183,8 @@ impl<'a> Environment<'a> {
 
     // Module functions
 
-    pub fn add_module(&mut self, id: Id, metadata: ModuleMetadata) {
-        self.imported_modules.insert(id, metadata);
+    pub fn add_module(&mut self, id: Id, index: ModuleIndex) {
+        self.imported_modules.insert(id, index);
     }
 
     pub fn make_module(&mut self) -> Module {
@@ -239,8 +239,8 @@ impl<'a> Environment<'a> {
         }
 
         let module_id = cid.module?;
-        let metadata = self.imported_modules.get(&module_id)?;
-        let module = self.module_registry.get(metadata)?;
+        let index = self.imported_modules.get(&module_id)?;
+        let module = self.module_registry.get(index)?;
         module.variables.get(&cid.name).copied().map(|v| (v, true))
     }
 

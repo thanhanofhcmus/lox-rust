@@ -1,4 +1,4 @@
-import "self:tests/fixtures/modules/geometry.lox" as geo;
+import "self:modules/geometry.lox" as geo;
 
 var p = geo::Point { x = 3, y = 4 };
 assert(p.x == 3, "imported struct field x");

@@ -1,2 +1,2 @@
-import "self:tests/fixtures/errors/circular_b.lox" as b;
+import "self:circular_b.lox" as b;
 var a_func = fn() { return 1; };

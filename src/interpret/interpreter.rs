@@ -5,6 +5,7 @@ use crate::ast::*;
 use crate::id::Id;
 use crate::interpret::Module;
 use crate::interpret::heap::GcHandle;
+use crate::module::{ModuleIndex, ModuleMetadata};
 
 use crate::identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry};
 use crate::interpret::values::{BuiltinFn, Function, Map, MapKey, Number, Scalar, Struct, StructField, Tuple};
@@ -94,11 +95,15 @@ where
         self.identifier_registry
     }
 
-    pub fn interpret(&mut self, ast: &'s AST<TypeId>) -> Result<Value, InterpretError> {
-        // we don't interpret here, we should only be interpret ONCE in the main file
-        // only declare that the SELF module have imported these modules
+    pub fn interpret(
+        &mut self,
+        ast: &'s AST<TypeId>,
+        metadata_to_index: &HashMap<ModuleMetadata, ModuleIndex>,
+    ) -> Result<Value, InterpretError> {
         for import in &ast.imports {
-            self.environment.add_module(import.iden.id, import.metadata.clone());
+            if let Some(index) = metadata_to_index.get(&import.metadata) {
+                self.environment.add_module(import.iden.id, index.clone());
+            }
         }
 
         for stmt in &ast.global_stmts {

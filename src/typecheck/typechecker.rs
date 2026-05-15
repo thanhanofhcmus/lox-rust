@@ -1,10 +1,11 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::{Environment, TypecheckError};
 
 use crate::ast::*;
 use crate::id::Id;
 use crate::identifier_registry::Identifier;
+use crate::module::{ModuleIndex, ModuleMetadata};
 use crate::typecheck::Module;
 use crate::types::{StructField, StructType, Type};
 use crate::{token::Token, types::TypeId};
@@ -44,14 +45,20 @@ impl<'e> TypeChecker<'e> {
     }
 
     /// Consume an untyped AST and return a typed AST with all declarations type-checked.
-    pub fn convert(&mut self, ast: AST<()>) -> Result<AST<TypeId>, TypecheckError> {
+    pub fn convert(
+        &mut self,
+        ast: AST<()>,
+        metadata_to_index: &HashMap<ModuleMetadata, ModuleIndex>,
+    ) -> Result<AST<TypeId>, TypecheckError> {
         let AST {
             imports,
             global_stmts: untyped_global_stmts,
         } = ast;
 
         for import in &imports {
-            self.environment.add_module(import.iden.id, import.metadata.clone());
+            if let Some(index) = metadata_to_index.get(&import.metadata) {
+                self.environment.add_module(import.iden.id, index.clone());
+            }
         }
 
         let mut global_stmts = Vec::with_capacity(untyped_global_stmts.len());
@@ -1083,12 +1090,13 @@ mod tests {
     use crate::{
         id::Id,
         identifier_registry::{ComplexId, IdentifierRegistry},
-        module::{ModuleMetadata, ModuleStringInterner},
+        module::{ModuleIndex, ModuleMetadata, ModuleStringInterner},
         parse::lex,
         typecheck::ModuleRegistry,
         types::{StructField, Type, TypeInterner, TypeScope},
     };
     use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
 
     fn typecheck_str(input: &str) -> Result<AST<TypeId>, TypecheckError> {
         let items = lex(input).expect("lex failed");
@@ -1098,7 +1106,7 @@ mod tests {
         let mr = ModuleRegistry::default();
         let env = Environment::new(&mut ti, &mr);
         let ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
-        TypeChecker::new(env).convert(ast)
+        TypeChecker::new(env).convert(ast, &HashMap::new())
     }
 
     /// Type of the expression inside the first top-level Expr statement's Clause.
@@ -1758,11 +1766,18 @@ mod tests {
             package: Id::SELF,
             path: msi.intern(import_path),
         };
-        mr.insert(metadata, module);
+        let index = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: PathBuf::from(import_path),
+        };
+        mr.insert(index.clone(), module);
+
+        let mut map: HashMap<ModuleMetadata, ModuleIndex> = HashMap::new();
+        map.insert(metadata, index);
 
         let env = Environment::new(&mut ti, &mr);
         let ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
-        TypeChecker::new(env).convert(ast)
+        TypeChecker::new(env).convert(ast, &map)
     }
 
     #[test]
@@ -1826,15 +1841,21 @@ mod tests {
         let mut ir = IdentifierRegistry::default();
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
-        let metadata = ModuleMetadata {
+        let index = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: PathBuf::from("mod"),
+        };
+        mr.insert(index.clone(), module);
+        let md = ModuleMetadata {
             package: Id::SELF,
             path: msi.intern("mod"),
         };
-        mr.insert(metadata, module);
+        let mut map = HashMap::new();
+        map.insert(md, index);
         let env = Environment::new(&mut ti, &mr);
         let ast = crate::parse::parse("import \"self:mod\" as m; m::origin.x;", &items, &mut ir, &mut msi)
             .expect("parse failed");
-        let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
+        let typed_ast = TypeChecker::new(env).convert(ast, &map).unwrap();
         assert_eq!(first_clause_type(&typed_ast), TypeId::NUMBER);
     }
 
@@ -1849,19 +1870,31 @@ mod tests {
         let mut ti = TypeInterner::new();
         let mut mr = ModuleRegistry::default();
 
-        mr.insert(
+        let idx_a = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: PathBuf::from("a"),
+        };
+        let idx_b = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: PathBuf::from("b"),
+        };
+        mr.insert(idx_a.clone(), mod_a);
+        mr.insert(idx_b.clone(), mod_b);
+
+        let mut map = HashMap::new();
+        map.insert(
             ModuleMetadata {
                 package: Id::SELF,
                 path: msi.intern("a"),
             },
-            mod_a,
+            idx_a,
         );
-        mr.insert(
+        map.insert(
             ModuleMetadata {
                 package: Id::SELF,
                 path: msi.intern("b"),
             },
-            mod_b,
+            idx_b,
         );
 
         let env = Environment::new(&mut ti, &mr);
@@ -1872,7 +1905,7 @@ mod tests {
             &mut msi,
         )
         .expect("parse failed");
-        let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
+        let typed_ast = TypeChecker::new(env).convert(ast, &map).unwrap();
         assert_eq!(first_clause_type(&typed_ast), TypeId::NUMBER);
     }
 
@@ -1932,16 +1965,22 @@ mod tests {
         let mut ir = IdentifierRegistry::default();
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
-        mr.insert(
+        let index = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: PathBuf::from("mod"),
+        };
+        mr.insert(index.clone(), module);
+        let mut map = HashMap::new();
+        map.insert(
             ModuleMetadata {
                 package: Id::SELF,
                 path: msi.intern("mod"),
             },
-            module,
+            index,
         );
         let env = Environment::new(&mut ti, &mr);
         let ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
-        TypeChecker::new(env).convert(ast)
+        TypeChecker::new(env).convert(ast, &map)
     }
 
     #[test]
@@ -1976,12 +2015,18 @@ mod tests {
         let mut ir = IdentifierRegistry::default();
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
-        mr.insert(
+        let index = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: PathBuf::from("mod"),
+        };
+        mr.insert(index.clone(), module);
+        let mut map = HashMap::new();
+        map.insert(
             ModuleMetadata {
                 package: Id::SELF,
                 path: msi.intern("mod"),
             },
-            module,
+            index,
         );
         let env = Environment::new(&mut ti, &mr);
         let ast = crate::parse::parse(
@@ -1991,7 +2036,7 @@ mod tests {
             &mut msi,
         )
         .expect("parse failed");
-        let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
+        let typed_ast = TypeChecker::new(env).convert(ast, &map).unwrap();
         assert_eq!(first_clause_type(&typed_ast), point_type_id);
     }
 
@@ -2014,12 +2059,18 @@ mod tests {
         let mut ir = IdentifierRegistry::default();
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
-        mr.insert(
+        let index = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: PathBuf::from("mod"),
+        };
+        mr.insert(index.clone(), module);
+        let mut map = HashMap::new();
+        map.insert(
             ModuleMetadata {
                 package: Id::SELF,
                 path: msi.intern("mod"),
             },
-            module,
+            index,
         );
         let env = Environment::new(&mut ti, &mr);
         let ast = crate::parse::parse(
@@ -2029,7 +2080,7 @@ mod tests {
             &mut msi,
         )
         .expect("parse failed");
-        let err = TypeChecker::new(env).convert(ast).unwrap_err();
+        let err = TypeChecker::new(env).convert(ast, &HashMap::new()).unwrap_err();
         assert!(
             matches!(err, TypecheckError::UndefinedTypeIdentifier(_)),
             "expected UndefinedTypeIdentifier, got {err:?}"

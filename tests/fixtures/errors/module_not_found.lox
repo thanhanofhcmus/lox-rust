@@ -1,2 +1,2 @@
-import "self:tests/fixtures/modules/does_not_exist.lox" as dne;
+import "self:does_not_exist.lox" as dne;
 var x = dne::something;

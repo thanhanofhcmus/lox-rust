@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::Path, path::PathBuf, rc::Rc};
 
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     identifier_registry::IdentifierRegistry,
     interpret::{self, Heap, InterpretError},
-    module::{ModuleMetadata, ModuleStringInterner},
+    module::{ModuleIndex, ModuleMetadata, ModuleStringInterner},
     parse::{self, ParseError},
     typecheck::{self, TypecheckError},
     types::{TypeId, TypeInterner},
@@ -20,6 +20,24 @@ const REPL_LINE: &str = "<line>";
 const PROMPT_LINE: &str = "<prompt>";
 
 crate::define_type_index!(pub struct ModuleDagId);
+
+/// The module DAG and supporting data produced by `parse_module_tree`.
+type ModuleTree = (
+    DAG<ModuleIndex, ModuleDagId>,
+    ModuleIndex,
+    HashMap<ModuleMetadata, ModuleIndex>,
+);
+
+/// Shared parameters passed through the typecheck / interpret phases.
+struct PhaseParams<'a> {
+    module_dag: &'a DAG<ModuleIndex, ModuleDagId>,
+    order: &'a [ModuleDagId],
+    root_index: &'a ModuleIndex,
+    input: &'a str,
+    source_name: &'a str,
+    is_in_repl: bool,
+    metadata_to_index: &'a HashMap<ModuleMetadata, ModuleIndex>,
+}
 
 /// Internal control-flow signal for "the script failed".
 /// Each variant carries a user-facing message and the underlying error.
@@ -57,9 +75,8 @@ pub struct RunnerContext {
     module_string_interner: ModuleStringInterner,
     interpret_heap: interpret::Heap,
 
-    // we store the currently parse/typechecked AST but does not have a way to reuse them yet
-    parse_cache: HashMap<ModuleMetadata, AST<()>>,
-    typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
+    parse_cache: HashMap<ModuleIndex, AST<()>>,
+    typecheck_cache: HashMap<ModuleIndex, AST<TypeId>>,
 
     repl_typecheck_module: typecheck::Module,
     repl_interpreter_module: interpret::Module,
@@ -147,12 +164,13 @@ impl RunnerContext {
         input: &str,
         source_name: &str,
         is_repl_module: bool,
+        metadata_to_index: &HashMap<ModuleMetadata, ModuleIndex>,
     ) -> Result<(AST<TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
         let typecheck_env = if is_repl_module { self.create_repl_typecheck_env() } else { self.create_typecheck_env() };
         let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
 
-        match typechecker.convert(ast) {
+        match typechecker.convert(ast, metadata_to_index) {
             Err(err) => {
                 let msg = err.generate_user_facing_error(
                     source_name,
@@ -180,6 +198,7 @@ impl RunnerContext {
         input: &str,
         source_name: &str,
         is_repl_module: bool,
+        metadata_to_index: &HashMap<ModuleMetadata, ModuleIndex>,
     ) -> Result<interpret::Module, RunError> {
         debug!("interpreting start");
         let print_writer = Rc::new(RefCell::new(std::io::stdout()));
@@ -197,7 +216,9 @@ impl RunnerContext {
             print_writer,
             strict_assert,
         );
-        let result = interpreter.interpret(&ast).map(|_| interpreter.make_module());
+        let result = interpreter
+            .interpret(&ast, metadata_to_index)
+            .map(|_| interpreter.make_module());
 
         match result {
             Ok(module) => {
@@ -205,12 +226,9 @@ impl RunnerContext {
                 Ok(module)
             }
             Err(err) => {
-                let msg = err.generate_user_facing_error(
-                    source_name,
-                    input,
-                    interpreter.get_env(),
-                    interpreter.get_identifer_registry(),
-                );
+                let env = interpreter.get_env();
+                let ir = interpreter.get_identifer_registry();
+                let msg = err.generate_user_facing_error(source_name, input, env, ir);
                 error!("Interpreter error:\n{}", msg);
                 Err(RunError::Interpret {
                     message: msg,
@@ -226,7 +244,7 @@ impl RunnerContext {
         let saved_tc = self.repl_typecheck_module.clone();
         let saved_it = self.repl_interpreter_module.clone();
 
-        let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name)?;
+        let (mut module_dag, root_index, metadata_to_index) = self.parse_module_tree(input, source_name)?;
 
         if module_dag.has_cycle() {
             error!("Circular import detected");
@@ -236,28 +254,24 @@ impl RunnerContext {
 
         let order = module_dag.get_leaf_first_order();
 
-        if let Err(e) = self.typecheck_module_tree(
-            &module_dag,
-            &order,
-            &root_module_metadata,
+        let params = PhaseParams {
+            module_dag: &module_dag,
+            order: &order,
+            root_index: &root_index,
             input,
             source_name,
             is_in_repl,
-        ) {
+            metadata_to_index: &metadata_to_index,
+        };
+
+        if let Err(e) = self.typecheck_module_tree(&params) {
             if is_in_repl {
                 self.repl_typecheck_module = saved_tc;
             }
             return Err(e);
         }
 
-        match self.interpret_module_tree(
-            &module_dag,
-            &order,
-            &root_module_metadata,
-            input,
-            source_name,
-            is_in_repl,
-        ) {
+        match self.interpret_module_tree(&params) {
             Ok(()) => Ok(()),
             Err(e) => {
                 if is_in_repl {
@@ -270,104 +284,125 @@ impl RunnerContext {
     }
 
     /// Parse the root module and discover + parse all imported modules.
-    /// Returns the module DAG and the root module's metadata.
-    fn parse_module_tree(
-        &mut self,
-        input: &str,
-        source_name: &str,
-    ) -> Result<(DAG<ModuleMetadata, ModuleDagId>, ModuleMetadata), RunError> {
-        let mut module_dag = DAG::new();
-        let mut import_queue = vec![];
+    /// Returns the module DAG, the root module's index, and a map from
+    /// source-level ModuleMetadata to resolved ModuleIndex.
+    fn parse_module_tree(&mut self, input: &str, source_name: &str) -> Result<ModuleTree, RunError> {
+        let mut module_dag: DAG<ModuleIndex, ModuleDagId> = DAG::new();
+        let mut import_queue: Vec<(ModuleDagId, PathBuf)> = vec![];
+        let mut metadata_to_index: HashMap<ModuleMetadata, ModuleIndex> = HashMap::new();
 
         let ast = self.lex_and_parse(input, source_name)?;
 
-        let root_module_metadata = ModuleMetadata {
+        // Resolve root module.
+        let root_canonical = canonicalize_source(source_name)?;
+        let root_index = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: root_canonical.clone(),
+        };
+
+        let root_metadata = ModuleMetadata {
             package: Id::SELF,
             path: self.module_string_interner.intern(source_name),
         };
+        metadata_to_index.insert(root_metadata, root_index.clone());
 
-        let root_module_node_id = module_dag.add_node(root_module_metadata.clone());
+        let root_node_id = module_dag.add_node(root_index.clone());
+        let root_dir = root_canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
+
         for imp in &ast.imports {
-            let md_node_id = module_dag.add_node(imp.metadata.clone());
-            module_dag.add_edge(root_module_node_id, md_node_id);
-            import_queue.push(md_node_id);
+            let imp_index = resolve_import(&imp.metadata, &self.module_string_interner, &root_dir)?;
+            metadata_to_index.insert(imp.metadata.clone(), imp_index.clone());
+            let md_node_id = module_dag.add_node(imp_index.clone());
+            module_dag.add_edge(root_node_id, md_node_id);
+            import_queue.push((
+                md_node_id,
+                imp_index
+                    .canonical_path
+                    .parent()
+                    .unwrap_or(Path::new("."))
+                    .to_path_buf(),
+            ));
         }
 
-        self.parse_cache.insert(root_module_metadata.clone(), ast);
+        // In REPL mode the same root_index (SELF, cwd) is reused across
+        // multiple lines — clear stale cache entries so the new line is used.
+        if source_name == REPL_LINE {
+            self.parse_cache.remove(&root_index);
+            self.typecheck_cache.remove(&root_index);
+        }
 
-        // discover and parse all imported modules (BFS)
-        while let Some(current_node_id) = import_queue.pop() {
-            let node_metadata = module_dag
+        self.parse_cache.insert(root_index.clone(), ast);
+
+        // discover and parse all imported modules
+        while let Some((current_node_id, parent_dir)) = import_queue.pop() {
+            let node_index = module_dag
                 .get_node(current_node_id)
                 .expect("import queue should only contain valid DAG node ids")
                 .data
                 .clone();
-            if self.parse_cache.contains_key(&node_metadata) {
+            if self.parse_cache.contains_key(&node_index) {
                 continue;
             }
 
-            let path = self
-                .module_string_interner
-                .get(node_metadata.path)
-                .expect("import path id should have been interned during parsing")
-                .to_string();
-
-            if node_metadata.package != Id::SELF {
+            if node_index.package != Id::SELF {
+                let path = node_index.canonical_path.display().to_string();
                 error!("External packages are not yet supported: {path}");
                 return Err(RunError::ModuleNotFound(path));
             }
 
-            // TODO: move file loader to an interface
-            let file_path = Path::new(&path);
+            let file_path = &node_index.canonical_path;
             if !file_path.exists() || !file_path.is_file() {
+                let path = file_path.display().to_string();
                 return Err(RunError::ModuleNotFound(path));
             }
 
             let content = std::fs::read_to_string(file_path)?;
-            let untyped_ast = self.lex_and_parse(&content, &path)?;
+
+            let untyped_ast = self.lex_and_parse(&content, file_path.to_str().unwrap_or("<import>"))?;
 
             for imp in &untyped_ast.imports {
-                let md_node_id = module_dag.add_node(imp.metadata.clone());
+                let imp_index = resolve_import(&imp.metadata, &self.module_string_interner, &parent_dir)?;
+                metadata_to_index.insert(imp.metadata.clone(), imp_index.clone());
+                let child_dir = imp_index
+                    .canonical_path
+                    .parent()
+                    .unwrap_or(Path::new("."))
+                    .to_path_buf();
+                let md_node_id = module_dag.add_node(imp_index);
                 module_dag.add_edge(current_node_id, md_node_id);
-                import_queue.push(md_node_id);
+                import_queue.push((md_node_id, child_dir));
             }
 
-            self.parse_cache.insert(node_metadata, untyped_ast);
+            self.parse_cache.insert(node_index, untyped_ast);
         }
 
-        Ok((module_dag, root_module_metadata))
+        Ok((module_dag, root_index, metadata_to_index))
     }
 
     /// Typecheck every module in leaf-first order.
-    fn typecheck_module_tree(
-        &mut self,
-        module_dag: &DAG<ModuleMetadata, ModuleDagId>,
-        order: &[ModuleDagId],
-        root_module_metadata: &ModuleMetadata,
-        input: &str,
-        source_name: &str,
-        is_in_repl: bool,
-    ) -> RunResult {
-        for &current_node_id in order {
-            let node_metadata = module_dag
+    fn typecheck_module_tree(&mut self, p: &PhaseParams) -> RunResult {
+        for &current_node_id in p.order {
+            let node_index = p
+                .module_dag
                 .get_node(current_node_id)
                 .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
             let untyped_ast = self
                 .parse_cache
-                .get(&node_metadata)
+                .get(&node_index)
                 .expect("parse_cache should be populated for every module before typecheck")
                 .clone();
 
-            let is_repl_module = is_in_repl && *root_module_metadata == node_metadata;
+            let is_repl_module = p.is_in_repl && *p.root_index == node_index;
 
-            let (typed_ast, module) = self.type_check(untyped_ast, input, source_name, is_repl_module)?;
-            self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
+            let (typed_ast, module) =
+                self.type_check(untyped_ast, p.input, p.source_name, is_repl_module, p.metadata_to_index)?;
+            self.typecheck_cache.insert(node_index.clone(), typed_ast);
             if is_repl_module {
                 self.repl_typecheck_module = module;
             } else {
-                self.typecheck_module_registry.insert(node_metadata, module);
+                self.typecheck_module_registry.insert(node_index, module);
             }
         }
 
@@ -375,39 +410,65 @@ impl RunnerContext {
     }
 
     /// Interpret every module in leaf-first order.
-    fn interpret_module_tree(
-        &mut self,
-        module_dag: &DAG<ModuleMetadata, ModuleDagId>,
-        order: &[ModuleDagId],
-        root_module_metadata: &ModuleMetadata,
-        input: &str,
-        source_name: &str,
-        is_in_repl: bool,
-    ) -> RunResult {
-        for &current_node_id in order {
-            let node_metadata = module_dag
+    fn interpret_module_tree(&mut self, p: &PhaseParams) -> RunResult {
+        for &current_node_id in p.order {
+            let node_index = p
+                .module_dag
                 .get_node(current_node_id)
                 .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
             let typed_ast = self
                 .typecheck_cache
-                .get(&node_metadata)
+                .get(&node_index)
                 .expect("typecheck_cache should be populated for every module before interpret")
                 .clone();
 
-            let is_repl_module = is_in_repl && *root_module_metadata == node_metadata;
+            let is_repl_module = p.is_in_repl && *p.root_index == node_index;
 
-            let module = self.interpret(typed_ast, input, source_name, is_repl_module)?;
+            let module = self.interpret(typed_ast, p.input, p.source_name, is_repl_module, p.metadata_to_index)?;
             if is_repl_module {
                 self.repl_interpreter_module = module;
             } else {
-                self.interpret_module_registry.insert(node_metadata, module);
+                self.interpret_module_registry.insert(node_index, module);
             }
         }
 
         Ok(())
     }
+}
+
+/// Canonicalize `source_name`.  For REPL/PROMPT sentinels, returns cwd().
+/// For real files, resolves the absolute canonical path.
+fn canonicalize_source(source_name: &str) -> Result<PathBuf, RunError> {
+    if source_name == REPL_LINE || source_name == PROMPT_LINE {
+        return Ok(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    }
+    let path = Path::new(source_name);
+    if path.is_relative() {
+        std::fs::canonicalize(path).map_err(RunError::ModuleReadError)
+    } else {
+        Ok(path.to_path_buf())
+    }
+}
+
+/// Resolve an import's `ModuleMetadata` (package + raw relative path) into a
+/// `ModuleIndex` with a canonical filesystem path.
+fn resolve_import(
+    metadata: &ModuleMetadata,
+    msi: &ModuleStringInterner,
+    parent_dir: &Path,
+) -> Result<ModuleIndex, RunError> {
+    let raw = msi
+        .get(metadata.path)
+        .ok_or_else(|| RunError::ModuleNotFound("<unknown>".to_string()))?
+        .to_string();
+    let joined = parent_dir.join(&raw);
+    let canonical = std::fs::canonicalize(&joined).map_err(|_| RunError::ModuleNotFound(raw))?;
+    Ok(ModuleIndex {
+        package: metadata.package,
+        canonical_path: canonical,
+    })
 }
 
 pub fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
@@ -432,7 +493,6 @@ pub fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynRes
 
     if let Some(line) = initial_line {
         rl.add_history_entry(&line)?;
-        // error is already reported in run_stmt
         _ = ctx.run_stmt(line.trim_end(), REPL_LINE);
     }
 
@@ -440,7 +500,6 @@ pub fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynRes
         match rl.readline("> ") {
             Ok(line) => {
                 rl.add_history_entry(&line)?;
-                // error is already reported in run_stmt
                 _ = ctx.run_stmt(line.trim_end(), REPL_LINE);
             }
             Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => break,
@@ -469,5 +528,105 @@ mod tests {
 
         // Previous state must still be intact.
         assert!(ctx.run_stmt("print(x);", REPL_LINE).is_ok());
+    }
+
+    #[test]
+    fn repl_caches_cleared_between_lines() {
+        // Each REPL line reuses the same (SELF, cwd) ModuleIndex.
+        // Stale caches must be cleared so the new line's AST is used.
+        let mut ctx = RunnerContext::new(true);
+
+        ctx.run_stmt("var a = 1;", REPL_LINE).unwrap();
+        ctx.run_stmt("var b = 2;", REPL_LINE).unwrap();
+        ctx.run_stmt("assert(a + b == 3, \"accumulates state\");", REPL_LINE)
+            .unwrap();
+
+        let root_index = ModuleIndex {
+            package: Id::SELF,
+            canonical_path: std::env::current_dir().unwrap(),
+        };
+        // REPL modules must not leak into the shared registries.
+        assert!(ctx.typecheck_module_registry.get(&root_index).is_none());
+        assert!(ctx.interpret_module_registry.get(&root_index).is_none());
+    }
+
+    #[test]
+    fn import_relative_to_importing_module() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Create a nested module tree:
+        //   main.lox imports lib/a.lox
+        //   lib/a.lox imports sub/b.lox (relative to a.lox's directory)
+        let lib_dir = dir_path.join("lib");
+        let sub_dir = lib_dir.join("sub");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+
+        let main_path = dir_path.join("main.lox");
+        let a_path = lib_dir.join("a.lox");
+        let b_path = sub_dir.join("b.lox");
+
+        let mut f = std::fs::File::create(&main_path).unwrap();
+        writeln!(f, "import \"self:lib/a.lox\" as a;").unwrap();
+        writeln!(f, "assert(a::x == 42, \"nested import\");").unwrap();
+        drop(f);
+
+        let mut f = std::fs::File::create(&a_path).unwrap();
+        writeln!(f, "import \"self:sub/b.lox\" as b;").unwrap();
+        writeln!(f, "var x: number = b::value;").unwrap();
+        drop(f);
+
+        let mut f = std::fs::File::create(&b_path).unwrap();
+        writeln!(f, "var value: number = 42;").unwrap();
+        drop(f);
+
+        let mut ctx = RunnerContext::new(true);
+        // run_file uses source_name = the file path, so parse_module_tree
+        // resolves relative imports from the root module's directory.
+        ctx.run_stmt(
+            &std::fs::read_to_string(&main_path).unwrap(),
+            main_path.to_str().unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn same_module_imported_twice_parsed_once() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+
+        let mods_dir = dir_path.join("mods");
+        std::fs::create_dir_all(&mods_dir).unwrap();
+
+        let util_path = mods_dir.join("util.lox");
+        let mut f = std::fs::File::create(&util_path).unwrap();
+        writeln!(f, "var x: number = 42;").unwrap();
+        drop(f);
+
+        let main_path = dir_path.join("main.lox");
+        let mut f = std::fs::File::create(&main_path).unwrap();
+        // Import the same file via two different relative paths.
+        writeln!(f, "import \"self:mods/util.lox\" as util;").unwrap();
+        writeln!(f, "import \"self:mods/../mods/util.lox\" as util2;").unwrap();
+        writeln!(f, "assert(util::x == 42, \"dedup import\");").unwrap();
+        drop(f);
+
+        let mut ctx = RunnerContext::new(true);
+        ctx.run_stmt(
+            &std::fs::read_to_string(&main_path).unwrap(),
+            main_path.to_str().unwrap(),
+        )
+        .unwrap();
+
+        // Both imports resolve to the same canonical path → parse_cache has 2 entries (main + util), not 3.
+        assert_eq!(
+            ctx.parse_cache.len(),
+            2,
+            "parse_cache should have main + util, not a duplicate"
+        );
     }
 }
