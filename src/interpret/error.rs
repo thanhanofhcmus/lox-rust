@@ -6,7 +6,7 @@ use crate::{
     identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry},
     interpret::{
         Environment,
-        heap::{GcHandle, GcKind, StrId},
+        heap::{GcHandle, GcKind, HeapStrId},
         values::DisplayWriter,
     },
     token::Token,
@@ -42,7 +42,7 @@ pub enum InterpretError {
     GcObjectUnIndexable(GcKind),
     GcObjectNotStructOrTuple(GcKind, MemberNode),
     MemberAccessOnInvalidType(Value, MemberNode),
-    StringNotFoundOnHeap(StrId),
+    StringNotFoundOnHeap(HeapStrId),
     ScopeOverflow(usize),
     ScopeUnderflow,
     AssertionFailed(String),

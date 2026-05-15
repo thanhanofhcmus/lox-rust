@@ -7,7 +7,7 @@ use crate::{
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
-        heap::{GcHandle, GcKind, GcObject, Heap, StrId},
+        heap::{GcHandle, GcKind, GcObject, Heap, HeapStrId},
         prelude,
         values::{Array, Function, Map, Struct, Tuple},
     },
@@ -276,11 +276,11 @@ impl<'a> Environment<'a> {
         false
     }
 
-    pub fn get_string(&self, id: StrId) -> Result<&str, InterpretError> {
+    pub fn get_string(&self, id: HeapStrId) -> Result<&str, InterpretError> {
         self.heap.get_string_or_error(id)
     }
 
-    pub fn insert_string_id(&mut self, s: String) -> StrId {
+    pub fn insert_string_id(&mut self, s: String) -> HeapStrId {
         self.heap.insert_string(s)
     }
 

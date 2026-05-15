@@ -8,7 +8,7 @@ use crate::{
     interpret::{
         Environment,
         error::InterpretError,
-        heap::{GcHandle, StrId},
+        heap::{GcHandle, HeapStrId},
         interpreter::BorrowContext,
         values::{display_writer::DisplayWriter, number::Number, scalar::Scalar},
     },
@@ -53,7 +53,7 @@ pub enum Value {
     // TODO: Error crate needs display method and is using this format
     // we need to make error print the actual value or maybe keep printing String like this
     #[debug("String({:?})", _0)]
-    Str(StrId),
+    Str(HeapStrId),
 
     #[debug("Array({:?})", _0)]
     Array(GcHandle),
@@ -101,7 +101,7 @@ impl Value {
         }
     }
 
-    pub fn get_str_id(self) -> Option<StrId> {
+    pub fn get_str_id(self) -> Option<HeapStrId> {
         match self {
             Value::Str(str_id) => Some(str_id),
             _ => None,
@@ -354,7 +354,7 @@ impl DisplayWriter for Value {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MapKey {
     Scalar(Scalar),
-    Str(StrId),
+    Str(HeapStrId),
 }
 
 impl MapKey {
@@ -373,7 +373,7 @@ impl MapKey {
         }
     }
 
-    pub fn get_str_id(self) -> Option<StrId> {
+    pub fn get_str_id(self) -> Option<HeapStrId> {
         match self {
             Self::Str(str_id) => Some(str_id),
             _ => None,
@@ -515,13 +515,13 @@ mod tests {
 
     #[test]
     fn mapkey_from_str_ok() {
-        // We can't construct a StrId without going through an interner; use the
+        // We can't construct a HeapStrId without going through an interner; use the
         // default value that `mem::zeroed`-style construction would give via
         // serde/Copy semantics is not safe. Instead, construct through our own
         // interner — intentionally inlined to avoid a heap dependency.
         use crate::interpret::heap::HeapStringInterner;
         let mut interner = HeapStringInterner::default();
-        let id: StrId = interner.intern("hello");
+        let id: HeapStrId = interner.intern("hello");
         let k = MapKey::convert_from_value(Value::Str(id)).unwrap();
         assert_eq!(k.get_str_id(), Some(id));
     }

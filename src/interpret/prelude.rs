@@ -6,7 +6,7 @@ use crate::{
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
-        heap::{GcHandle, GcObject, StrId},
+        heap::{GcHandle, GcObject, HeapStrId},
         values::{BuiltinFn, MapKey, Number, SerialValue, Value},
     },
 };
@@ -340,7 +340,7 @@ fn get_bool_arg(func: BuiltinFn, arg: Value) -> Result<bool, InterpretError> {
     }
 }
 
-fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<StrId, InterpretError> {
+fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<HeapStrId, InterpretError> {
     match arg {
         Value::Str(str_id) => Ok(str_id),
         _ => Err(InterpretError::WrongArgumentType(

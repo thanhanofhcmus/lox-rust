@@ -10,9 +10,9 @@ use crate::{
     string_interner::StringInterner,
 };
 
-crate::define_type_index!(pub struct StrId);
+crate::define_type_index!(pub struct HeapStrId);
 
-pub type HeapStringInterner = StringInterner<StrId>;
+pub type HeapStringInterner = StringInterner<HeapStrId>;
 
 #[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[debug("GcHandle({_0})")]
@@ -387,11 +387,11 @@ impl Heap {
         Ok(root_value)
     }
 
-    pub fn insert_string(&mut self, s: String) -> StrId {
+    pub fn insert_string(&mut self, s: String) -> HeapStrId {
         self.string_interner.intern(&s)
     }
 
-    pub fn get_string_or_error(&self, id: StrId) -> Result<&str, InterpretError> {
+    pub fn get_string_or_error(&self, id: HeapStrId) -> Result<&str, InterpretError> {
         self.string_interner
             .get(id)
             .ok_or(InterpretError::StringNotFoundOnHeap(id))
