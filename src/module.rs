@@ -1,12 +1,12 @@
 use crate::{id::Id, string_interner::StringInterner};
 use std::collections::HashMap;
 
-crate::define_type_index!(pub struct StrId);
-pub type ModuleStringInterner = StringInterner<StrId>;
+crate::define_type_index!(pub struct ModuleStrId);
+pub type ModuleStringInterner = StringInterner<ModuleStrId>;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ModuleMetadata {
-    pub path: StrId,
+    pub path: ModuleStrId,
     pub package: Id,
 }
 
