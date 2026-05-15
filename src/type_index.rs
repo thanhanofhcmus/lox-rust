@@ -15,7 +15,7 @@ macro_rules! define_type_index {
             PartialEq, Eq, PartialOrd, Ord,
             Hash, Default
         )]
-        $vis struct $name(pub(self) usize);
+        $vis struct $name(usize);
 
         impl $crate::type_index::Index for $name {
             fn from_value(value: usize) -> Self { Self(value) }

@@ -66,11 +66,10 @@ impl ParseError {
             | ImportEmptyPath(s)
             | InvalidMapKeyType(s)
             | ReassignRootIsNotAnIdentifier(s)
-            // For Eof, we are pointing to that last input if possible, this is a bit incorrect, we want to point to **after* the last input
+            // For Eof we point at the last token if available; strictly we want
+            // to point *after* the last token, but a one-token-off arrow is close enough.
             | Eof(_, Some(s)) => s.to_start_row_col(input),
-            Eof(_, _) | ReassignAcrossModuleBoundary | RecursionLimitExceeded(_) => {
-                (0, 0)
-            }
+            Eof(_, None) | ReassignAcrossModuleBoundary | RecursionLimitExceeded(_) => (0, 0),
         }
     }
 

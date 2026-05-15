@@ -95,7 +95,7 @@ mod tests {
     fn get_unknown_id_returns_none() {
         let interner = SI::default();
         // Construct an id that was never interned by fabricating via next_id behavior:
-        // since StrId is not publicly constructible outside this module, we instead
+        // since the id is opaque outside the interner, we instead
         // intern once and then sweep it away, then try to get it.
         let mut interner = interner;
         let id = interner.intern("temp");

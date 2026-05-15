@@ -1,8 +1,10 @@
 use std::{collections::HashMap, hash::Hash};
 
-use crate::{define_type_index, id::Id, identifier_registry::IdentifierRegistry};
+use crate::{id::Id, identifier_registry::IdentifierRegistry};
 
-define_type_index!(pub struct TypeId);
+// `TypeId` is intentionally NOT defined via `define_type_index!` to let us control the underlying type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TypeId(usize);
 
 impl TypeId {
     // Using the top 4 bits for the category (allows 16 categories)
