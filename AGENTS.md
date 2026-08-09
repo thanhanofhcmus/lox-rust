@@ -60,7 +60,7 @@ The pipeline is orchestrated in `src/runner.rs` (`RunnerContext`), which also ha
 | `src/interpret/environment.rs` | Runtime scopes, module registry, `deinit_module` |
 | `src/interpret/heap.rs` | GC heap — mark-sweep for `Value` objects (arrays, maps, tuples, structs, closures) |
 | `src/interpret/error.rs` | `InterpretError` with runtime value rendering |
-| `src/interpret/prelude.rs` | Built-in functions (`print`, `assert`, `array_*`, `map_*`, `to_json`, `from_json`) |
+| `src/interpret/prelude.rs` | Built-in functions (`print`, `assert`, `_dbg_*`) |
 | `src/interpret/debug_string.rs` | Debug string rendering for interpreter internals |
 | `src/interpret/values/mod.rs` | `Value`, `GcObject` (Array, Map, Tuple, Struct, Closure) |
 | `src/interpret/values/value.rs` | Core `Value` type |

@@ -10,4 +10,4 @@ pub use environment::{Environment, Module, ModuleRegistry};
 pub use error::InterpretError;
 pub(crate) use heap::{GcHandle, GcObject, Heap};
 pub use interpreter::{BorrowContext, Interpreter};
-pub use values::{BuiltinFn, MapKey, Number, Value};
+pub use values::{BuiltinFn, MapKey, Number, SerialValue, Value};

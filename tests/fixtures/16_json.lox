@@ -1,17 +1,19 @@
 # ---------- JSON roundtrip ----------
 
+import "std:json" as json;
+
 # scalar roundtrip
-assert(from_json(to_json(42)) == 42, "int roundtrip");
-assert(from_json(to_json("hello")) == "hello", "string roundtrip");
-assert(from_json(to_json(true)) == true, "bool roundtrip");
+assert(json::parse(json::stringify(42)) == 42, "int roundtrip");
+assert(json::parse(json::stringify("hello")) == "hello", "string roundtrip");
+assert(json::parse(json::stringify(true)) == true, "bool roundtrip");
 
 # array roundtrip (nested)
 var arr = [1, 2, [3, 4, [5]]];
-assert(from_json(to_json(arr)) == arr, "nested array roundtrip");
+assert(json::parse(json::stringify(arr)) == arr, "nested array roundtrip");
 
 # map roundtrip (string keys only — serde JSON object keys)
 var m = %{ "a" => 1, "b" => [2, 3], "c" => "nested" };
-var back = from_json(to_json(m));
+var back = json::parse(json::stringify(m));
 assert(back["a"] == 1, "map roundtrip: scalar value");
 assert(back["b"] == [2, 3], "map roundtrip: array value");
 assert(back["c"] == "nested", "map roundtrip: string value");
@@ -19,28 +21,28 @@ assert(back["c"] == "nested", "map roundtrip: string value");
 # struct serialises to a JSON object (deserialising back gives a map)
 struct Point { x: number, y: number }
 var p = Point { x = 1, y = 2 };
-var p_back = from_json(to_json(p));
-assert(p_back["x"] == 1, "struct to_json: x field");
-assert(p_back["y"] == 2, "struct to_json: y field");
+var p_back = json::parse(json::stringify(p));
+assert(p_back["x"] == 1, "struct stringify: x field");
+assert(p_back["y"] == 2, "struct stringify: y field");
 
 # nested struct → nested JSON object
 struct Box { center: Point, label: str }
 var b = Box { center = Point { x = 10, y = 20 }, label = "boxy" };
-var b_back = from_json(to_json(b));
-assert(b_back["label"] == "boxy", "nested struct to_json: scalar field");
-assert(b_back["center"]["x"] == 10, "nested struct to_json: inner x");
-assert(b_back["center"]["y"] == 20, "nested struct to_json: inner y");
+var b_back = json::parse(json::stringify(b));
+assert(b_back["label"] == "boxy", "nested struct stringify: scalar field");
+assert(b_back["center"]["x"] == 10, "nested struct stringify: inner x");
+assert(b_back["center"]["y"] == 20, "nested struct stringify: inner y");
 
 # tuple serialises to a JSON array (deserialising back gives an array)
 var t = %(1, "hi", true);
-var t_back = from_json(to_json(t));
-assert(t_back[0] == 1, "tuple to_json: first");
-assert(t_back[1] == "hi", "tuple to_json: second");
-assert(t_back[2] == true, "tuple to_json: third");
+var t_back = json::parse(json::stringify(t));
+assert(t_back[0] == 1, "tuple stringify: first");
+assert(t_back[1] == "hi", "tuple stringify: second");
+assert(t_back[2] == true, "tuple stringify: third");
 
 # tuple containing a struct, struct containing a tuple — recursion works
 struct Pair { values: any }
 var px = Pair { values = %(7, 8) };
-var px_back = from_json(to_json(px));
-assert(px_back["values"][0] == 7, "struct-of-tuple to_json: first");
-assert(px_back["values"][1] == 8, "struct-of-tuple to_json: second");
+var px_back = json::parse(json::stringify(px));
+assert(px_back["values"][0] == 7, "struct-of-tuple stringify: first");
+assert(px_back["values"][1] == 8, "struct-of-tuple stringify: second");

@@ -6,8 +6,7 @@ use crate::{
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
-        heap::HeapStrId,
-        values::{BuiltinFn, SerialValue, Value},
+        values::{BuiltinFn, Value},
     },
 };
 
@@ -16,8 +15,6 @@ pub fn create() -> HashMap<Id, Value> {
 
     preludes.insert(Id::new("print"), Value::BuiltinFunction(print_fn));
     preludes.insert(Id::new("assert"), Value::BuiltinFunction(assert_fn));
-    preludes.insert(Id::new("from_json"), Value::BuiltinFunction(from_json_fn));
-    preludes.insert(Id::new("to_json"), Value::BuiltinFunction(to_json_fn));
 
     preludes.insert(Id::new("_dbg_print"), Value::BuiltinFunction(dbg_print_fn));
     preludes.insert(Id::new("_dbg_state"), Value::BuiltinFunction(dbg_state_fn));
@@ -139,39 +136,6 @@ fn stringify_assert_message(ctx: &BorrowContext, value: Value) -> Result<String,
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
-fn from_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(from_json_fn, &args, 1)?;
-    let value = args[0];
-    let str_id = get_str_arg(from_json_fn, value)?;
-    let s = ctx.environment.get_string(str_id)?;
-    let serial_value =
-        serde_json::from_str::<SerialValue>(s).map_err(|e| InterpretError::DeserializeFailed(value, e.to_string()))?;
-
-    let value = serial_value.hydrate(ctx.environment)?;
-
-    Ok(value)
-}
-
-fn to_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_min_args(to_json_fn, &args, 1)?;
-    let value = args[0];
-
-    let serial_value = SerialValue::convert_from_value(value, ctx.environment, ctx.identifier_registry)?;
-
-    let is_print_pretty = get_bool_arg(to_json_fn, args.get(1).copied().unwrap_or(Value::make_bool(false)))?;
-    let result = if is_print_pretty {
-        serde_json::to_string_pretty(&serial_value)
-    } else {
-        serde_json::to_string(&serial_value)
-    };
-    match result {
-        Ok(v) => Ok(ctx.environment.insert_string_variable(v)),
-        Err(err) => Err(InterpretError::SerializeFailed(value, err.to_string())),
-    }
-}
-
-// Argument validation helpers
-
 fn check_exact_args(func: BuiltinFn, args: &[Value], expected: usize) -> Result<(), InterpretError> {
     if args.len() != expected {
         return Err(InterpretError::WrongNumberOfArgument(
@@ -181,37 +145,4 @@ fn check_exact_args(func: BuiltinFn, args: &[Value], expected: usize) -> Result<
         ));
     }
     Ok(())
-}
-
-fn check_min_args(func: BuiltinFn, args: &[Value], min: usize) -> Result<(), InterpretError> {
-    if args.len() < min {
-        return Err(InterpretError::WrongNumberOfArgumentAtLeast(
-            Value::BuiltinFunction(func),
-            min,
-            args.len(),
-        ));
-    }
-    Ok(())
-}
-
-fn get_bool_arg(func: BuiltinFn, arg: Value) -> Result<bool, InterpretError> {
-    match arg.get_bool() {
-        Some(b) => Ok(b),
-        None => Err(InterpretError::WrongArgumentType(
-            Value::BuiltinFunction(func),
-            arg,
-            "bool",
-        )),
-    }
-}
-
-fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<HeapStrId, InterpretError> {
-    match arg {
-        Value::Str(str_id) => Ok(str_id),
-        _ => Err(InterpretError::WrongArgumentType(
-            Value::BuiltinFunction(func),
-            arg,
-            "str",
-        )),
-    }
 }

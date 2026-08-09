@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::{
     id::Id,
-    interpret::{self, BorrowContext, BuiltinFn, GcHandle, GcObject, InterpretError, MapKey, Number, Value},
+    interpret::{
+        self, BorrowContext, BuiltinFn, GcHandle, GcObject, InterpretError, MapKey, Number, SerialValue, Value,
+    },
     module::{ModuleIdentity, ModuleStringInterner},
     typecheck,
     types::{Type, TypeId, TypeInterner},
@@ -16,13 +18,18 @@ pub fn create_typecheck_modules(
     let modules = vec![
         array_typecheck_module(msi, type_interner),
         map_typecheck_module(msi, type_interner),
+        json_typecheck_module(msi, type_interner),
     ];
     modules
 }
 
 /// Returns pre-built interpret modules for all known std modules.
 pub fn create_interpret_modules(msi: &mut ModuleStringInterner) -> Vec<(ModuleIdentity, interpret::Module)> {
-    let modules = vec![array_interpret_module(msi), map_interpret_module(msi)];
+    let modules = vec![
+        array_interpret_module(msi),
+        map_interpret_module(msi),
+        json_interpret_module(msi),
+    ];
     modules
 }
 
@@ -333,6 +340,111 @@ fn get_map_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, InterpretError> 
             Value::BuiltinFunction(func),
             arg,
             "map",
+        )),
+    }
+}
+
+// ---- std:json ----------------------------------------------------------
+
+fn json_identity(msi: &mut ModuleStringInterner) -> ModuleIdentity {
+    ModuleIdentity {
+        resolved_path: msi.intern("std:json"),
+        is_std: true,
+    }
+}
+
+fn json_typecheck_module(
+    msi: &mut ModuleStringInterner,
+    type_interner: &mut TypeInterner,
+) -> (ModuleIdentity, typecheck::Module) {
+    let identity = json_identity(msi);
+    let mut symbol_scope = crate::types::TypeScope::new();
+
+    // parse: (str) -> any
+    let parse_type = type_interner.intern_type(&Type::Function {
+        params: vec![TypeId::STR],
+        variadic: None,
+        return_: TypeId::ANY,
+    });
+    symbol_scope.associate(Id::new("parse"), parse_type.0);
+
+    // stringify: (any, variadic bool) -> str
+    let stringify_type = type_interner.intern_type(&Type::Function {
+        params: vec![TypeId::ANY],
+        variadic: Some(TypeId::BOOL),
+        return_: TypeId::STR,
+    });
+    symbol_scope.associate(Id::new("stringify"), stringify_type.0);
+
+    let module = typecheck::Module {
+        symbol_scope,
+        struct_scope: crate::types::TypeScope::new(),
+    };
+
+    (identity, module)
+}
+
+fn json_interpret_module(msi: &mut ModuleStringInterner) -> (ModuleIdentity, interpret::Module) {
+    let identity = json_identity(msi);
+
+    let mut variables = HashMap::new();
+    variables.insert(Id::new("parse"), Value::BuiltinFunction(json_parse_fn));
+    variables.insert(Id::new("stringify"), Value::BuiltinFunction(json_stringify_fn));
+
+    let module = interpret::Module::new(variables);
+
+    (identity, module)
+}
+
+// ---- json function implementations ------------------------------------
+
+fn json_parse_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
+    check_exact_args(json_parse_fn, &args, 1)?;
+    let value = args[0];
+    let s = match value {
+        Value::Str(str_id) => ctx.environment.get_string(str_id)?.to_string(),
+        _ => {
+            return Err(InterpretError::WrongArgumentType(
+                Value::BuiltinFunction(json_parse_fn),
+                value,
+                "str",
+            ));
+        }
+    };
+    let serial_value =
+        serde_json::from_str::<SerialValue>(&s).map_err(|e| InterpretError::DeserializeFailed(value, e.to_string()))?;
+    let value = serial_value.hydrate(ctx.environment)?;
+    Ok(value)
+}
+
+fn json_stringify_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
+    check_min_args(json_stringify_fn, &args, 1)?;
+    let value = args[0];
+
+    let serial_value = SerialValue::convert_from_value(value, ctx.environment, ctx.identifier_registry)?;
+
+    let is_print_pretty = get_bool_arg(
+        json_stringify_fn,
+        args.get(1).copied().unwrap_or(Value::make_bool(false)),
+    )?;
+    let result = if is_print_pretty {
+        serde_json::to_string_pretty(&serial_value)
+    } else {
+        serde_json::to_string(&serial_value)
+    };
+    match result {
+        Ok(v) => Ok(ctx.environment.insert_string_variable(v)),
+        Err(err) => Err(InterpretError::SerializeFailed(value, err.to_string())),
+    }
+}
+
+fn get_bool_arg(func: BuiltinFn, arg: Value) -> Result<bool, InterpretError> {
+    match arg.get_bool() {
+        Some(b) => Ok(b),
+        None => Err(InterpretError::WrongArgumentType(
+            Value::BuiltinFunction(func),
+            arg,
+            "bool",
         )),
     }
 }

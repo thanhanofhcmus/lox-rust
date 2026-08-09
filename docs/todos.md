@@ -8,7 +8,7 @@
 
 ### Type Checker
 - **Reassignment rhs type check** — `a = rhs` doesn't verify `rhs`'s type against `a`'s declared type; `var a: number = 1; a = "oops";` passes typecheck
-- **`typechecker.rs` `convert_fn_call`** — skips ALL argument validation for variadic functions; affects `print`, `to_json`, `array_push`, `array_insert`, etc.
+- **`typechecker.rs` `convert_fn_call`** — skips ALL argument validation for variadic functions; affects `print`, `array::push`, `array::insert`, etc.
 - **`typechecker.rs` `convert_struct_literal`** — `Type::Any` arm is unreachable; prior `ok_or(UndefinedIdentifier)` always fires first
 
 ### Modules
@@ -65,10 +65,10 @@
 
 ### Strings
 - Formatted strings
-- JSON deserialisation for structs / tuples — needs schema hint e.g. `from_json("...", Point)`
 
 ### Standard Library
 - Map comprehension
+- JSON deserialisation for structs / tuples — needs schema hint e.g. `json::parse("...", Point)`
 - More `std:` modules (math, string, etc.)
 
 ### Errors & CLI
@@ -108,7 +108,7 @@
 - [X] Struct declaration parsing and typecheck — nominal typing, field count / name / type validation
 - [X] Struct runtime: literal construction, heap disposal, mark-sweep (including string field values)
 - [X] Struct equality in `Value::deep_eq` — nominal, field-count + recursive deep_eq
-- [X] JSON serialisation for structs & tuples — `to_json` renders structs as JSON objects, tuples as JSON arrays
+- [X] JSON serialisation for structs & tuples — `json::stringify` renders structs as JSON objects, tuples as JSON arrays
 - [X] Dot member access (read): `p.x`, chained, mixed with subscription; `Any` passes through to runtime
 - [X] Dot member access (write): `p.x = y`, chained, mixed chains
 - [X] Dedicated member-access errors — `MemberAccessOnInvalidType` and `GcObjectNotStructOrTuple`
@@ -124,6 +124,7 @@
 - [X] Array for comprehension — `[for x in array: expr]` with optional `if` filter; loop variable readonly
 - [X] Array std module — `std:array` with `length`, `push`, `pop`, `insert`
 - [X] Map std module — `std:map` with `length`, `keys`, `values`, `insert`, `remove`
+- [X] JSON std module — `std:json` with `parse` and `stringify`
 - [X] Map comprehension — `%{ for %(k, v) in map if k * v == 10 : k => v }`
 
 ### Control Flow & Scoping
@@ -145,7 +146,7 @@
 - [X] Shared interpret heap — single `&'a mut Heap` borrowed by all module environments
 
 ### Modules & Imports
-- [X] Standard library module infrastructure — `std:array`, `std:map` with pre-built typecheck + interpret registries
+- [X] Standard library module infrastructure — `std:array`, `std:map`, `std:json` with pre-built typecheck + interpret registries
 - [X] Basic import system — `import "self:relative/path.lox" as name;` with `package`, `self`, `std`, `thirdparty` parsing
 - [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; BFS transitive discovery
 - [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking

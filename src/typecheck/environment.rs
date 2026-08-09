@@ -159,8 +159,6 @@ impl<'a> Environment<'a> {
 const BUILTIN_NAMES: &[&str] = &[
     "print",
     "assert",
-    "from_json",
-    "to_json",
     "_dbg_print",
     "_dbg_state",
     "_dbg_gc_mark",
@@ -182,23 +180,6 @@ fn get_builtin_fn_type(name: &str) -> Type {
             params: vec![TypeId::BOOL, TypeId::STR],
             variadic: None,
             return_: TypeId::NIL,
-        },
-
-        "from_json" => Type::Function {
-            // Takes a JSON string and decodes it to whatever the JSON encodes
-            // (nil / bool / number / string / array / map). Caller gets `any`
-            // and narrows at use sites (or leaves the check to runtime).
-            params: vec![TypeId::STR],
-            variadic: None,
-            return_: TypeId::ANY,
-        },
-        "to_json" => Type::Function {
-            // Takes any serialisable value (scalar / string / array / map)
-            // plus an optional trailing `bool` for pretty-printing. Returns a
-            // JSON string.
-            params: vec![TypeId::ANY],
-            variadic: Some(TypeId::BOOL),
-            return_: TypeId::STR,
         },
 
         "_dbg_print" => Type::Function {
