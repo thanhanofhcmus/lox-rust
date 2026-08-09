@@ -117,7 +117,7 @@ impl RunnerContext {
     fn lex_and_parse(&mut self, source: &InputSource) -> Result<AST<()>, RunError> {
         trace!("Lexing start");
 
-        let input = source.get_text().map_err(|e| RunError::ModuleReadError(e))?;
+        let input = source.get_text().map_err(RunError::ModuleReadError)?;
 
         let tokens = parse::lex(&input).map_err(|err| {
             let msg = err.generate_user_facing_error(source);
@@ -305,13 +305,13 @@ impl RunnerContext {
             let identity = resolve_import_identity(
                 imp.metadata.package,
                 imp.metadata.path,
-                &importer_dir,
+                importer_dir,
                 &mut self.module_string_interner,
             )?;
             imp.identity = Some(identity.clone());
             let md_node_id = module_dag.add_node(identity);
             module_dag.add_edge(root_identity_node_id, md_node_id);
-            if !imp.identity.as_ref().map_or(false, |id| id.is_std) {
+            if !imp.identity.as_ref().is_some_and(|id| id.is_std) {
                 import_queue.push(md_node_id);
             }
         }
@@ -348,7 +348,7 @@ impl RunnerContext {
             }
 
             // Canonicalize so spans work correctly with absolute paths
-            let abs_path = std::path::absolute(&file_path).unwrap_or_else(|_| file_path.to_path_buf());
+            let abs_path = std::path::absolute(file_path).unwrap_or_else(|_| file_path.to_path_buf());
             let file_source = InputSource::File(abs_path);
 
             let mut untyped_ast = self.lex_and_parse(&file_source)?;
@@ -361,13 +361,13 @@ impl RunnerContext {
                 let identity = resolve_import_identity(
                     imp.metadata.package,
                     imp.metadata.path,
-                    &importer_dir,
+                    importer_dir,
                     &mut self.module_string_interner,
                 )?;
                 imp.identity = Some(identity.clone());
                 let next_node_id = module_dag.add_node(identity);
                 module_dag.add_edge(current_node_id, next_node_id);
-                if !imp.identity.as_ref().map_or(false, |id| id.is_std) {
+                if !imp.identity.as_ref().is_some_and(|id| id.is_std) {
                     import_queue.push(next_node_id);
                 }
             }

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     id::Id,
-    interpret::{
-        self, BorrowContext, GcHandle, GcObject, InterpretError, BuiltinFn, Number, Value,
-    },
+    interpret::{self, BorrowContext, BuiltinFn, GcHandle, GcObject, InterpretError, Number, Value},
     module::{ModuleIdentity, ModuleStringInterner},
     typecheck,
     types::{Type, TypeId, TypeInterner},
@@ -15,17 +13,13 @@ pub fn create_typecheck_modules(
     msi: &mut ModuleStringInterner,
     type_interner: &mut TypeInterner,
 ) -> Vec<(ModuleIdentity, typecheck::Module)> {
-    let mut modules = Vec::new();
-    modules.push(array_typecheck_module(msi, type_interner));
+    let modules = vec![array_typecheck_module(msi, type_interner)];
     modules
 }
 
 /// Returns pre-built interpret modules for all known std modules.
-pub fn create_interpret_modules(
-    msi: &mut ModuleStringInterner,
-) -> Vec<(ModuleIdentity, interpret::Module)> {
-    let mut modules = Vec::new();
-    modules.push(array_interpret_module(msi));
+pub fn create_interpret_modules(msi: &mut ModuleStringInterner) -> Vec<(ModuleIdentity, interpret::Module)> {
+    let modules = vec![array_interpret_module(msi)];
     modules
 }
 
