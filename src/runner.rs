@@ -75,12 +75,31 @@ pub struct RunnerContext {
 
 impl RunnerContext {
     pub fn new(strict_assert: bool) -> Self {
-        let type_interner = TypeInterner::new();
+        let mut type_interner = TypeInterner::new();
+        let mut module_string_interner = ModuleStringInterner::default();
+
+        let mut typecheck_module_registry = typecheck::ModuleRegistry::default();
+        let mut interpret_module_registry = interpret::ModuleRegistry::default();
+
+        // Pre-populate std modules into both registries
+        {
+            let tc_modules =
+                crate::std_module::create_typecheck_modules(&mut module_string_interner, &mut type_interner);
+            for (identity, module) in tc_modules {
+                typecheck_module_registry.insert(identity, module);
+            }
+
+            let it_modules = crate::std_module::create_interpret_modules(&mut module_string_interner);
+            for (identity, module) in it_modules {
+                interpret_module_registry.insert(identity, module);
+            }
+        }
+
         Self {
             global_identifier_registry: IdentifierRegistry::default(),
-            typecheck_module_registry: typecheck::ModuleRegistry::default(),
-            interpret_module_registry: interpret::ModuleRegistry::default(),
-            module_string_interner: ModuleStringInterner::default(),
+            typecheck_module_registry,
+            interpret_module_registry,
+            module_string_interner,
             type_interner,
             interpret_heap: Heap::new(),
 
@@ -272,6 +291,7 @@ impl RunnerContext {
 
         let root_identity = ModuleIdentity {
             resolved_path: self.module_string_interner.intern(source_name),
+            is_std: false,
         };
 
         let root_identity_node_id = module_dag.add_node(root_identity.clone());
@@ -282,18 +302,18 @@ impl RunnerContext {
         // Resolve and set identities on the root module's ImportNodes,
         // and add DAG edges in one pass.
         for imp in &mut ast.imports {
-            let rel_path = self
-                .module_string_interner
-                .get(imp.metadata.path)
-                .expect("path should be interned");
-            let resolved = resolve_relative_path(importer_dir, rel_path);
-            let identity = ModuleIdentity {
-                resolved_path: self.module_string_interner.intern(&resolved),
-            };
+            let identity = resolve_import_identity(
+                imp.metadata.package,
+                imp.metadata.path,
+                &importer_dir,
+                &mut self.module_string_interner,
+            )?;
             imp.identity = Some(identity.clone());
             let md_node_id = module_dag.add_node(identity);
             module_dag.add_edge(root_identity_node_id, md_node_id);
-            import_queue.push(md_node_id);
+            if !imp.identity.as_ref().map_or(false, |id| id.is_std) {
+                import_queue.push(md_node_id);
+            }
         }
 
         self.parse_cache.insert(root_identity.clone(), ast);
@@ -307,6 +327,11 @@ impl RunnerContext {
                 .data
                 .clone();
             if self.parse_cache.contains_key(&current_identity) {
+                continue;
+            }
+
+            // Std modules are pre-populated in the registries — nothing to parse.
+            if current_identity.is_std {
                 continue;
             }
 
@@ -333,18 +358,18 @@ impl RunnerContext {
             let importer_dir = file_path.parent().unwrap_or(Path::new("."));
 
             for imp in &mut untyped_ast.imports {
-                let rel_path = self
-                    .module_string_interner
-                    .get(imp.metadata.path)
-                    .expect("path should be interned");
-                let resolved = resolve_relative_path(importer_dir, rel_path);
-                let identity = ModuleIdentity {
-                    resolved_path: self.module_string_interner.intern(&resolved),
-                };
+                let identity = resolve_import_identity(
+                    imp.metadata.package,
+                    imp.metadata.path,
+                    &importer_dir,
+                    &mut self.module_string_interner,
+                )?;
                 imp.identity = Some(identity.clone());
                 let next_node_id = module_dag.add_node(identity);
                 module_dag.add_edge(current_node_id, next_node_id);
-                import_queue.push(next_node_id);
+                if !imp.identity.as_ref().map_or(false, |id| id.is_std) {
+                    import_queue.push(next_node_id);
+                }
             }
 
             self.parse_cache.insert(current_identity.clone(), untyped_ast);
@@ -366,6 +391,12 @@ impl RunnerContext {
                 .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
+
+            // Std modules are pre-populated in the typecheck registry — skip.
+            if node_identity.is_std {
+                continue;
+            }
+
             let untyped_ast = self
                 .parse_cache
                 .get(&node_identity)
@@ -376,7 +407,7 @@ impl RunnerContext {
                 .source_cache
                 .get(&node_identity)
                 .expect("source_cache should be populated for every module before typecheck")
-                .clone();
+                .clone(); // TODO: remove clone
 
             let (typed_ast, module) = self.type_check(untyped_ast, &module_source)?;
             self.typecheck_cache.insert(node_identity.clone(), typed_ast);
@@ -402,6 +433,12 @@ impl RunnerContext {
                 .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
+
+            // Std modules are pre-populated in the interpret registry — skip.
+            if node_identity.is_std {
+                continue;
+            }
+
             let typed_ast = self
                 .typecheck_cache
                 .get(&node_identity)
@@ -439,6 +476,29 @@ fn resolve_relative_path(importer_dir: &Path, rel_path: &str) -> String {
             .into_owned()
     } else {
         rel_path.to_string()
+    }
+}
+
+/// Resolve the identity of an imported module, handling std virtual modules.
+fn resolve_import_identity(
+    package: crate::id::Id,
+    path: crate::module::ModuleStrId,
+    importer_dir: &Path,
+    msi: &mut ModuleStringInterner,
+) -> Result<ModuleIdentity, RunError> {
+    if package == crate::id::Id::STD {
+        let rel_path = msi.get(path).expect("path should be interned");
+        Ok(ModuleIdentity {
+            resolved_path: msi.intern(&format!("std:{}", rel_path)),
+            is_std: true,
+        })
+    } else {
+        let rel_path = msi.get(path).expect("path should be interned");
+        let resolved = resolve_relative_path(importer_dir, rel_path);
+        Ok(ModuleIdentity {
+            resolved_path: msi.intern(&resolved),
+            is_std: false,
+        })
     }
 }
 

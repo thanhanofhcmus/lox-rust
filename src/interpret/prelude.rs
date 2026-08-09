@@ -19,11 +19,6 @@ pub fn create() -> HashMap<Id, Value> {
     preludes.insert(Id::new("from_json"), Value::BuiltinFunction(from_json_fn));
     preludes.insert(Id::new("to_json"), Value::BuiltinFunction(to_json_fn));
 
-    preludes.insert(Id::new("array_length"), Value::BuiltinFunction(array_length_fn));
-    preludes.insert(Id::new("array_push"), Value::BuiltinFunction(array_push_fn));
-    preludes.insert(Id::new("array_pop"), Value::BuiltinFunction(array_pop_fn));
-    preludes.insert(Id::new("array_insert"), Value::BuiltinFunction(array_insert_fn));
-
     preludes.insert(Id::new("map_length"), Value::BuiltinFunction(map_length_fn));
     preludes.insert(Id::new("map_keys"), Value::BuiltinFunction(map_keys_fn));
     preludes.insert(Id::new("map_values"), Value::BuiltinFunction(map_values_fn));
@@ -181,63 +176,6 @@ fn to_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interp
     }
 }
 
-// Array functions
-
-fn array_length_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(array_length_fn, &args, 1)?;
-    let handle = get_array_arg(array_length_fn, args[0])?;
-    let len = ctx.environment.get_array(handle)?.len();
-    Ok(Value::make_number(Number::Integer(len as i64)))
-}
-
-fn array_push_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_min_args(array_push_fn, &args, 1)?;
-    let handle = get_array_arg(array_push_fn, args[0])?;
-    // increment ref counts before taking the mutable heap reference
-    for v in args.iter().skip(1) {
-        ctx.environment.heap.shallow_copy_value(*v);
-    }
-    let Some(GcObject::Array(arr)) = ctx.environment.heap.get_object_mut(handle) else {
-        return Err(InterpretError::GcObjectNotFound(handle));
-    };
-    for v in args.into_iter().skip(1) {
-        arr.push(v);
-    }
-    Ok(Value::Unit)
-}
-
-fn array_pop_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(array_pop_fn, &args, 1)?;
-    let handle = get_array_arg(array_pop_fn, args[0])?;
-    let Some(GcObject::Array(arr)) = ctx.environment.heap.get_object_mut(handle) else {
-        return Err(InterpretError::GcObjectNotFound(handle));
-    };
-    // ownership of the popped value transfers to the caller; ref count stays at 1
-    Ok(arr.pop().unwrap_or(Value::make_nil()))
-}
-
-fn array_insert_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_min_args(array_insert_fn, &args, 3)?;
-    let handle = get_array_arg(array_insert_fn, args[0])?;
-    let idx = args[1].to_index()?;
-    // check bounds before the mutable borrow
-    let len = ctx.environment.get_array(handle)?.len();
-    if idx > len {
-        return Err(InterpretError::ArrayOutOfBound(len, idx));
-    }
-    // increment ref counts before taking the mutable heap reference
-    for v in args.iter().skip(2) {
-        ctx.environment.heap.shallow_copy_value(*v);
-    }
-    let Some(GcObject::Array(arr)) = ctx.environment.heap.get_object_mut(handle) else {
-        return Err(InterpretError::GcObjectNotFound(handle));
-    };
-    for (i, v) in args.into_iter().skip(2).enumerate() {
-        arr.insert(idx + i, v);
-    }
-    Ok(Value::Unit)
-}
-
 // Map functions
 
 fn map_length_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
@@ -347,17 +285,6 @@ fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<HeapStrId, InterpretError>
             Value::BuiltinFunction(func),
             arg,
             "str",
-        )),
-    }
-}
-
-fn get_array_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, InterpretError> {
-    match arg {
-        Value::Array(handle) => Ok(handle),
-        _ => Err(InterpretError::WrongArgumentType(
-            Value::BuiltinFunction(func),
-            arg,
-            "array",
         )),
     }
 }

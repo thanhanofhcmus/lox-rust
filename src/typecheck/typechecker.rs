@@ -1762,6 +1762,7 @@ mod tests {
 
         let identity = ModuleIdentity {
             resolved_path: msi.intern(import_path),
+            is_std: false,
         };
         mr.insert(identity, module);
 
@@ -1772,6 +1773,7 @@ mod tests {
         for imp in &mut ast.imports {
             imp.identity = Some(ModuleIdentity {
                 resolved_path: msi.intern(import_path),
+                is_std: false,
             });
         }
         TypeChecker::new(env).convert(ast)
@@ -1840,6 +1842,7 @@ mod tests {
         let mut mr = ModuleRegistry::default();
         let identity = ModuleIdentity {
             resolved_path: msi.intern("mod"),
+            is_std: false,
         };
         mr.insert(identity, module);
         let env = Environment::new(&mut ti, &mr);
@@ -1848,6 +1851,7 @@ mod tests {
         for imp in &mut ast.imports {
             imp.identity = Some(ModuleIdentity {
                 resolved_path: msi.intern("mod"),
+                is_std: false,
             });
         }
         let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
@@ -1868,12 +1872,14 @@ mod tests {
         mr.insert(
             ModuleIdentity {
                 resolved_path: msi.intern("a"),
+                is_std: false,
             },
             mod_a,
         );
         mr.insert(
             ModuleIdentity {
                 resolved_path: msi.intern("b"),
+                is_std: false,
             },
             mod_b,
         );
@@ -1891,6 +1897,7 @@ mod tests {
             let path = msi.get(imp.metadata.path).expect("path interned").to_string();
             imp.identity = Some(ModuleIdentity {
                 resolved_path: msi.intern(&path),
+                is_std: false,
             });
         }
         let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
@@ -1956,6 +1963,7 @@ mod tests {
         mr.insert(
             ModuleIdentity {
                 resolved_path: msi.intern("mod"),
+                is_std: false,
             },
             module,
         );
@@ -1966,6 +1974,7 @@ mod tests {
             let path = msi.get(imp.metadata.path).expect("path interned").to_string();
             imp.identity = Some(ModuleIdentity {
                 resolved_path: msi.intern(&path),
+                is_std: false,
             });
         }
         TypeChecker::new(env).convert(ast)
@@ -2006,6 +2015,7 @@ mod tests {
         mr.insert(
             ModuleIdentity {
                 resolved_path: msi.intern("mod"),
+                is_std: false,
             },
             module,
         );
@@ -2020,6 +2030,7 @@ mod tests {
         for imp in &mut ast.imports {
             imp.identity = Some(ModuleIdentity {
                 resolved_path: msi.intern("mod"),
+                is_std: false,
             });
         }
         let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
@@ -2048,6 +2059,7 @@ mod tests {
         mr.insert(
             ModuleIdentity {
                 resolved_path: msi.intern("mod"),
+                is_std: false,
             },
             module,
         );
@@ -2062,6 +2074,7 @@ mod tests {
         for imp in &mut ast.imports {
             imp.identity = Some(ModuleIdentity {
                 resolved_path: msi.intern("mod"),
+                is_std: false,
             });
         }
         let err = TypeChecker::new(env).convert(ast).unwrap_err();

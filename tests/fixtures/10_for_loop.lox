@@ -1,5 +1,7 @@
 # ---------- for-in loop over array ----------
 
+import "std:array" as array;
+
 # basic sum
 var total = 0;
 for x in [1, 2, 3, 4, 5] {
@@ -24,7 +26,7 @@ assert(parts == "abc", "for-in over strings");
 # variable bound is readonly in the body — reassigning a different name works
 var seen = [];
 for v in [10, 20, 30] {
-  array_push(seen, v);
+  array::push(seen, v);
 }
 assert(seen == [10, 20, 30], "for-in populates external array via push");
 

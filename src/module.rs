@@ -15,6 +15,7 @@ pub struct ModuleMetadata {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Default)]
 pub struct ModuleIdentity {
     pub resolved_path: ModuleStrId,
+    pub is_std: bool,
 }
 
 #[derive(Debug, Default)]

@@ -1,5 +1,7 @@
 # ---------- Arrays: literal, index, assign, repeat, comprehension, builtins ----------
 
+import "std:array" as array;
+
 # literal and indexing
 var a = [10, 20, 30];
 assert(a[0] == 10, "index 0");
@@ -24,7 +26,7 @@ assert(arr[idx] == "two", "float-valued integer index");
 
 # repeat syntax [:value:count]
 var zeros = [:0:5];
-assert(array_length(zeros) == 5, "repeat: length");
+assert(array::length(zeros) == 5, "repeat: length");
 assert(zeros[0] == 0, "repeat: first element");
 assert(zeros[4] == 0, "repeat: last element");
 
@@ -36,23 +38,23 @@ assert(doubles == [2, 4, 6], "comprehension without filter");
 var evens_doubled = [for x in [1, 2, 3, 4, 5] if x % 2 == 0: x * 10];
 assert(evens_doubled == [20, 40], "comprehension with filter");
 
-# builtins: array_length
-assert(array_length([]) == 0, "empty len");
-assert(array_length([1, 2, 3]) == 3, "len");
+# std:array module — length
+assert(array::length([]) == 0, "empty len");
+assert(array::length([1, 2, 3]) == 3, "len");
 
-# builtins: array_push (single and variadic, in-place)
+# std:array module — push (single and variadic, in-place)
 var p = [1, 2];
-array_push(p, 3);
+array::push(p, 3);
 assert(p == [1, 2, 3], "push single");
-array_push(p, 4, 5);
+array::push(p, 4, 5);
 assert(p == [1, 2, 3, 4, 5], "push variadic");
 
-# builtins: array_pop
-var popped = array_pop(p);
+# std:array module — pop
+var popped = array::pop(p);
 assert(popped == 5, "pop returns last");
-assert(array_length(p) == 4, "pop decreases length");
+assert(array::length(p) == 4, "pop decreases length");
 
-# builtins: array_insert
+# std:array module — insert
 var ins = [1, 2, 4];
-array_insert(ins, 2, 3);
+array::insert(ins, 2, 3);
 assert(ins == [1, 2, 3, 4], "insert at index");

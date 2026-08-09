@@ -8,5 +8,6 @@ mod values;
 
 pub use environment::{Environment, Module, ModuleRegistry};
 pub use error::InterpretError;
-pub(crate) use heap::Heap;
-pub use interpreter::Interpreter;
+pub(crate) use heap::{GcHandle, GcObject, Heap};
+pub use interpreter::{BorrowContext, Interpreter};
+pub use values::{BuiltinFn, Number, Value};

@@ -3,6 +3,8 @@
 # A panic in heap disposal or a dangling StrId after GC will abort the
 # process and fail the fixture.
 
+import "std:array" as array;
+
 # basic decl + literal + field read
 struct Point { x: number, y: number }
 var p = Point { x = 1, y = 2 };
@@ -58,12 +60,12 @@ struct Bag { items }
 
 # struct inside an array literal: array owns the struct handles
 var points = [Point { x = 1, y = 1 }, Point { x = 2, y = 2 }, Point { x = 3, y = 3 }];
-assert(array_length(points) == 3, "array of structs has correct length");
+assert(array::length(points) == 3, "array of structs has correct length");
 assert(points[1].x == 2, "field read on indexed struct");
 
 # drop the array holding structs; structs should be disposed recursively
 points = [];
-assert(array_length(points) == 0, "array emptied after reassignment");
+assert(array::length(points) == 0, "array emptied after reassignment");
 
 # force GC after everything to make sure nothing crashes
 _dbg_gc_mark_sweep();

@@ -9,6 +9,7 @@ mod module;
 mod parse;
 pub mod runner;
 mod span;
+mod std_module;
 mod string_interner;
 mod token;
 mod type_index;

@@ -96,7 +96,13 @@ impl ScopeStack {
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
-    variables: HashMap<Id, Value>,
+    pub variables: HashMap<Id, Value>,
+}
+
+impl Module {
+    pub fn new(variables: HashMap<Id, Value>) -> Self {
+        Self { variables }
+    }
 }
 
 pub type ModuleRegistry = GenericModuleRegistry<Module>;
@@ -105,7 +111,7 @@ const SCOPE_SIZE_LIMIT: usize = 100;
 
 #[derive(derive_more::Debug)]
 pub struct Environment<'a> {
-    pub(super) heap: &'a mut Heap,
+    pub(crate) heap: &'a mut Heap,
     scope_stack: ScopeStack,
     imported_modules: HashMap<Id, ModuleIdentity>,
 

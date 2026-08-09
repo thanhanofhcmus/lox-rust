@@ -161,10 +161,6 @@ const BUILTIN_NAMES: &[&str] = &[
     "assert",
     "from_json",
     "to_json",
-    "array_length",
-    "array_push",
-    "array_pop",
-    "array_insert",
     "map_length",
     "map_keys",
     "map_values",
@@ -208,28 +204,6 @@ fn get_builtin_fn_type(name: &str) -> Type {
             params: vec![TypeId::ANY],
             variadic: Some(TypeId::BOOL),
             return_: TypeId::STR,
-        },
-
-        "array_length" => Type::Function {
-            params: vec![TypeId::ANY],
-            variadic: None,
-            return_: TypeId::NUMBER,
-        },
-        "array_push" => Type::Function {
-            params: vec![TypeId::ANY],
-            variadic: Some(TypeId::ANY),
-            return_: TypeId::UNIT,
-        },
-        "array_pop" => Type::Function {
-            params: vec![TypeId::ANY],
-            variadic: None,
-            // Nill  or T
-            return_: TypeId::ANY,
-        },
-        "array_insert" => Type::Function {
-            params: vec![TypeId::ANY],
-            variadic: Some(TypeId::ANY),
-            return_: TypeId::UNIT,
         },
 
         "map_length" => Type::Function {
