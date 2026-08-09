@@ -24,19 +24,9 @@ pub(crate) fn math_typecheck_module(
     symbol_scope.associate(Id::new("tau"), TypeId::NUMBER);
     symbol_scope.associate(Id::new("e"), TypeId::NUMBER);
 
-    // (number) -> number
-    let unary_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::NUMBER],
-        variadic: None,
-        return_: TypeId::NUMBER,
-    });
+    let unary_type = type_interner.intern_type(&Type::FUNCTION_NUMBER_TO_NUMBER);
 
-    // (number, number) -> number
-    let binary_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::NUMBER, TypeId::NUMBER],
-        variadic: None,
-        return_: TypeId::NUMBER,
-    });
+    let binary_type = type_interner.intern_type(&Type::FUNCTION_NUMBER_NUMBER_TO_NUMBER);
 
     // Unary functions
     let unary_names = [

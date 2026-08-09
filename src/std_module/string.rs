@@ -19,92 +19,42 @@ pub(crate) fn string_typecheck_module(
 
     let mut symbol_scope = crate::types::TypeScope::new();
 
-    // (str) -> number
-    let str_to_number = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR],
-        variadic: None,
-        return_: TypeId::NUMBER,
-    });
+    let str_to_number = type_interner.intern_type(&Type::FUNCTION_STR_TO_NUMBER);
     symbol_scope.associate(Id::new("length"), str_to_number.0);
 
-    // (str) -> str
-    let str_to_str = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR],
-        variadic: None,
-        return_: TypeId::STR,
-    });
+    let str_to_str = type_interner.intern_type(&Type::FUNCTION_STR_TO_STR);
     for name in &["trim", "trim_start", "trim_end", "to_lower", "to_upper"] {
         symbol_scope.associate(Id::new(name), str_to_str.0);
     }
 
-    // (str) -> bool
-    let str_to_bool = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR],
-        variadic: None,
-        return_: TypeId::BOOL,
-    });
+    let str_to_bool = type_interner.intern_type(&Type::FUNCTION_STR_TO_BOOL);
     for name in &["is_alpha", "is_number", "is_alphanumeric"] {
         symbol_scope.associate(Id::new(name), str_to_bool.0);
     }
 
-    // (str, str) -> bool
-    let str_str_to_bool = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR, TypeId::STR],
-        variadic: None,
-        return_: TypeId::BOOL,
-    });
+    let str_str_to_bool = type_interner.intern_type(&Type::FUNCTION_STR_STR_TO_BOOL);
     for name in &["starts_with", "ends_with", "contains"] {
         symbol_scope.associate(Id::new(name), str_str_to_bool.0);
     }
 
-    // (str, str) -> number
-    let str_str_to_number = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR, TypeId::STR],
-        variadic: None,
-        return_: TypeId::NUMBER,
-    });
+    let str_str_to_number = type_interner.intern_type(&Type::FUNCTION_STR_STR_TO_NUMBER);
     for name in &["index_of", "last_index_of"] {
         symbol_scope.associate(Id::new(name), str_str_to_number.0);
     }
 
-    // replace: (str, str, str) -> str
-    let replace_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR, TypeId::STR, TypeId::STR],
-        variadic: None,
-        return_: TypeId::STR,
-    });
+    let replace_type = type_interner.intern_type(&Type::FUNCTION_STR_STR_STR_TO_STR);
     symbol_scope.associate(Id::new("replace"), replace_type.0);
 
-    // split: (str, str) -> any (returns array)
-    let split_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR, TypeId::STR],
-        variadic: None,
-        return_: TypeId::ANY,
-    });
+    let split_type = type_interner.intern_type(&Type::FUNCTION_STR_STR_TO_ANY);
     symbol_scope.associate(Id::new("split"), split_type.0);
 
-    // join: (any, str) -> str
-    let join_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY, TypeId::STR],
-        variadic: None,
-        return_: TypeId::STR,
-    });
+    let join_type = type_interner.intern_type(&Type::FUNCTION_ANY_STR_TO_STR);
     symbol_scope.associate(Id::new("join"), join_type.0);
 
-    // repeat: (str, number) -> str
-    let repeat_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR, TypeId::NUMBER],
-        variadic: None,
-        return_: TypeId::STR,
-    });
+    let repeat_type = type_interner.intern_type(&Type::FUNCTION_STR_NUMBER_TO_STR);
     symbol_scope.associate(Id::new("repeat"), repeat_type.0);
 
-    // substring: (str, number, variadic number?) -> str
-    let substring_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR, TypeId::NUMBER],
-        variadic: Some(TypeId::NUMBER),
-        return_: TypeId::STR,
-    });
+    let substring_type = type_interner.intern_type(&Type::FUNCTION_STR_NUMBER_VARIADIC_NUMBER_TO_STR);
     symbol_scope.associate(Id::new("substring"), substring_type.0);
 
     let module = typecheck::Module {

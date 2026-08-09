@@ -6,7 +6,7 @@ use crate::{
     interpret::{self, BorrowContext, GcObject, InterpretError, Number, Value},
     module::{ModuleIdentity, ModuleStringInterner},
     typecheck,
-    types::{Type, TypeId, TypeInterner},
+    types::{Type, TypeInterner},
 };
 
 // ---- std:array --------------------------------------------------------
@@ -19,36 +19,16 @@ pub(crate) fn array_typecheck_module(
 
     let mut symbol_scope = crate::types::TypeScope::new();
 
-    // length: (any) -> number
-    let length_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY],
-        variadic: None,
-        return_: TypeId::NUMBER,
-    });
+    let length_type = type_interner.intern_type(&Type::FUNCTION_ANY_TO_NUMBER);
     symbol_scope.associate(Id::new("length"), length_type.0);
 
-    // push: (any, variadic any) -> unit
-    let push_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY],
-        variadic: Some(TypeId::ANY),
-        return_: TypeId::UNIT,
-    });
+    let push_type = type_interner.intern_type(&Type::FUNCTION_ANY_VARIADIC_ANY_TO_UNIT);
     symbol_scope.associate(Id::new("push"), push_type.0);
 
-    // pop: (any) -> any
-    let pop_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY],
-        variadic: None,
-        return_: TypeId::ANY,
-    });
+    let pop_type = type_interner.intern_type(&Type::FUNCTION_ANY_TO_ANY);
     symbol_scope.associate(Id::new("pop"), pop_type.0);
 
-    // insert: (any, number, variadic any) -> unit
-    let insert_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY, TypeId::NUMBER],
-        variadic: Some(TypeId::ANY),
-        return_: TypeId::UNIT,
-    });
+    let insert_type = type_interner.intern_type(&Type::FUNCTION_ANY_NUMBER_VARIADIC_ANY_TO_UNIT);
     symbol_scope.associate(Id::new("insert"), insert_type.0);
 
     let module = typecheck::Module {

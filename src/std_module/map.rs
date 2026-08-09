@@ -6,7 +6,7 @@ use crate::{
     interpret::{self, BorrowContext, GcObject, InterpretError, MapKey, Number, Value},
     module::{ModuleIdentity, ModuleStringInterner},
     typecheck,
-    types::{Type, TypeId, TypeInterner},
+    types::{Type, TypeInterner},
 };
 
 // ---- std:map -----------------------------------------------------------
@@ -18,44 +18,19 @@ pub(crate) fn map_typecheck_module(
     let identity = map_identity(msi);
     let mut symbol_scope = crate::types::TypeScope::new();
 
-    // length: (any) -> number
-    let length_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY],
-        variadic: None,
-        return_: TypeId::NUMBER,
-    });
+    let length_type = type_interner.intern_type(&Type::FUNCTION_ANY_TO_NUMBER);
     symbol_scope.associate(Id::new("length"), length_type.0);
 
-    // keys: (any) -> any   (returns array)
-    let keys_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY],
-        variadic: None,
-        return_: TypeId::ANY,
-    });
+    let keys_type = type_interner.intern_type(&Type::FUNCTION_ANY_TO_ANY);
     symbol_scope.associate(Id::new("keys"), keys_type.0);
 
-    // values: (any) -> any   (returns array)
-    let values_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY],
-        variadic: None,
-        return_: TypeId::ANY,
-    });
+    let values_type = type_interner.intern_type(&Type::FUNCTION_ANY_TO_ANY);
     symbol_scope.associate(Id::new("values"), values_type.0);
 
-    // insert: (any, any, any) -> nil
-    let insert_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY, TypeId::ANY, TypeId::ANY],
-        variadic: None,
-        return_: TypeId::NIL,
-    });
+    let insert_type = type_interner.intern_type(&Type::FUNCTION_ANY_ANY_ANY_TO_NIL);
     symbol_scope.associate(Id::new("insert"), insert_type.0);
 
-    // remove: (any, any) -> any
-    let remove_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY, TypeId::ANY],
-        variadic: None,
-        return_: TypeId::ANY,
-    });
+    let remove_type = type_interner.intern_type(&Type::FUNCTION_ANY_ANY_TO_ANY);
     symbol_scope.associate(Id::new("remove"), remove_type.0);
 
     let module = typecheck::Module {

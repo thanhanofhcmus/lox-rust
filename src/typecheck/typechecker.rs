@@ -149,13 +149,14 @@ impl<'e> TypeChecker<'e> {
         }
         match self.environment.lookup_type(type_id) {
             Some(Type::Tuple { members }) => {
-                if members.len() != arity {
+                let slice = self.environment.lookup_type_id_slice(members);
+                if slice.len() != arity {
                     Err(TypecheckError::TupleDestructureArityMismatch {
                         expected: arity,
-                        actual: members.len(),
+                        actual: slice.len(),
                     })
                 } else {
-                    Ok(members.clone())
+                    Ok(slice.to_vec())
                 }
             }
             _ => Err(TypecheckError::CannotDestructureAsTuple(type_id)),
@@ -215,7 +216,8 @@ impl<'e> TypeChecker<'e> {
                     .iter()
                     .map(|n| self.extract_type_node_id(n))
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(self.environment.declare_type(&Type::Tuple { members }))
+                let slice = self.environment.declare_type_id_slice(members);
+                Ok(self.environment.declare_type(&Type::Tuple { members: slice }))
             }
         }
     }
@@ -243,9 +245,10 @@ impl<'e> TypeChecker<'e> {
             })
             .collect::<Result<Vec<_>, TypecheckError>>()?;
 
+        let fields_slice = self.environment.declare_struct_field_slice(fields);
         let type_id = self.environment.declare_type(&Type::Struct(StructType {
             id: node.iden.id,
-            fields,
+            fields: fields_slice,
         }));
         self.environment.associate_id_with_type(node.iden.id, type_id);
         Ok(node)
@@ -311,10 +314,10 @@ impl<'e> TypeChecker<'e> {
             .lookup_type(indexer_type_id)
             .ok_or(TypecheckError::TypeIsNotDeclaredInternal(indexer_type_id))?;
         match indexer_type {
-            Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => Ok(*elem),
-            Type::Map { key, value } if (*key == indexee_type_id) || (*key == TypeId::ANY) => {
+            Type::Array { elem } if matches!(indexee_type_id, TypeId::ANY | TypeId::NUMBER) => Ok(elem),
+            Type::Map { key, value } if (key == indexee_type_id) || (key == TypeId::ANY) => {
                 require_map_key_type(indexee_type_id)?;
-                Ok(*value)
+                Ok(value)
             }
             Type::Any => Ok(TypeId::ANY),
             _ => Err(TypecheckError::IndexOpTypeMismatch(indexer_type_id, indexee_type_id)),
@@ -332,24 +335,24 @@ impl<'e> TypeChecker<'e> {
             .ok_or(TypecheckError::TypeIsNotDeclaredInternal(object_type_id))?;
         match member {
             MemberNode::StructField(field) => match object_type {
-                Type::Struct(struct_type) => struct_type
-                    .fields
-                    .iter()
-                    .find(|f| f.id == field.id)
-                    .map(|f| f.type_)
-                    .ok_or(TypecheckError::StructFieldNotExist(object_type_id, field)),
+                Type::Struct(struct_type) => {
+                    let fields = self.environment.lookup_struct_field_slice(struct_type.fields);
+                    fields
+                        .iter()
+                        .find(|f| f.id == field.id)
+                        .map(|f| f.type_)
+                        .ok_or(TypecheckError::StructFieldNotExist(object_type_id, field))
+                }
                 _ => Err(TypecheckError::TypeIsNotStruct(object_type_id)),
             },
             MemberNode::TupleIndex(idx) => match object_type {
-                Type::Tuple { members: tuple_members } => {
-                    tuple_members
-                        .get(idx)
-                        .copied()
-                        .ok_or(TypecheckError::TupleIndexOutOfBound(
-                            object_type_id,
-                            tuple_members.len(),
-                            idx,
-                        ))
+                Type::Tuple { members } => {
+                    let slice = self.environment.lookup_type_id_slice(members);
+                    slice.get(idx).copied().ok_or(TypecheckError::TupleIndexOutOfBound(
+                        object_type_id,
+                        slice.len(),
+                        idx,
+                    ))
                 }
                 _ => Err(TypecheckError::TypeIsNotStruct(object_type_id)),
             },
@@ -456,10 +459,11 @@ impl<'e> TypeChecker<'e> {
 
     fn iterable_element_type(&mut self, collection_type_id: TypeId) -> TypeId {
         match self.environment.lookup_type(collection_type_id) {
-            Some(Type::Array { elem }) => *elem,
-            Some(Type::Map { key, value }) => self.environment.declare_type(&Type::Tuple {
-                members: vec![*key, *value],
-            }),
+            Some(Type::Array { elem }) => elem,
+            Some(Type::Map { key, value }) => {
+                let slice = self.environment.declare_type_id_slice(vec![key, value]);
+                self.environment.declare_type(&Type::Tuple { members: slice })
+            }
             _ => TypeId::ANY,
         }
     }
@@ -691,8 +695,9 @@ impl<'e> TypeChecker<'e> {
             .into_iter()
             .map(|m| self.convert_clause(m))
             .collect::<Result<Vec<_>, _>>()?;
+        let member_type_ids: Vec<TypeId> = members.iter().map(|v| v.extra).collect();
         let type_ = Type::Tuple {
-            members: members.iter().map(|v| v.extra).collect(),
+            members: self.environment.declare_type_id_slice(member_type_ids),
         };
         let type_id = self.environment.declare_type(&type_);
         Ok((type_id, TupleLiteralNode { members }))
@@ -732,16 +737,16 @@ impl<'e> TypeChecker<'e> {
 
         match type_ {
             Type::Struct(struct_type) => {
-                if fields.len() != struct_type.fields.len() {
+                let struct_fields = self.environment.lookup_struct_field_slice(struct_type.fields);
+                if fields.len() != struct_fields.len() {
                     return Err(TypecheckError::StructFieldCountMismatch(
                         struct_type_id,
-                        struct_type.fields.len(),
+                        struct_fields.len(),
                         fields.len(),
                     ));
                 }
                 for provided in &fields {
-                    let declared = struct_type
-                        .fields
+                    let declared = struct_fields
                         .iter()
                         .find(|f| f.id == provided.iden.id)
                         .ok_or(TypecheckError::StructFieldNotExist(struct_type_id, provided.iden))?;
@@ -796,9 +801,11 @@ impl<'e> TypeChecker<'e> {
             // is pre-declared only inside this fn body's scope, so it cannot
             // be seen by sibling statements in the enclosing scope. `take`
             // prevents nested fn literals from inheriting this.
+            let params_slice_id = this.environment.declare_type_id_slice(params_type_ids.clone());
+
             if let Some(self_iden) = this.current_declaration_id.take() {
                 let sig = this.environment.declare_type(&Type::Function {
-                    params: params_type_ids.clone(),
+                    params: params_slice_id,
                     variadic: None,
                     return_: explicit_return_type.unwrap_or(TypeId::ANY),
                 });
@@ -823,7 +830,7 @@ impl<'e> TypeChecker<'e> {
             };
 
             let type_id = this.environment.declare_type(&Type::Function {
-                params: params_type_ids,
+                params: params_slice_id,
                 // Normal function does not have a way to declare variadic function yet
                 variadic: None,
                 return_: return_type,
@@ -897,14 +904,16 @@ impl<'e> TypeChecker<'e> {
             .environment
             .lookup_type(caller_type_id)
             .ok_or(TypecheckError::TypeIsNotDeclaredInternal(caller_type_id))?;
-        let (param_type_ids, variadic_type_id, return_type_id) = match caller_type {
+        let (param_slice, variadic_type_id, return_type_id) = match caller_type {
             Type::Function {
                 params,
                 return_,
                 variadic,
-            } => (params, *variadic, *return_),
+            } => (params, variadic, return_),
             _ => return Err(TypecheckError::TypeIsNotCallable(caller_type_id)),
         };
+
+        let param_type_ids = self.environment.lookup_type_id_slice(param_slice);
 
         // TODO: variadic arg checking is broken — outer and inner both check
         // variadic_type_id.is_none(), making the inner check always true within this branch.
@@ -1816,20 +1825,22 @@ mod tests {
 
     #[test]
     fn import_and_access_module_struct_field() {
+        let mut ti = TypeInterner::new();
+        ti.init_static_slices();
+        let fields = ti.intern_struct_field_slice(vec![
+            StructField {
+                id: Id::new("x"),
+                type_: TypeId::NUMBER,
+            },
+            StructField {
+                id: Id::new("y"),
+                type_: TypeId::NUMBER,
+            },
+        ]);
         let struct_type = Type::Struct(StructType {
             id: Id::new("Point"),
-            fields: vec![
-                StructField {
-                    id: Id::new("x"),
-                    type_: TypeId::NUMBER,
-                },
-                StructField {
-                    id: Id::new("y"),
-                    type_: TypeId::NUMBER,
-                },
-            ],
+            fields,
         });
-        let mut ti = TypeInterner::new();
         let point_type_id = ti.intern_type(&struct_type).0;
 
         let mut module = Module::default();
@@ -1936,20 +1947,22 @@ mod tests {
     // ---------- module struct types ----------
 
     fn typecheck_with_struct_module(input: &str) -> Result<AST<TypeId>, TypecheckError> {
+        let mut ti = TypeInterner::new();
+        ti.init_static_slices();
+        let fields = ti.intern_struct_field_slice(vec![
+            StructField {
+                id: Id::new("x"),
+                type_: TypeId::NUMBER,
+            },
+            StructField {
+                id: Id::new("y"),
+                type_: TypeId::NUMBER,
+            },
+        ]);
         let struct_type = Type::Struct(StructType {
             id: Id::new("Point"),
-            fields: vec![
-                StructField {
-                    id: Id::new("x"),
-                    type_: TypeId::NUMBER,
-                },
-                StructField {
-                    id: Id::new("y"),
-                    type_: TypeId::NUMBER,
-                },
-            ],
+            fields,
         });
-        let mut ti = TypeInterner::new();
         let point_type_id = ti.intern_type(&struct_type).0;
 
         let mut module = Module::default();
@@ -1989,20 +2002,22 @@ mod tests {
 
     #[test]
     fn import_struct_construction_has_struct_type() {
+        let mut ti = TypeInterner::new();
+        ti.init_static_slices();
+        let fields = ti.intern_struct_field_slice(vec![
+            StructField {
+                id: Id::new("x"),
+                type_: TypeId::NUMBER,
+            },
+            StructField {
+                id: Id::new("y"),
+                type_: TypeId::NUMBER,
+            },
+        ]);
         let struct_type = Type::Struct(StructType {
             id: Id::new("Point"),
-            fields: vec![
-                StructField {
-                    id: Id::new("x"),
-                    type_: TypeId::NUMBER,
-                },
-                StructField {
-                    id: Id::new("y"),
-                    type_: TypeId::NUMBER,
-                },
-            ],
+            fields,
         });
-        let mut ti = TypeInterner::new();
         let point_type_id = ti.intern_type(&struct_type).0;
 
         let mut module = Module::default();
@@ -2039,14 +2054,16 @@ mod tests {
 
     #[test]
     fn import_struct_unknown_type_errors() {
+        let mut ti = TypeInterner::new();
+        ti.init_static_slices();
+        let fields = ti.intern_struct_field_slice(vec![StructField {
+            id: Id::new("x"),
+            type_: TypeId::NUMBER,
+        }]);
         let struct_type = Type::Struct(StructType {
             id: Id::new("Point"),
-            fields: vec![StructField {
-                id: Id::new("x"),
-                type_: TypeId::NUMBER,
-            }],
+            fields,
         });
-        let mut ti = TypeInterner::new();
         let point_type_id = ti.intern_type(&struct_type).0;
 
         let mut module = Module::default();

@@ -4,7 +4,7 @@ use crate::{
     id::Id,
     identifier_registry::ComplexId,
     module::{ModuleIdentity, ModuleRegistry as GenericModuleRegistry},
-    types::{Type, TypeId, TypeInterner, TypeScope},
+    types::{SliceId, StructField, Type, TypeId, TypeInterner, TypeScope},
 };
 
 pub type ModuleRegistry = GenericModuleRegistry<Module>;
@@ -131,8 +131,24 @@ impl<'a> Environment<'a> {
         self.type_interner.intern_type(type_)
     }
 
-    pub fn lookup_type(&self, type_id: TypeId) -> Option<&Type> {
+    pub fn lookup_type(&self, type_id: TypeId) -> Option<Type> {
         self.type_interner.get_type(type_id)
+    }
+
+    pub fn declare_type_id_slice(&mut self, v: Vec<TypeId>) -> SliceId {
+        self.type_interner.intern_type_id_slice(v)
+    }
+
+    pub fn declare_struct_field_slice(&mut self, v: Vec<StructField>) -> SliceId {
+        self.type_interner.intern_struct_field_slice(v)
+    }
+
+    pub fn lookup_type_id_slice(&self, slice_id: SliceId) -> &[TypeId] {
+        self.type_interner.lookup_type_id_slice(slice_id)
+    }
+
+    pub fn lookup_struct_field_slice(&self, slice_id: SliceId) -> &[StructField] {
+        self.type_interner.lookup_struct_field_slice(slice_id)
     }
 
     pub fn associate_id_with_type(&mut self, id: Id, type_id: TypeId) {
@@ -168,32 +184,13 @@ const BUILTIN_NAMES: &[&str] = &[
 ];
 
 fn get_builtin_fn_type(name: &str) -> Type {
-    // TODO: Generate type parameters for arrays and maps function
     match name {
-        "print" => Type::Function {
-            params: vec![],
-            variadic: Some(TypeId::STR),
-            return_: TypeId::NIL,
-        },
-
-        "assert" => Type::Function {
-            params: vec![TypeId::BOOL, TypeId::STR],
-            variadic: None,
-            return_: TypeId::NIL,
-        },
-
-        "_dbg_print" => Type::Function {
-            params: vec![],
-            variadic: Some(TypeId::ANY),
-            return_: TypeId::NIL,
-        },
-
-        "_dbg_state" | "_dbg_gc_mark" | "_dbg_gc_sweep" | "_dbg_gc_mark_sweep" | "_dbg_heap_stats" => Type::Function {
-            params: vec![],
-            variadic: None,
-            return_: TypeId::NIL,
-        },
-
+        "print" => Type::FUNCTION_EMPTY_VARIADIC_STR_TO_NIL,
+        "assert" => Type::FUNCTION_BOOL_STR_TO_NIL,
+        "_dbg_print" => Type::FUNCTION_EMPTY_VARIADIC_ANY_TO_NIL,
+        "_dbg_state" | "_dbg_gc_mark" | "_dbg_gc_sweep" | "_dbg_gc_mark_sweep" | "_dbg_heap_stats" => {
+            Type::FUNCTION_EMPTY_TO_NIL
+        }
         _ => Type::Any,
     }
 }

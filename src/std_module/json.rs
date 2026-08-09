@@ -6,7 +6,7 @@ use crate::{
     interpret::{self, BorrowContext, InterpretError, SerialValue, Value},
     module::{ModuleIdentity, ModuleStringInterner},
     typecheck,
-    types::{Type, TypeId, TypeInterner},
+    types::{Type, TypeInterner},
 };
 
 // ---- std:json ----------------------------------------------------------
@@ -18,20 +18,10 @@ pub(crate) fn json_typecheck_module(
     let identity = json_identity(msi);
     let mut symbol_scope = crate::types::TypeScope::new();
 
-    // parse: (str) -> any
-    let parse_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::STR],
-        variadic: None,
-        return_: TypeId::ANY,
-    });
+    let parse_type = type_interner.intern_type(&Type::FUNCTION_STR_TO_ANY);
     symbol_scope.associate(Id::new("parse"), parse_type.0);
 
-    // stringify: (any, variadic bool) -> str
-    let stringify_type = type_interner.intern_type(&Type::Function {
-        params: vec![TypeId::ANY],
-        variadic: Some(TypeId::BOOL),
-        return_: TypeId::STR,
-    });
+    let stringify_type = type_interner.intern_type(&Type::FUNCTION_ANY_VARIADIC_BOOL_TO_STR);
     symbol_scope.associate(Id::new("stringify"), stringify_type.0);
 
     let module = typecheck::Module {
