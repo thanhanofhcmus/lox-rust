@@ -150,14 +150,13 @@ impl RunnerContext {
         typecheck::Environment::from_module(repl_module, &mut self.type_interner, &self.typecheck_module_registry)
     }
 
-    fn type_check(
-        &mut self,
-        ast: AST<()>,
-        source: &InputSource,
-        is_repl_module: bool,
-    ) -> Result<(AST<TypeId>, typecheck::Module), RunError> {
+    fn type_check(&mut self, ast: AST<()>, source: &InputSource) -> Result<(AST<TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
-        let typecheck_env = if is_repl_module { self.create_repl_typecheck_env() } else { self.create_typecheck_env() };
+        let typecheck_env = if matches!(source, InputSource::Repl(_)) {
+            self.create_repl_typecheck_env()
+        } else {
+            self.create_typecheck_env()
+        };
         let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
 
         match typechecker.convert(ast) {
@@ -177,16 +176,11 @@ impl RunnerContext {
         }
     }
 
-    fn interpret(
-        &mut self,
-        ast: AST<TypeId>,
-        source: &InputSource,
-        is_repl_module: bool,
-    ) -> Result<interpret::Module, RunError> {
+    fn interpret(&mut self, ast: AST<TypeId>, source: &InputSource) -> Result<interpret::Module, RunError> {
         debug!("interpreting start");
         let print_writer = Rc::new(RefCell::new(std::io::stdout()));
         let strict_assert = self.strict_assert;
-        let interpret_env = if is_repl_module {
+        let interpret_env = if matches!(source, InputSource::Repl(_)) {
             let repl_module = self.repl_interpreter_module.clone();
             interpret::Environment::from_module(repl_module, &mut self.interpret_heap, &self.interpret_module_registry)
         } else {
@@ -234,7 +228,7 @@ impl RunnerContext {
             InputSource::File(abs)
         };
 
-        let (mut module_dag, root_identity) = self.parse_module_tree(input, source_name, &root_source)?;
+        let mut module_dag = self.parse_module_tree(input, source_name, &root_source)?;
 
         if module_dag.has_cycle() {
             error!("Circular import detected");
@@ -244,14 +238,14 @@ impl RunnerContext {
 
         let order = module_dag.get_leaf_first_order();
 
-        if let Err(e) = self.typecheck_module_tree(&module_dag, &order, &root_identity, is_in_repl) {
+        if let Err(e) = self.typecheck_module_tree(&module_dag, &order) {
             if is_in_repl {
                 self.repl_typecheck_module = saved_tc;
             }
             return Err(e);
         }
 
-        match self.interpret_module_tree(&module_dag, &order, &root_identity, is_in_repl) {
+        match self.interpret_module_tree(&module_dag, &order) {
             Ok(()) => Ok(()),
             Err(e) => {
                 if is_in_repl {
@@ -270,7 +264,7 @@ impl RunnerContext {
         _input: &str,
         source_name: &str,
         root_source: &InputSource,
-    ) -> Result<(DAG<ModuleIdentity, ModuleDagId>, ModuleIdentity), RunError> {
+    ) -> Result<DAG<ModuleIdentity, ModuleDagId>, RunError> {
         let mut module_dag = DAG::new();
         let mut import_queue: Vec<ModuleDagId> = vec![];
 
@@ -357,7 +351,7 @@ impl RunnerContext {
             self.source_cache.insert(current_identity, file_source);
         }
 
-        Ok((module_dag, root_identity))
+        Ok(module_dag)
     }
 
     /// Typecheck every module in leaf-first order.
@@ -365,8 +359,6 @@ impl RunnerContext {
         &mut self,
         module_dag: &DAG<ModuleIdentity, ModuleDagId>,
         order: &[ModuleDagId],
-        root_identity: &ModuleIdentity,
-        is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
             let node_identity = module_dag
@@ -386,11 +378,9 @@ impl RunnerContext {
                 .expect("source_cache should be populated for every module before typecheck")
                 .clone();
 
-            let is_repl_module = is_in_repl && *root_identity == node_identity;
-
-            let (typed_ast, module) = self.type_check(untyped_ast, &module_source, is_repl_module)?;
+            let (typed_ast, module) = self.type_check(untyped_ast, &module_source)?;
             self.typecheck_cache.insert(node_identity.clone(), typed_ast);
-            if is_repl_module {
+            if matches!(&module_source, InputSource::Repl(_)) {
                 self.repl_typecheck_module = module;
             } else {
                 self.typecheck_module_registry.insert(node_identity, module);
@@ -405,8 +395,6 @@ impl RunnerContext {
         &mut self,
         module_dag: &DAG<ModuleIdentity, ModuleDagId>,
         order: &[ModuleDagId],
-        root_identity: &ModuleIdentity,
-        is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
             let node_identity = module_dag
@@ -426,10 +414,8 @@ impl RunnerContext {
                 .expect("source_cache should be populated for every module before interpret")
                 .clone();
 
-            let is_repl_module = is_in_repl && *root_identity == node_identity;
-
-            let module = self.interpret(typed_ast, &module_source, is_repl_module)?;
-            if is_repl_module {
+            let module = self.interpret(typed_ast, &module_source)?;
+            if matches!(&module_source, InputSource::Repl(_)) {
                 self.repl_interpreter_module = module;
             } else {
                 self.interpret_module_registry.insert(node_identity, module);
