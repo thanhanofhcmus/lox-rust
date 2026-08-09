@@ -3,12 +3,14 @@ mod helpers;
 mod json;
 mod map;
 mod math;
+mod string;
 
 pub(crate) use self::json::json_interpret_module;
 pub(crate) use self::json::json_typecheck_module;
 pub(crate) use self::{array::array_interpret_module, array::array_typecheck_module};
 pub(crate) use self::{map::map_interpret_module, map::map_typecheck_module};
 pub(crate) use self::{math::math_interpret_module, math::math_typecheck_module};
+pub(crate) use self::{string::string_interpret_module, string::string_typecheck_module};
 
 use crate::{
     interpret,
@@ -27,6 +29,7 @@ pub fn create_typecheck_modules(
         map_typecheck_module(msi, type_interner),
         json_typecheck_module(msi, type_interner),
         math_typecheck_module(msi, type_interner),
+        string_typecheck_module(msi, type_interner),
     ];
     modules
 }
@@ -38,6 +41,7 @@ pub fn create_interpret_modules(msi: &mut ModuleStringInterner) -> Vec<(ModuleId
         map_interpret_module(msi),
         json_interpret_module(msi),
         math_interpret_module(msi),
+        string_interpret_module(msi),
     ];
     modules
 }

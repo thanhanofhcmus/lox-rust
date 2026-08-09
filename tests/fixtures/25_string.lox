@@ -1,0 +1,78 @@
+# ---------- std:string module ----------
+
+import "std:string" as string;
+
+# ---- length ----
+assert(string::length("") == 0, "length empty");
+assert(string::length("hello") == 5, "length ascii");
+assert(string::length("héllo") == 5, "length unicode");
+
+# ---- starts_with ----
+assert(string::starts_with("hello world", "hello"), "starts_with true");
+assert(not (string::starts_with("hello world", "world")), "starts_with false");
+assert(string::starts_with("abc", ""), "starts_with empty prefix");
+
+# ---- ends_with ----
+assert(string::ends_with("hello world", "world"), "ends_with true");
+assert(not (string::ends_with("hello world", "hello")), "ends_with false");
+assert(string::ends_with("abc", ""), "ends_with empty suffix");
+
+# ---- contains ----
+assert(string::contains("hello world", "lo wo"), "contains true");
+assert(not (string::contains("hello world", "xyz")), "contains false");
+assert(string::contains("abc", ""), "contains empty needle");
+
+# ---- index_of ----
+assert(string::index_of("hello", "l") == 2, "index_of found");
+assert(string::index_of("hello", "x") == -1, "index_of not found");
+assert(string::index_of("héllo", "l") == 2, "index_of unicode char offset");
+
+# ---- last_index_of ----
+assert(string::last_index_of("hello", "l") == 3, "last_index_of found");
+assert(string::last_index_of("hello", "x") == -1, "last_index_of not found");
+
+# ---- replace ----
+assert(string::replace("hello hello", "hello", "hi") == "hi hi", "replace all");
+assert(string::replace("abc", "x", "y") == "abc", "replace no match");
+
+# ---- split ----
+var parts = string::split("a,b,c", ",");
+assert(parts == ["a", "b", "c"], "split comma");
+
+# ---- join ----
+assert(string::join(["a", "b", "c"], ",") == "a,b,c", "join comma");
+
+# ---- trim ----
+assert(string::trim("  hello  ") == "hello", "trim both");
+assert(string::trim_start("  hello") == "hello", "trim start");
+assert(string::trim_end("hello  ") == "hello", "trim end");
+
+# ---- to_lower / to_upper ----
+assert(string::to_lower("HELLO") == "hello", "to_lower");
+assert(string::to_upper("hello") == "HELLO", "to_upper");
+
+# ---- repeat ----
+assert(string::repeat("ab", 3) == "ababab", "repeat");
+assert(string::repeat("x", 0) == "", "repeat zero");
+
+# ---- substring ----
+assert(string::substring("hello", 1, 4) == "ell", "substring range");
+assert(string::substring("hello", 1) == "ello", "substring from");
+assert(string::substring("hello", 10) == "", "substring past end");
+assert(string::substring("héllo", 1, 4) == "éll", "substring unicode");
+
+# ---- is_alpha ----
+assert(string::is_alpha("abc"), "is_alpha true");
+assert(not (string::is_alpha("123")), "is_alpha digit");
+assert(not (string::is_alpha("")), "is_alpha empty");
+
+# ---- is_number ----
+assert(string::is_number("123"), "is_number true");
+assert(not (string::is_number("abc")), "is_number letter");
+assert(not (string::is_number("")), "is_number empty");
+
+# ---- is_alphanumeric ----
+assert(string::is_alphanumeric("abc123"), "is_alphanumeric letter first");
+assert(string::is_alphanumeric("123abc"), "is_alphanumeric digit first");
+assert(not (string::is_alphanumeric("--hello")), "is_alphanumeric symbol");
+assert(not (string::is_alphanumeric("")), "is_alphanumeric empty");

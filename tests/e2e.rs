@@ -48,6 +48,7 @@ fixture_tests! {
     import_struct:        "22_import_struct.lox",
     import_struct_type:   "23_import_struct_type.lox",
     math_std:             "24_math.lox",
+    string_std:           "25_string.lox",
 }
 
 // ---------- negative-path: must return an error containing a specific message ----------

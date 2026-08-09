@@ -21,6 +21,18 @@ pub struct BorrowContext<'a, 'e> {
     pub strict_assert: bool,
 }
 
+impl<'a, 'e> BorrowContext<'a, 'e> {
+    /// Extract a string reference from a Value, or return a type error.
+    pub fn get_str_value(&self, func: BuiltinFn, arg: Value) -> Result<&str, InterpretError> {
+        let id = arg.get_str_id().ok_or(InterpretError::WrongArgumentType(
+            Value::BuiltinFunction(func),
+            arg,
+            "str",
+        ))?;
+        self.environment.get_string(id)
+    }
+}
+
 #[derive(Debug)]
 struct ValueReturn {
     value: Option<Value>,
