@@ -1,3 +1,4 @@
+use crate::input_source::InputSource;
 use crate::span::Span;
 use crate::token::Token;
 use thiserror::Error;
@@ -51,7 +52,7 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    pub fn get_source_start(&self, input: &str) -> (usize, usize) {
+    pub fn get_source_start(&self, source: &InputSource) -> (usize, usize) {
         use ParseError::*;
         match self {
             UnexpectedCharacter(s)
@@ -68,16 +69,16 @@ impl ParseError {
             | ReassignRootIsNotAnIdentifier(s)
             // For Eof we point at the last token if available; strictly we want
             // to point *after* the last token, but a one-token-off arrow is close enough.
-            | Eof(_, Some(s)) => s.to_start_row_col(input),
+            | Eof(_, Some(s)) => source.to_start_row_col(*s),
             Eof(_, None) | ReassignAcrossModuleBoundary | RecursionLimitExceeded(_) => (0, 0),
         }
     }
 
-    pub fn generate_user_facing_error(&self, source_name: &str, input: &str) -> String {
-        let (line, col) = self.get_source_start(input);
+    pub fn generate_user_facing_error(&self, source: &InputSource) -> String {
+        let (line, col) = self.get_source_start(source);
 
         // Locate the line in source
-        let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
+        let source_line = source.line(line).unwrap_or_default();
 
         // Format the visual components
         let line_label = line.to_string();
@@ -91,7 +92,7 @@ impl ParseError {
         output.push_str(&format!("Parse Error: {}\n", self));
 
         // File location line (clickable in most IDEs)
-        output.push_str(&format!("  at {}:{}:{}\n", source_name, line, col));
+        output.push_str(&format!("  at {}:{}:{}\n", source.source_name(), line, col));
 
         // Code snippet visualization
         output.push_str(&format!("{} |\n", gutter_padding));

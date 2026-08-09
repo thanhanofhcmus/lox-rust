@@ -4,6 +4,7 @@ use crate::{
     ast::MemberNode,
     id::Id,
     identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry},
+    input_source::InputSource,
     interpret::{
         Environment,
         heap::{GcHandle, GcKind, HeapStrId},
@@ -55,17 +56,15 @@ pub enum InterpretError {
 impl InterpretError {
     pub fn generate_user_facing_error(
         &self,
-        source_name: &str,
-        input: &str,
+        source: &InputSource,
         env: &Environment,
         ir: &IdentifierRegistry,
     ) -> String {
         let description = self.resolve_description(env, ir);
-        let source_name = format!("\n  --> {source_name}\n");
+        let source_name = format!("\n  --> {}\n", source.source_name());
 
         // Interpret errors don't carry source spans, so show just the message
         // unless a future variant adds span support
-        let _ = input;
         format!("Runtime Error: {description}{source_name}")
     }
 

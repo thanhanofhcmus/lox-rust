@@ -13,6 +13,7 @@ use crate::{
     ast::AST,
     dag::DAG,
     identifier_registry::IdentifierRegistry,
+    input_source::InputSource,
     interpret::{self, Heap, InterpretError},
     module::{ModuleIdentity, ModuleStringInterner},
     parse::{self, ParseError},
@@ -63,6 +64,7 @@ pub struct RunnerContext {
 
     // caches keyed by resolved ModuleIdentity
     parse_cache: HashMap<ModuleIdentity, AST<()>>,
+    source_cache: HashMap<ModuleIdentity, InputSource>,
     typecheck_cache: HashMap<ModuleIdentity, AST<TypeId>>,
 
     repl_typecheck_module: typecheck::Module,
@@ -83,6 +85,7 @@ impl RunnerContext {
             interpret_heap: Heap::new(),
 
             parse_cache: HashMap::new(),
+            source_cache: HashMap::new(),
             typecheck_cache: HashMap::new(),
 
             repl_typecheck_module: typecheck::Module::default(),
@@ -92,11 +95,13 @@ impl RunnerContext {
         }
     }
 
-    fn lex_and_parse(&mut self, input: &str, source_name: &str) -> Result<AST<()>, RunError> {
+    fn lex_and_parse(&mut self, source: &InputSource) -> Result<AST<()>, RunError> {
         trace!("Lexing start");
 
-        let tokens = parse::lex(input).map_err(|err| {
-            let msg = err.generate_user_facing_error(source_name, input);
+        let input = source.get_text().map_err(|e| RunError::ModuleReadError(e))?;
+
+        let tokens = parse::lex(&input).map_err(|err| {
+            let msg = err.generate_user_facing_error(source);
             error!("Lex error:\n{}", msg);
             RunError::Parse {
                 message: msg,
@@ -110,19 +115,19 @@ impl RunnerContext {
                 "{} - {:?}: {:?}",
                 token.span,
                 token.token,
-                token.span.str_from_source(input),
+                token.span.str_from_source(&input),
             );
         }
 
         debug!("Parsing start");
         let ast = parse::parse(
-            input,
+            &input,
             &tokens,
             &mut self.global_identifier_registry,
             &mut self.module_string_interner,
         )
         .map_err(|err| {
-            let msg = err.generate_user_facing_error(source_name, input);
+            let msg = err.generate_user_facing_error(source);
             error!("Parse error:\n{}", msg);
             RunError::Parse {
                 message: msg,
@@ -148,8 +153,7 @@ impl RunnerContext {
     fn type_check(
         &mut self,
         ast: AST<()>,
-        input: &str,
-        source_name: &str,
+        source: &InputSource,
         is_repl_module: bool,
     ) -> Result<(AST<TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
@@ -158,12 +162,7 @@ impl RunnerContext {
 
         match typechecker.convert(ast) {
             Err(err) => {
-                let msg = err.generate_user_facing_error(
-                    source_name,
-                    input,
-                    &self.global_identifier_registry,
-                    &self.type_interner,
-                );
+                let msg = err.generate_user_facing_error(source, &self.global_identifier_registry, &self.type_interner);
                 error!("Typecheck error:\n{}", msg);
                 Err(RunError::Typecheck {
                     message: msg,
@@ -181,8 +180,7 @@ impl RunnerContext {
     fn interpret(
         &mut self,
         ast: AST<TypeId>,
-        input: &str,
-        source_name: &str,
+        source: &InputSource,
         is_repl_module: bool,
     ) -> Result<interpret::Module, RunError> {
         debug!("interpreting start");
@@ -209,12 +207,8 @@ impl RunnerContext {
                 Ok(module)
             }
             Err(err) => {
-                let msg = err.generate_user_facing_error(
-                    source_name,
-                    input,
-                    interpreter.get_env(),
-                    interpreter.get_identifer_registry(),
-                );
+                let msg =
+                    err.generate_user_facing_error(source, interpreter.get_env(), interpreter.get_identifer_registry());
                 error!("Interpreter error:\n{}", msg);
                 Err(RunError::Interpret {
                     message: msg,
@@ -230,7 +224,17 @@ impl RunnerContext {
         let saved_tc = self.repl_typecheck_module.clone();
         let saved_it = self.repl_interpreter_module.clone();
 
-        let (mut module_dag, root_identity) = self.parse_module_tree(input, source_name)?;
+        let root_source = if is_in_repl {
+            InputSource::Repl(input.to_string())
+        } else if source_name == PROMPT_LINE {
+            InputSource::Prompt(input.to_string())
+        } else {
+            // Absolute path for file mode
+            let abs = std::path::absolute(Path::new(source_name)).unwrap_or_else(|_| PathBuf::from(source_name));
+            InputSource::File(abs)
+        };
+
+        let (mut module_dag, root_identity) = self.parse_module_tree(input, source_name, &root_source)?;
 
         if module_dag.has_cycle() {
             error!("Circular import detected");
@@ -240,15 +244,14 @@ impl RunnerContext {
 
         let order = module_dag.get_leaf_first_order();
 
-        if let Err(e) = self.typecheck_module_tree(&module_dag, &order, &root_identity, input, source_name, is_in_repl)
-        {
+        if let Err(e) = self.typecheck_module_tree(&module_dag, &order, &root_identity, is_in_repl) {
             if is_in_repl {
                 self.repl_typecheck_module = saved_tc;
             }
             return Err(e);
         }
 
-        match self.interpret_module_tree(&module_dag, &order, &root_identity, input, source_name, is_in_repl) {
+        match self.interpret_module_tree(&module_dag, &order, &root_identity, is_in_repl) {
             Ok(()) => Ok(()),
             Err(e) => {
                 if is_in_repl {
@@ -264,13 +267,14 @@ impl RunnerContext {
     /// Returns the module DAG and the root module's ModuleIdentity.
     fn parse_module_tree(
         &mut self,
-        input: &str,
+        _input: &str,
         source_name: &str,
+        root_source: &InputSource,
     ) -> Result<(DAG<ModuleIdentity, ModuleDagId>, ModuleIdentity), RunError> {
         let mut module_dag = DAG::new();
         let mut import_queue: Vec<ModuleDagId> = vec![];
 
-        let mut ast = self.lex_and_parse(input, source_name)?;
+        let mut ast = self.lex_and_parse(root_source)?;
 
         let root_identity = ModuleIdentity {
             resolved_path: self.module_string_interner.intern(source_name),
@@ -299,6 +303,7 @@ impl RunnerContext {
         }
 
         self.parse_cache.insert(root_identity.clone(), ast);
+        self.source_cache.insert(root_identity.clone(), root_source.clone());
 
         // discover and parse all imported modules (BFS)
         while let Some(current_node_id) = import_queue.pop() {
@@ -323,8 +328,11 @@ impl RunnerContext {
                 return Err(RunError::ModuleNotFound(path));
             }
 
-            let content = std::fs::read_to_string(file_path)?;
-            let mut untyped_ast = self.lex_and_parse(&content, &path)?;
+            // Canonicalize so spans work correctly with absolute paths
+            let abs_path = std::path::absolute(&file_path).unwrap_or_else(|_| file_path.to_path_buf());
+            let file_source = InputSource::File(abs_path);
+
+            let mut untyped_ast = self.lex_and_parse(&file_source)?;
 
             // Resolve this module's own imports relative to its directory,
             // set identities on ImportNodes, and add DAG edges in one pass.
@@ -345,7 +353,8 @@ impl RunnerContext {
                 import_queue.push(next_node_id);
             }
 
-            self.parse_cache.insert(current_identity, untyped_ast);
+            self.parse_cache.insert(current_identity.clone(), untyped_ast);
+            self.source_cache.insert(current_identity, file_source);
         }
 
         Ok((module_dag, root_identity))
@@ -357,8 +366,6 @@ impl RunnerContext {
         module_dag: &DAG<ModuleIdentity, ModuleDagId>,
         order: &[ModuleDagId],
         root_identity: &ModuleIdentity,
-        input: &str,
-        source_name: &str,
         is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
@@ -373,9 +380,15 @@ impl RunnerContext {
                 .expect("parse_cache should be populated for every module before typecheck")
                 .clone();
 
+            let module_source = self
+                .source_cache
+                .get(&node_identity)
+                .expect("source_cache should be populated for every module before typecheck")
+                .clone();
+
             let is_repl_module = is_in_repl && *root_identity == node_identity;
 
-            let (typed_ast, module) = self.type_check(untyped_ast, input, source_name, is_repl_module)?;
+            let (typed_ast, module) = self.type_check(untyped_ast, &module_source, is_repl_module)?;
             self.typecheck_cache.insert(node_identity.clone(), typed_ast);
             if is_repl_module {
                 self.repl_typecheck_module = module;
@@ -393,8 +406,6 @@ impl RunnerContext {
         module_dag: &DAG<ModuleIdentity, ModuleDagId>,
         order: &[ModuleDagId],
         root_identity: &ModuleIdentity,
-        input: &str,
-        source_name: &str,
         is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
@@ -409,9 +420,15 @@ impl RunnerContext {
                 .expect("typecheck_cache should be populated for every module before interpret")
                 .clone();
 
+            let module_source = self
+                .source_cache
+                .get(&node_identity)
+                .expect("source_cache should be populated for every module before interpret")
+                .clone();
+
             let is_repl_module = is_in_repl && *root_identity == node_identity;
 
-            let module = self.interpret(typed_ast, input, source_name, is_repl_module)?;
+            let module = self.interpret(typed_ast, &module_source, is_repl_module)?;
             if is_repl_module {
                 self.repl_interpreter_module = module;
             } else {

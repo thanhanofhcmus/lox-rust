@@ -3,6 +3,7 @@ pub mod cli;
 mod dag;
 mod id;
 mod identifier_registry;
+pub mod input_source;
 mod interpret;
 mod module;
 mod parse;

@@ -1,0 +1,1 @@
+import "self:tests/fixtures/modules/type_error.lox" as te;

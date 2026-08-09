@@ -84,4 +84,5 @@ error_tests! {
     error_tuple_destructure_arity_runtime:  "errors/tuple_destructure_arity_runtime.lox" contains "destructuring expected",
     error_module_not_found:                 "errors/module_not_found.lox"                contains "module not found",
     error_circular_import:                  "errors/circular_main.lox"                    contains "circular import",
+    error_import_typecheck:                 "import_type_error.lox"                       contains "type_error.lox:1:5",
 }

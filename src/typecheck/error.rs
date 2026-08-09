@@ -1,5 +1,6 @@
 use crate::{
     identifier_registry::{ComplexIdentifier, Identifier, IdentifierRegistry},
+    input_source::InputSource,
     token::Token,
     types::{TypeId, TypeInterner},
 };
@@ -35,21 +36,23 @@ pub enum TypecheckError {
 impl TypecheckError {
     pub fn generate_user_facing_error(
         &self,
-        source_name: &str,
-        input: &str,
+        source: &InputSource,
         ir: &IdentifierRegistry,
         interner: &TypeInterner,
     ) -> String {
-        let line_position = if let Some((line, col)) = self.get_source_start(input) {
-            let source_line = input.lines().nth(line.saturating_sub(1)).unwrap_or("");
+        let line_position = if let Some((line, col)) = self.get_source_start(source) {
+            let source_line = source.line(line).unwrap_or_default();
             let line_label = line.to_string();
             let gutter = " ".repeat(line_label.len());
             let pointer = " ".repeat(col.saturating_sub(1));
             format!(
-                "\n  at {source_name}:{line}:{col}\n\
+                "\n  at {}:{}:{}\n\
                  {gutter} |\n\
                  {line_label} | {source_line}\n\
-                 {gutter} | {pointer}^--- here"
+                 {gutter} | {pointer}^--- here",
+                source.source_name(),
+                line,
+                col
             )
         } else {
             "".to_string()
@@ -238,14 +241,14 @@ impl TypecheckError {
         }
     }
 
-    fn get_source_start(&self, input: &str) -> Option<(usize, usize)> {
+    fn get_source_start(&self, source: &InputSource) -> Option<(usize, usize)> {
         match self {
             Self::ExplicitTypeMismatch(node, _, _)
             | Self::UndefinedVariableIdentifier(ComplexIdentifier { module: _, name: node })
             | Self::UndefinedTypeIdentifier(ComplexIdentifier { module: _, name: node })
             | Self::DuplicateVariableDeclaration(node)
             | Self::StructFieldNotExist(_, node)
-            | Self::DuplicateStructLiteralField(node) => Some(node.span.to_start_row_col(input)),
+            | Self::DuplicateStructLiteralField(node) => Some(source.to_start_row_col(node.span)),
             _ => None,
         }
     }
