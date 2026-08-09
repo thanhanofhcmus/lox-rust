@@ -3,14 +3,8 @@ mod helpers;
 mod json;
 mod map;
 mod math;
+pub(crate) mod registry;
 mod string;
-
-pub(crate) use self::json::json_interpret_module;
-pub(crate) use self::json::json_typecheck_module;
-pub(crate) use self::{array::array_interpret_module, array::array_typecheck_module};
-pub(crate) use self::{map::map_interpret_module, map::map_typecheck_module};
-pub(crate) use self::{math::math_interpret_module, math::math_typecheck_module};
-pub(crate) use self::{string::string_interpret_module, string::string_typecheck_module};
 
 use crate::{
     interpret,
@@ -25,11 +19,11 @@ pub fn create_typecheck_modules(
     type_interner: &mut TypeInterner,
 ) -> Vec<(ModuleIdentity, typecheck::Module)> {
     let modules = vec![
-        array_typecheck_module(msi, type_interner),
-        map_typecheck_module(msi, type_interner),
-        json_typecheck_module(msi, type_interner),
-        math_typecheck_module(msi, type_interner),
-        string_typecheck_module(msi, type_interner),
+        array::typecheck_module(msi, type_interner),
+        map::typecheck_module(msi, type_interner),
+        json::typecheck_module(msi, type_interner),
+        math::typecheck_module(msi, type_interner),
+        string::typecheck_module(msi, type_interner),
     ];
     modules
 }
@@ -37,11 +31,11 @@ pub fn create_typecheck_modules(
 /// Returns pre-built interpret modules for all known std modules.
 pub fn create_interpret_modules(msi: &mut ModuleStringInterner) -> Vec<(ModuleIdentity, interpret::Module)> {
     let modules = vec![
-        array_interpret_module(msi),
-        map_interpret_module(msi),
-        json_interpret_module(msi),
-        math_interpret_module(msi),
-        string_interpret_module(msi),
+        array::interpret_module(msi),
+        map::interpret_module(msi),
+        json::interpret_module(msi),
+        math::interpret_module(msi),
+        string::interpret_module(msi),
     ];
     modules
 }

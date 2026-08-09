@@ -69,7 +69,8 @@ The pipeline is orchestrated in `src/runner.rs` (`RunnerContext`), which also ha
 | `src/interpret/values/serial.rs` | JSON serialization |
 | `src/interpret/values/display_writer.rs` | `DisplayWriter` for runtime value display |
 | `src/module.rs` | `ModuleIdentity`, `ModuleStringInterner` |
-| `src/std_module.rs` | Standard library modules (pre-populated in registries) |
+| `src/std_module/mod.rs` | Standard library modules (pre-populated in registries); orchestrates typecheck + interpret builders |
+| `src/std_module/registry.rs` | `std_fn!` and `collect_std_fns!` macros — co-locate function metadata (module, name, type) with each std fn definition |
 | `src/dag.rs` | Generic DAG with cycle detection, transitive reduction, leaf-first ordering |
 | `src/input_source.rs` | `InputSource` enum — Repl, Prompt, File variants |
 | `src/lib.rs` | Module declarations |
@@ -115,6 +116,7 @@ Unit tests live inline in `src/` modules (e.g. `runner.rs` has `#[cfg(test)] mod
 - **Two-phase AST**: parse produces `AST<()>`, typecheck converts to `AST<TypeId>`. This is the standard pattern — always work with the right phase.
 - **Module DAG**: imports are discovered transitively, topologically sorted leaf-first, and processed in order. Every phase (parse, typecheck, interpret) processes modules in dependency order.
 - **`define_type_index!` macro** (`src/type_index.rs`): creates newtype wrappers for index types used in DAG/arena patterns (e.g. `ModuleDagId`).
+- **Std function registration** (`src/std_module/registry.rs`): use `std_fn!` to define a std function with its metadata (module path, Lox name, type), then `collect_std_fns!` at the bottom of the module file to generate the `typecheck_module()` / `interpret_module()` builders. Use the `constants` field in `collect_std_fns!` for non-function values (e.g., `pi`).
 
 ## Key Known Issues (from docs/todos.md)
 
