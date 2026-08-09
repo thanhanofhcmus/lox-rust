@@ -236,7 +236,11 @@ fn lex_number(input: &[u8], offset: &mut usize, prev_was_dot: bool) -> Result<Le
     }
 
     Ok(LexItem::new(
-        if has_parsed_dot { Token::Number } else { Token::WholeNumber },
+        if has_parsed_dot {
+            Token::Number
+        } else {
+            Token::WholeNumber
+        },
         Span::new(start_offset, *offset),
     ))
 }

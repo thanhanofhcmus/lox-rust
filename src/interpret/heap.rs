@@ -440,8 +440,11 @@ impl Heap {
             return None;
         };
 
-        entry.ref_count =
-            if is_increase { entry.ref_count.saturating_add(1) } else { entry.ref_count.saturating_sub(1) };
+        entry.ref_count = if is_increase {
+            entry.ref_count.saturating_add(1)
+        } else {
+            entry.ref_count.saturating_sub(1)
+        };
 
         Some(entry)
     }
