@@ -161,11 +161,6 @@ const BUILTIN_NAMES: &[&str] = &[
     "assert",
     "from_json",
     "to_json",
-    "map_length",
-    "map_keys",
-    "map_values",
-    "map_insert",
-    "map_remove",
     "_dbg_print",
     "_dbg_state",
     "_dbg_gc_mark",
@@ -204,34 +199,6 @@ fn get_builtin_fn_type(name: &str) -> Type {
             params: vec![TypeId::ANY],
             variadic: Some(TypeId::BOOL),
             return_: TypeId::STR,
-        },
-
-        "map_length" => Type::Function {
-            params: vec![TypeId::ANY],
-            variadic: None,
-            return_: TypeId::NUMBER,
-        },
-        "map_keys" => Type::Function {
-            params: vec![TypeId::ANY],
-            variadic: None,
-            // array of strings
-            return_: TypeId::ANY,
-        },
-        "map_values" => Type::Function {
-            params: vec![TypeId::ANY],
-            variadic: None,
-            // array of value type
-            return_: TypeId::ANY,
-        },
-        "map_insert" => Type::Function {
-            params: vec![TypeId::ANY, TypeId::ANY, TypeId::ANY],
-            variadic: None,
-            return_: TypeId::NIL,
-        },
-        "map_remove" => Type::Function {
-            params: vec![TypeId::ANY, TypeId::ANY],
-            variadic: None,
-            return_: TypeId::ANY,
         },
 
         "_dbg_print" => Type::Function {

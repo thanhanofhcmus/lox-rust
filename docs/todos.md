@@ -30,7 +30,7 @@
 
 ### Modules
 - **Module resolution only handles flat imports** — `a::b::c` chained access not supported; `ComplexIdentifier` stores at most one `module` level
-- **No external package support** — `std:` and `thirdparty:` packages are parsed but `Self` is the only package implemented
+- **No external package support** — `std:` has partial support (`std:array`, `std:map`); `thirdparty:` packages are parsed but not implemented; `Self` is the only package with full filesystem support
 
 ---
 
@@ -68,7 +68,8 @@
 - JSON deserialisation for structs / tuples — needs schema hint e.g. `from_json("...", Point)`
 
 ### Standard Library
-- Standard library module
+- Map comprehension
+- More `std:` modules (math, string, etc.)
 
 ### Errors & CLI
 - Better error messages — source info pointing exactly to where the error is
@@ -121,8 +122,8 @@
 - [X] Implement `map` data structure
 - [X] Map `for` iteration — `for %(k, v) in map { ... }` via a `%(key, value)` tuple per entry
 - [X] Array for comprehension — `[for x in array: expr]` with optional `if` filter; loop variable readonly
-- [X] Array prelude functions — `array_len`, `array_push`, `array_pop`, `array_insert`
-- [X] Map prelude functions — `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`
+- [X] Array std module — `std:array` with `length`, `push`, `pop`, `insert`
+- [X] Map std module — `std:map` with `length`, `keys`, `values`, `insert`, `remove`
 - [X] Map comprehension — `%{ for %(k, v) in map if k * v == 10 : k => v }`
 
 ### Control Flow & Scoping
@@ -144,6 +145,7 @@
 - [X] Shared interpret heap — single `&'a mut Heap` borrowed by all module environments
 
 ### Modules & Imports
+- [X] Standard library module infrastructure — `std:array`, `std:map` with pre-built typecheck + interpret registries
 - [X] Basic import system — `import "self:relative/path.lox" as name;` with `package`, `self`, `std`, `thirdparty` parsing
 - [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; BFS transitive discovery
 - [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking

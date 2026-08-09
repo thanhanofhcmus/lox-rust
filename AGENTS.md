@@ -121,7 +121,7 @@ Unit tests live inline in `src/` modules (e.g. `runner.rs` has `#[cfg(test)] mod
 - `Value` is `Copy` but ref-counting is vestigial — GC uses mark-sweep but RC counts are inconsistent. Decide: full RC or full mark-sweep.
 - Reassignment doesn't typecheck the RHS against the declared type.
 - Variadic functions skip argument type validation.
-- No external package support (`std:` and `thirdparty:` parsed but not loaded).
+- No external package support (`std:` partially supported with `std:array`, `std:map`; `thirdparty:` parsed but not loaded).
 - Chained module access (`a::b::c`) not supported.
 - No GC trigger — only manual `_dbg_gc_mark_sweep()` reclaims memory.
 - Struct fields use `Vec`; display/JSON field order is insertion order, not alphabetical or canonical.

@@ -170,7 +170,14 @@ var zeros = [:0:5];           # [0, 0, 0, 0, 0]
 var evens = [for x in xs if x % 2 == 0: x * 10];
 ```
 
-Array builtins: `array_length`, `array_push`, `array_pop`, `array_insert`.
+Array builtins are available via the `std:array` module:
+```
+import "std:array" as array;
+array::length(xs);       # number of elements
+array::push(xs, v);      # append one or more values
+array::pop(xs);          # remove and return last element
+array::insert(xs, i, v); # insert at index i
+```
 
 ### Maps
 
@@ -185,7 +192,15 @@ print(scores["alice"]);
 scores["carol"] = 12;         # subscript assignment works on maps too
 ```
 
-Map builtins: `map_length`, `map_keys`, `map_values`, `map_insert`, `map_remove`.
+Map builtins are available via the `std:map` module:
+```
+import "std:map" as map;
+map::length(m);          # number of entries
+map::keys(m);            # array of keys
+map::values(m);          # array of values
+map::insert(m, k, v);    # insert (returns old value if key existed)
+map::remove(m, k);       # remove and return value (nil if missing)
+```
 
 ### Tuples
 
@@ -290,8 +305,9 @@ var p = geo::Point { x = 10, y = 20 };
 print(p.x);                            # 10
 ```
 
-The `self:` prefix denotes the current package.  `std:` and `thirdparty:`
-are parsed but not yet supported.
+The `self:` prefix denotes the current package.  `std:` provides built-in
+standard library modules (`std:array`, `std:map`).  `thirdparty:` is parsed
+but not yet supported.
 
 A module exports all of its top-level `var` declarations and `struct`
 declarations — there is no explicit `export` keyword.

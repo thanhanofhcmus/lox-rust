@@ -6,8 +6,8 @@ use crate::{
     interpret::{
         debug_string::DebugString,
         error::InterpretError,
-        heap::{GcHandle, GcObject, HeapStrId},
-        values::{BuiltinFn, MapKey, Number, SerialValue, Value},
+        heap::HeapStrId,
+        values::{BuiltinFn, SerialValue, Value},
     },
 };
 
@@ -18,12 +18,6 @@ pub fn create() -> HashMap<Id, Value> {
     preludes.insert(Id::new("assert"), Value::BuiltinFunction(assert_fn));
     preludes.insert(Id::new("from_json"), Value::BuiltinFunction(from_json_fn));
     preludes.insert(Id::new("to_json"), Value::BuiltinFunction(to_json_fn));
-
-    preludes.insert(Id::new("map_length"), Value::BuiltinFunction(map_length_fn));
-    preludes.insert(Id::new("map_keys"), Value::BuiltinFunction(map_keys_fn));
-    preludes.insert(Id::new("map_values"), Value::BuiltinFunction(map_values_fn));
-    preludes.insert(Id::new("map_insert"), Value::BuiltinFunction(map_insert_fn));
-    preludes.insert(Id::new("map_remove"), Value::BuiltinFunction(map_remove_fn));
 
     preludes.insert(Id::new("_dbg_print"), Value::BuiltinFunction(dbg_print_fn));
     preludes.insert(Id::new("_dbg_state"), Value::BuiltinFunction(dbg_state_fn));
@@ -176,73 +170,6 @@ fn to_json_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, Interp
     }
 }
 
-// Map functions
-
-fn map_length_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(map_length_fn, &args, 1)?;
-    let handle = get_map_arg(map_length_fn, args[0])?;
-    let len = ctx.environment.get_map(handle)?.len();
-    Ok(Value::make_number(Number::Integer(len as i64)))
-}
-
-fn map_keys_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(map_keys_fn, &args, 1)?;
-    let handle = get_map_arg(map_keys_fn, args[0])?;
-    // collect into an owned Vec to release the immutable borrow before calling insert
-    let keys: Vec<Value> = {
-        let map = ctx.environment.get_map(handle)?;
-        map.keys()
-            .map(|k| match k {
-                MapKey::Scalar(s) => Value::Scalar(*s),
-                MapKey::Str(id) => Value::Str(*id),
-            })
-            .collect()
-    };
-    // shallow_copy_value is a no-op for Scalar/Str (no GcHandle), but call for correctness
-    for k in &keys {
-        ctx.environment.heap.shallow_copy_value(*k);
-    }
-    Ok(ctx.environment.insert_array_variable(keys))
-}
-
-fn map_values_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(map_values_fn, &args, 1)?;
-    let handle = get_map_arg(map_values_fn, args[0])?;
-    let values: Vec<Value> = {
-        let map = ctx.environment.get_map(handle)?;
-        map.values().copied().collect()
-    };
-    for v in &values {
-        ctx.environment.heap.shallow_copy_value(*v);
-    }
-    Ok(ctx.environment.insert_array_variable(values))
-}
-
-fn map_insert_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(map_insert_fn, &args, 3)?;
-    let handle = get_map_arg(map_insert_fn, args[0])?;
-    let key = MapKey::convert_from_value(args[1])?;
-    let new_value = args[2];
-    // increment ref count before taking the mutable heap reference
-    ctx.environment.heap.shallow_copy_value(new_value);
-    let Some(GcObject::Map(map)) = ctx.environment.heap.get_object_mut(handle) else {
-        return Err(InterpretError::GcObjectNotFound(handle));
-    };
-    // ownership of the old value transfers to the caller; ref count stays at 1
-    Ok(map.insert(key, new_value).unwrap_or(Value::make_nil()))
-}
-
-fn map_remove_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
-    check_exact_args(map_remove_fn, &args, 2)?;
-    let handle = get_map_arg(map_remove_fn, args[0])?;
-    let key = MapKey::convert_from_value(args[1])?;
-    let Some(GcObject::Map(map)) = ctx.environment.heap.get_object_mut(handle) else {
-        return Err(InterpretError::GcObjectNotFound(handle));
-    };
-    // ownership of the removed value transfers to the caller; ref count stays at 1
-    Ok(map.remove(&key).unwrap_or(Value::make_nil()))
-}
-
 // Argument validation helpers
 
 fn check_exact_args(func: BuiltinFn, args: &[Value], expected: usize) -> Result<(), InterpretError> {
@@ -285,17 +212,6 @@ fn get_str_arg(func: BuiltinFn, arg: Value) -> Result<HeapStrId, InterpretError>
             Value::BuiltinFunction(func),
             arg,
             "str",
-        )),
-    }
-}
-
-fn get_map_arg(func: BuiltinFn, arg: Value) -> Result<GcHandle, InterpretError> {
-    match arg {
-        Value::Map(handle) => Ok(handle),
-        _ => Err(InterpretError::WrongArgumentType(
-            Value::BuiltinFunction(func),
-            arg,
-            "map",
         )),
     }
 }
