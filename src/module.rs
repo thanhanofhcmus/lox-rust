@@ -10,17 +10,24 @@ pub struct ModuleMetadata {
     pub package: Id,
 }
 
-#[derive(Debug, Default)]
-pub struct ModuleRegistry<T> {
-    map: HashMap<ModuleMetadata, T>,
+/// Globally unique resolved module identity.
+/// Used as the key for all module-level caches and registries.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Default)]
+pub struct ModuleIdentity {
+    pub resolved_path: ModuleStrId,
 }
 
-impl<T> ModuleRegistry<T> {
-    pub fn insert(&mut self, metadata: ModuleMetadata, module: T) {
-        self.map.insert(metadata, module);
+#[derive(Debug, Default)]
+pub struct ModuleRegistry<T, K = ModuleIdentity> {
+    map: HashMap<K, T>,
+}
+
+impl<T, K: Eq + std::hash::Hash> ModuleRegistry<T, K> {
+    pub fn insert(&mut self, key: K, module: T) {
+        self.map.insert(key, module);
     }
 
-    pub fn get(&self, metadata: &ModuleMetadata) -> Option<&T> {
-        self.map.get(metadata)
+    pub fn get(&self, key: &K) -> Option<&T> {
+        self.map.get(key)
     }
 }

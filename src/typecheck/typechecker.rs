@@ -51,7 +51,13 @@ impl<'e> TypeChecker<'e> {
         } = ast;
 
         for import in &imports {
-            self.environment.add_module(import.iden.id, import.metadata.clone());
+            self.environment.add_module(
+                import.iden.id,
+                import
+                    .identity
+                    .clone()
+                    .expect("import identity must be resolved before typecheck"),
+            );
         }
 
         let mut global_stmts = Vec::with_capacity(untyped_global_stmts.len());
@@ -1083,7 +1089,7 @@ mod tests {
     use crate::{
         id::Id,
         identifier_registry::{ComplexId, IdentifierRegistry},
-        module::{ModuleMetadata, ModuleStringInterner},
+        module::{ModuleIdentity, ModuleStringInterner},
         parse::lex,
         typecheck::ModuleRegistry,
         types::{StructField, Type, TypeInterner, TypeScope},
@@ -1754,14 +1760,20 @@ mod tests {
         let mut ti = TypeInterner::new();
         let mut mr = ModuleRegistry::default();
 
-        let metadata = ModuleMetadata {
-            package: Id::SELF,
-            path: msi.intern(import_path),
+        let identity = ModuleIdentity {
+            resolved_path: msi.intern(import_path),
         };
-        mr.insert(metadata, module);
+        mr.insert(identity, module);
 
         let env = Environment::new(&mut ti, &mr);
-        let ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
+        let mut ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
+        // Resolve import identities on the parsed AST so the typechecker can
+        // map `import.iden.id -> ModuleIdentity` (tests bypass parse_module_tree).
+        for imp in &mut ast.imports {
+            imp.identity = Some(ModuleIdentity {
+                resolved_path: msi.intern(import_path),
+            });
+        }
         TypeChecker::new(env).convert(ast)
     }
 
@@ -1826,14 +1838,18 @@ mod tests {
         let mut ir = IdentifierRegistry::default();
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
-        let metadata = ModuleMetadata {
-            package: Id::SELF,
-            path: msi.intern("mod"),
+        let identity = ModuleIdentity {
+            resolved_path: msi.intern("mod"),
         };
-        mr.insert(metadata, module);
+        mr.insert(identity, module);
         let env = Environment::new(&mut ti, &mr);
-        let ast = crate::parse::parse("import \"self:mod\" as m; m::origin.x;", &items, &mut ir, &mut msi)
+        let mut ast = crate::parse::parse("import \"self:mod\" as m; m::origin.x;", &items, &mut ir, &mut msi)
             .expect("parse failed");
+        for imp in &mut ast.imports {
+            imp.identity = Some(ModuleIdentity {
+                resolved_path: msi.intern("mod"),
+            });
+        }
         let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
         assert_eq!(first_clause_type(&typed_ast), TypeId::NUMBER);
     }
@@ -1850,28 +1866,33 @@ mod tests {
         let mut mr = ModuleRegistry::default();
 
         mr.insert(
-            ModuleMetadata {
-                package: Id::SELF,
-                path: msi.intern("a"),
+            ModuleIdentity {
+                resolved_path: msi.intern("a"),
             },
             mod_a,
         );
         mr.insert(
-            ModuleMetadata {
-                package: Id::SELF,
-                path: msi.intern("b"),
+            ModuleIdentity {
+                resolved_path: msi.intern("b"),
             },
             mod_b,
         );
 
         let env = Environment::new(&mut ti, &mr);
-        let ast = crate::parse::parse(
+        let mut ast = crate::parse::parse(
             "import \"self:a\" as a; import \"self:b\" as b; a::x + 1;",
             &items,
             &mut ir,
             &mut msi,
         )
         .expect("parse failed");
+        // resolve identities — tests bypass parse_module_tree
+        for imp in &mut ast.imports {
+            let path = msi.get(imp.metadata.path).expect("path interned").to_string();
+            imp.identity = Some(ModuleIdentity {
+                resolved_path: msi.intern(&path),
+            });
+        }
         let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
         assert_eq!(first_clause_type(&typed_ast), TypeId::NUMBER);
     }
@@ -1933,14 +1954,20 @@ mod tests {
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
         mr.insert(
-            ModuleMetadata {
-                package: Id::SELF,
-                path: msi.intern("mod"),
+            ModuleIdentity {
+                resolved_path: msi.intern("mod"),
             },
             module,
         );
         let env = Environment::new(&mut ti, &mr);
-        let ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
+        let mut ast = crate::parse::parse(input, &items, &mut ir, &mut msi).expect("parse failed");
+        // Resolve import identities (tests bypass parse_module_tree).
+        for imp in &mut ast.imports {
+            let path = msi.get(imp.metadata.path).expect("path interned").to_string();
+            imp.identity = Some(ModuleIdentity {
+                resolved_path: msi.intern(&path),
+            });
+        }
         TypeChecker::new(env).convert(ast)
     }
 
@@ -1977,20 +2004,24 @@ mod tests {
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
         mr.insert(
-            ModuleMetadata {
-                package: Id::SELF,
-                path: msi.intern("mod"),
+            ModuleIdentity {
+                resolved_path: msi.intern("mod"),
             },
             module,
         );
         let env = Environment::new(&mut ti, &mr);
-        let ast = crate::parse::parse(
+        let mut ast = crate::parse::parse(
             "import \"self:mod\" as m; m::Point { x = 1, y = 2 };",
             &items,
             &mut ir,
             &mut msi,
         )
         .expect("parse failed");
+        for imp in &mut ast.imports {
+            imp.identity = Some(ModuleIdentity {
+                resolved_path: msi.intern("mod"),
+            });
+        }
         let typed_ast = TypeChecker::new(env).convert(ast).unwrap();
         assert_eq!(first_clause_type(&typed_ast), point_type_id);
     }
@@ -2015,20 +2046,24 @@ mod tests {
         let mut msi = ModuleStringInterner::default();
         let mut mr = ModuleRegistry::default();
         mr.insert(
-            ModuleMetadata {
-                package: Id::SELF,
-                path: msi.intern("mod"),
+            ModuleIdentity {
+                resolved_path: msi.intern("mod"),
             },
             module,
         );
         let env = Environment::new(&mut ti, &mr);
-        let ast = crate::parse::parse(
+        let mut ast = crate::parse::parse(
             "import \"self:mod\" as m; m::NotAType { x = 1 };",
             &items,
             &mut ir,
             &mut msi,
         )
         .expect("parse failed");
+        for imp in &mut ast.imports {
+            imp.identity = Some(ModuleIdentity {
+                resolved_path: msi.intern("mod"),
+            });
+        }
         let err = TypeChecker::new(env).convert(ast).unwrap_err();
         assert!(
             matches!(err, TypecheckError::UndefinedTypeIdentifier(_)),

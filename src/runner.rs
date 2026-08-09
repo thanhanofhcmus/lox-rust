@@ -1,4 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use log::{debug, error, info, trace};
 use rustyline::{DefaultEditor, error::ReadlineError};
@@ -7,10 +12,9 @@ use thiserror::Error;
 use crate::{
     ast::AST,
     dag::DAG,
-    id::Id,
     identifier_registry::IdentifierRegistry,
     interpret::{self, Heap, InterpretError},
-    module::{ModuleMetadata, ModuleStringInterner},
+    module::{ModuleIdentity, ModuleStringInterner},
     parse::{self, ParseError},
     typecheck::{self, TypecheckError},
     types::{TypeId, TypeInterner},
@@ -57,9 +61,9 @@ pub struct RunnerContext {
     module_string_interner: ModuleStringInterner,
     interpret_heap: interpret::Heap,
 
-    // we store the currently parse/typechecked AST but does not have a way to reuse them yet
-    parse_cache: HashMap<ModuleMetadata, AST<()>>,
-    typecheck_cache: HashMap<ModuleMetadata, AST<TypeId>>,
+    // caches keyed by resolved ModuleIdentity
+    parse_cache: HashMap<ModuleIdentity, AST<()>>,
+    typecheck_cache: HashMap<ModuleIdentity, AST<TypeId>>,
 
     repl_typecheck_module: typecheck::Module,
     repl_interpreter_module: interpret::Module,
@@ -226,7 +230,7 @@ impl RunnerContext {
         let saved_tc = self.repl_typecheck_module.clone();
         let saved_it = self.repl_interpreter_module.clone();
 
-        let (mut module_dag, root_module_metadata) = self.parse_module_tree(input, source_name)?;
+        let (mut module_dag, root_identity) = self.parse_module_tree(input, source_name)?;
 
         if module_dag.has_cycle() {
             error!("Circular import detected");
@@ -236,28 +240,15 @@ impl RunnerContext {
 
         let order = module_dag.get_leaf_first_order();
 
-        if let Err(e) = self.typecheck_module_tree(
-            &module_dag,
-            &order,
-            &root_module_metadata,
-            input,
-            source_name,
-            is_in_repl,
-        ) {
+        if let Err(e) = self.typecheck_module_tree(&module_dag, &order, &root_identity, input, source_name, is_in_repl)
+        {
             if is_in_repl {
                 self.repl_typecheck_module = saved_tc;
             }
             return Err(e);
         }
 
-        match self.interpret_module_tree(
-            &module_dag,
-            &order,
-            &root_module_metadata,
-            input,
-            source_name,
-            is_in_repl,
-        ) {
+        match self.interpret_module_tree(&module_dag, &order, &root_identity, input, source_name, is_in_repl) {
             Ok(()) => Ok(()),
             Err(e) => {
                 if is_in_repl {
@@ -270,52 +261,61 @@ impl RunnerContext {
     }
 
     /// Parse the root module and discover + parse all imported modules.
-    /// Returns the module DAG and the root module's metadata.
+    /// Returns the module DAG and the root module's ModuleIdentity.
     fn parse_module_tree(
         &mut self,
         input: &str,
         source_name: &str,
-    ) -> Result<(DAG<ModuleMetadata, ModuleDagId>, ModuleMetadata), RunError> {
+    ) -> Result<(DAG<ModuleIdentity, ModuleDagId>, ModuleIdentity), RunError> {
         let mut module_dag = DAG::new();
-        let mut import_queue = vec![];
+        let mut import_queue: Vec<ModuleDagId> = vec![];
 
-        let ast = self.lex_and_parse(input, source_name)?;
+        let mut ast = self.lex_and_parse(input, source_name)?;
 
-        let root_module_metadata = ModuleMetadata {
-            package: Id::SELF,
-            path: self.module_string_interner.intern(source_name),
+        let root_identity = ModuleIdentity {
+            resolved_path: self.module_string_interner.intern(source_name),
         };
 
-        let root_module_node_id = module_dag.add_node(root_module_metadata.clone());
-        for imp in &ast.imports {
-            let md_node_id = module_dag.add_node(imp.metadata.clone());
-            module_dag.add_edge(root_module_node_id, md_node_id);
+        let root_identity_node_id = module_dag.add_node(root_identity.clone());
+
+        // Resolve each import relative to the importing module's directory.
+        let importer_dir = Path::new(source_name).parent().unwrap_or(Path::new("."));
+
+        // Resolve and set identities on the root module's ImportNodes,
+        // and add DAG edges in one pass.
+        for imp in &mut ast.imports {
+            let rel_path = self
+                .module_string_interner
+                .get(imp.metadata.path)
+                .expect("path should be interned");
+            let resolved = resolve_relative_path(importer_dir, rel_path);
+            let identity = ModuleIdentity {
+                resolved_path: self.module_string_interner.intern(&resolved),
+            };
+            imp.identity = Some(identity.clone());
+            let md_node_id = module_dag.add_node(identity);
+            module_dag.add_edge(root_identity_node_id, md_node_id);
             import_queue.push(md_node_id);
         }
 
-        self.parse_cache.insert(root_module_metadata.clone(), ast);
+        self.parse_cache.insert(root_identity.clone(), ast);
 
         // discover and parse all imported modules (BFS)
         while let Some(current_node_id) = import_queue.pop() {
-            let node_metadata = module_dag
+            let current_identity = module_dag
                 .get_node(current_node_id)
                 .expect("import queue should only contain valid DAG node ids")
                 .data
                 .clone();
-            if self.parse_cache.contains_key(&node_metadata) {
+            if self.parse_cache.contains_key(&current_identity) {
                 continue;
             }
 
             let path = self
                 .module_string_interner
-                .get(node_metadata.path)
+                .get(current_identity.resolved_path)
                 .expect("import path id should have been interned during parsing")
                 .to_string();
-
-            if node_metadata.package != Id::SELF {
-                error!("External packages are not yet supported: {path}");
-                return Err(RunError::ModuleNotFound(path));
-            }
 
             // TODO: move file loader to an interface
             let file_path = Path::new(&path);
@@ -324,50 +324,63 @@ impl RunnerContext {
             }
 
             let content = std::fs::read_to_string(file_path)?;
-            let untyped_ast = self.lex_and_parse(&content, &path)?;
+            let mut untyped_ast = self.lex_and_parse(&content, &path)?;
 
-            for imp in &untyped_ast.imports {
-                let md_node_id = module_dag.add_node(imp.metadata.clone());
-                module_dag.add_edge(current_node_id, md_node_id);
-                import_queue.push(md_node_id);
+            // Resolve this module's own imports relative to its directory,
+            // set identities on ImportNodes, and add DAG edges in one pass.
+            let importer_dir = file_path.parent().unwrap_or(Path::new("."));
+
+            for imp in &mut untyped_ast.imports {
+                let rel_path = self
+                    .module_string_interner
+                    .get(imp.metadata.path)
+                    .expect("path should be interned");
+                let resolved = resolve_relative_path(importer_dir, rel_path);
+                let identity = ModuleIdentity {
+                    resolved_path: self.module_string_interner.intern(&resolved),
+                };
+                imp.identity = Some(identity.clone());
+                let next_node_id = module_dag.add_node(identity);
+                module_dag.add_edge(current_node_id, next_node_id);
+                import_queue.push(next_node_id);
             }
 
-            self.parse_cache.insert(node_metadata, untyped_ast);
+            self.parse_cache.insert(current_identity, untyped_ast);
         }
 
-        Ok((module_dag, root_module_metadata))
+        Ok((module_dag, root_identity))
     }
 
     /// Typecheck every module in leaf-first order.
     fn typecheck_module_tree(
         &mut self,
-        module_dag: &DAG<ModuleMetadata, ModuleDagId>,
+        module_dag: &DAG<ModuleIdentity, ModuleDagId>,
         order: &[ModuleDagId],
-        root_module_metadata: &ModuleMetadata,
+        root_identity: &ModuleIdentity,
         input: &str,
         source_name: &str,
         is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
-            let node_metadata = module_dag
+            let node_identity = module_dag
                 .get_node(current_node_id)
                 .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
             let untyped_ast = self
                 .parse_cache
-                .get(&node_metadata)
+                .get(&node_identity)
                 .expect("parse_cache should be populated for every module before typecheck")
                 .clone();
 
-            let is_repl_module = is_in_repl && *root_module_metadata == node_metadata;
+            let is_repl_module = is_in_repl && *root_identity == node_identity;
 
             let (typed_ast, module) = self.type_check(untyped_ast, input, source_name, is_repl_module)?;
-            self.typecheck_cache.insert(node_metadata.clone(), typed_ast);
+            self.typecheck_cache.insert(node_identity.clone(), typed_ast);
             if is_repl_module {
                 self.repl_typecheck_module = module;
             } else {
-                self.typecheck_module_registry.insert(node_metadata, module);
+                self.typecheck_module_registry.insert(node_identity, module);
             }
         }
 
@@ -377,36 +390,52 @@ impl RunnerContext {
     /// Interpret every module in leaf-first order.
     fn interpret_module_tree(
         &mut self,
-        module_dag: &DAG<ModuleMetadata, ModuleDagId>,
+        module_dag: &DAG<ModuleIdentity, ModuleDagId>,
         order: &[ModuleDagId],
-        root_module_metadata: &ModuleMetadata,
+        root_identity: &ModuleIdentity,
         input: &str,
         source_name: &str,
         is_in_repl: bool,
     ) -> RunResult {
         for &current_node_id in order {
-            let node_metadata = module_dag
+            let node_identity = module_dag
                 .get_node(current_node_id)
                 .expect("leaf-first order should only contain valid DAG node ids")
                 .data
                 .clone();
             let typed_ast = self
                 .typecheck_cache
-                .get(&node_metadata)
+                .get(&node_identity)
                 .expect("typecheck_cache should be populated for every module before interpret")
                 .clone();
 
-            let is_repl_module = is_in_repl && *root_module_metadata == node_metadata;
+            let is_repl_module = is_in_repl && *root_identity == node_identity;
 
             let module = self.interpret(typed_ast, input, source_name, is_repl_module)?;
             if is_repl_module {
                 self.repl_interpreter_module = module;
             } else {
-                self.interpret_module_registry.insert(node_metadata, module);
+                self.interpret_module_registry.insert(node_identity, module);
             }
         }
 
         Ok(())
+    }
+}
+
+/// Resolve a relative import path against the importing module's directory.
+fn resolve_relative_path(importer_dir: &Path, rel_path: &str) -> String {
+    // Only resolve paths that are explicitly relative (./ or ../).
+    // Other paths are treated as CWD-relative (legacy behavior).
+    if rel_path.starts_with("./") || rel_path.starts_with("../") {
+        importer_dir
+            .join(rel_path)
+            .components()
+            .collect::<PathBuf>()
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        rel_path.to_string()
     }
 }
 

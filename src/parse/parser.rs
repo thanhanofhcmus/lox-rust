@@ -98,6 +98,7 @@ fn parse_import(state: &mut Context) -> Result<ImportNode, ParseError> {
             package: package_iden.id,
             path: state.module_string_interner.intern(&path),
         },
+        identity: None,
         iden: state.create_identifier(iden_li),
     })
 }

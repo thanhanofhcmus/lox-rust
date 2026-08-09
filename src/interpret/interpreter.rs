@@ -98,7 +98,13 @@ where
         // we don't interpret here, we should only be interpret ONCE in the main file
         // only declare that the SELF module have imported these modules
         for import in &ast.imports {
-            self.environment.add_module(import.iden.id, import.metadata.clone());
+            self.environment.add_module(
+                import.iden.id,
+                import
+                    .identity
+                    .clone()
+                    .expect("import identity must be resolved before interpret"),
+            );
         }
 
         for stmt in &ast.global_stmts {

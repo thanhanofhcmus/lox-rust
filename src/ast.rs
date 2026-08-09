@@ -1,6 +1,6 @@
 use crate::{
     identifier_registry::{ComplexIdentifier, Identifier},
-    module::ModuleMetadata,
+    module::{ModuleIdentity, ModuleMetadata},
     token::Token,
     types::TypeId,
 };
@@ -15,6 +15,7 @@ pub struct AST<T> {
 #[derive(Debug, Clone)]
 pub struct ImportNode {
     pub metadata: ModuleMetadata,
+    pub identity: Option<ModuleIdentity>,
     pub iden: Identifier,
 }
 
