@@ -190,7 +190,7 @@ fn get_builtin_fn_type(name: &str) -> Type {
         "assert" => Type::Function {
             params: vec![TypeId::BOOL, TypeId::STR],
             variadic: None,
-            return_: TypeId::STR,
+            return_: TypeId::NIL,
         },
 
         "from_json" => Type::Function {
@@ -260,13 +260,17 @@ fn get_builtin_fn_type(name: &str) -> Type {
             return_: TypeId::ANY,
         },
 
-        "_dbg_print" | "_dbg_state" | "_dbg_gc_mark" | "_dbg_gc_sweep" | "_dbg_gc_mark_sweep" | "_dbg_heap_stats" => {
-            Type::Function {
-                params: vec![],
-                variadic: None,
-                return_: TypeId::UNIT,
-            }
-        }
+        "_dbg_print" => Type::Function {
+            params: vec![],
+            variadic: Some(TypeId::ANY),
+            return_: TypeId::NIL,
+        },
+
+        "_dbg_state" | "_dbg_gc_mark" | "_dbg_gc_sweep" | "_dbg_gc_mark_sweep" | "_dbg_heap_stats" => Type::Function {
+            params: vec![],
+            variadic: None,
+            return_: TypeId::NIL,
+        },
 
         _ => Type::Any,
     }
