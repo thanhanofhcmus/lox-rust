@@ -1,0 +1,79 @@
+# ---------- std:math module ----------
+
+import "std:math" as math;
+
+# ---- constants ----
+assert(math::pi > 3.14 and math::pi < 3.15, "pi constant");
+assert(math::tau > 6.28 and math::tau < 6.29, "tau constant");
+assert(math::e > 2.71 and math::e < 2.72, "e constant");
+
+# ---- abs ----
+assert(math::abs(5) == 5, "abs positive");
+assert(math::abs(-5) == 5, "abs negative");
+assert(math::abs(0) == 0, "abs zero");
+assert(math::abs(-3.14) == 3.14, "abs float negative");
+
+# ---- sqrt ----
+assert(math::sqrt(16) == 4, "sqrt integer");
+assert(math::sqrt(2) > 1.414, "sqrt of 2");
+
+# ---- cbrt ----
+assert(math::cbrt(27) == 3, "cbrt integer");
+assert(math::cbrt(-8) == -2, "cbrt negative");
+
+# ---- exp, exp2 ----
+assert(math::exp(0) == 1, "exp of 0");
+assert(math::exp2(0) == 1, "exp2 of 0");
+assert(math::exp2(10) == 1024, "exp2 of 10");
+
+# ---- ln, log2, log10 ----
+assert(math::ln(1) == 0, "ln of 1");
+assert(math::log2(8) == 3, "log2 of 8");
+assert(math::log10(1000) == 3, "log10 of 1000");
+
+# ---- sin, cos, tan ----
+assert(math::sin(0) == 0, "sin of 0");
+assert(math::cos(0) == 1, "cos of 0");
+assert(math::tan(0) == 0, "tan of 0");
+
+# ---- asin, acos, atan ----
+assert(math::asin(0) == 0, "asin of 0");
+assert(math::acos(1) == 0, "acos of 1");
+assert(math::atan(0) == 0, "atan of 0");
+
+# ---- atan2 ----
+assert(math::atan2(1, 0) > 1.57, "atan2(1,0) ~ pi/2");
+
+# ---- sinh, cosh, tanh ----
+assert(math::sinh(0) == 0, "sinh of 0");
+assert(math::cosh(0) == 1, "cosh of 0");
+assert(math::tanh(0) == 0, "tanh of 0");
+
+# ---- ceil, floor, round, trunc ----
+assert(math::ceil(3.1) == 4, "ceil");
+assert(math::ceil(-3.1) == -3, "ceil negative");
+assert(math::floor(3.9) == 3, "floor");
+assert(math::floor(-3.9) == -4, "floor negative");
+assert(math::round(3.4) == 3, "round down");
+assert(math::round(3.6) == 4, "round up");
+assert(math::round(-3.4) == -3, "round negative down");
+assert(math::round(-3.6) == -4, "round negative up");
+assert(math::trunc(3.9) == 3, "trunc positive");
+assert(math::trunc(-3.9) == -3, "trunc negative");
+
+# ---- degrees, radians ----
+assert(math::degrees(math::pi) == 180, "degrees from pi");
+assert(math::radians(180) == math::pi, "radians from 180");
+
+# ---- pow ----
+assert(math::pow(2, 10) == 1024, "pow integer");
+assert(math::pow(4, 0.5) == 2, "pow fractional");
+
+# ---- hypot ----
+assert(math::hypot(3, 4) == 5, "hypot 3-4-5");
+
+# ---- min, max ----
+assert(math::min(3, 7) == 3, "min");
+assert(math::max(3, 7) == 7, "max");
+assert(math::min(-1, -5) == -5, "min negative");
+assert(math::max(-1, -5) == -1, "max negative");
