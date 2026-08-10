@@ -45,48 +45,84 @@ impl SliceId {
         Self(Self::CATEGORY_DYNAMIC_STRUCT_FIELD | index)
     }
 
+    fn category(self) -> usize {
+        self.0 & !Self::ID_MASK
+    }
+
     pub(crate) fn is_static_type_id(self) -> bool {
-        (self.0 & !Self::ID_MASK) == Self::CATEGORY_STATIC_TYPE_ID
+        self.category() == Self::CATEGORY_STATIC_TYPE_ID
     }
 
     pub(crate) fn is_static_struct_field(self) -> bool {
-        (self.0 & !Self::ID_MASK) == Self::CATEGORY_STATIC_STRUCT_FIELD
+        self.category() == Self::CATEGORY_STATIC_STRUCT_FIELD
+    }
+
+    /// True when this handle refers to a `&[TypeId]` slice (static or dynamic).
+    fn is_type_id_slice(self) -> bool {
+        matches!(
+            self.category(),
+            Self::CATEGORY_STATIC_TYPE_ID | Self::CATEGORY_DYNAMIC_TYPE_ID
+        )
+    }
+
+    /// True when this handle refers to a `&[StructField]` slice (static or dynamic).
+    fn is_struct_field_slice(self) -> bool {
+        matches!(
+            self.category(),
+            Self::CATEGORY_STATIC_STRUCT_FIELD | Self::CATEGORY_DYNAMIC_STRUCT_FIELD
+        )
     }
 
     pub(crate) fn index(self) -> usize {
         self.0 & Self::ID_MASK
     }
-
-    /// Empty param list.
-    pub const EMPTY: Self = Self::new_static_type_id(0);
-    /// `[STR]`
-    pub const STR: Self = Self::new_static_type_id(1);
-    /// `[NUMBER]`
-    pub const NUMBER: Self = Self::new_static_type_id(2);
-    /// `[ANY]`
-    pub const ANY: Self = Self::new_static_type_id(3);
-    /// `[BOOL, STR]`
-    pub const BOOL_STR: Self = Self::new_static_type_id(4);
-    /// `[STR, STR]`
-    pub const STR_STR: Self = Self::new_static_type_id(5);
-    /// `[NUMBER, NUMBER]`
-    pub const NUMBER_NUMBER: Self = Self::new_static_type_id(6);
-    /// `[ANY, STR]`
-    pub const ANY_STR: Self = Self::new_static_type_id(7);
-    /// `[STR, NUMBER]`
-    pub const STR_NUMBER: Self = Self::new_static_type_id(8);
-    /// `[ANY, NUMBER]`
-    pub const ANY_NUMBER: Self = Self::new_static_type_id(9);
-    /// `[ANY, ANY]`
-    pub const ANY_ANY: Self = Self::new_static_type_id(10);
-    /// `[ANY, ANY, ANY]`
-    pub const ANY_ANY_ANY: Self = Self::new_static_type_id(11);
-    /// `[STR, STR, STR]`
-    pub const STR_STR_STR: Self = Self::new_static_type_id(12);
-
-    /// Empty struct field list.
-    pub const STRUCT_EMPTY: Self = Self::new_static_struct_field(0);
 }
+
+/// Declares the static slice constants and the `&'static` table they index in
+/// one place, so a constant can never drift away from its payload.
+///
+/// `$ctor` is the [`SliceId`] constructor for the category (`new_static_type_id`
+/// or `new_static_struct_field`); `$table` is the generated lookup table, whose
+/// index `i` is exactly `SliceId::$ctor(i)`.
+macro_rules! define_static_slices {
+    ($ctor:ident, $table:ident: $elem_ty:ty, { $($(#[$meta:meta])* $name:ident = [$($elem:expr),* $(,)?];)* }) => {
+        impl SliceId {
+            define_static_slices!(@consts $ctor, 0usize, $($(#[$meta])* $name = [$($elem),*];)*);
+        }
+
+        const $table: &[&[$elem_ty]] = &[$(&[$($elem),*]),*];
+    };
+
+    (@consts $ctor:ident, $index:expr, $(#[$meta:meta])* $name:ident = [$($elem:expr),*]; $($rest:tt)*) => {
+        $(#[$meta])*
+        pub const $name: Self = Self::$ctor($index);
+        define_static_slices!(@consts $ctor, $index + 1, $($rest)*);
+    };
+
+    (@consts $ctor:ident, $index:expr,) => {};
+}
+
+define_static_slices!(new_static_type_id, STATIC_TYPE_ID_SLICES: TypeId, {
+    /// Empty param list.
+    EMPTY = [];
+    STR = [TypeId::STR];
+    NUMBER = [TypeId::NUMBER];
+    ANY = [TypeId::ANY];
+    BOOL_STR = [TypeId::BOOL, TypeId::STR];
+    STR_STR = [TypeId::STR, TypeId::STR];
+    NUMBER_NUMBER = [TypeId::NUMBER, TypeId::NUMBER];
+    ANY_STR = [TypeId::ANY, TypeId::STR];
+    STR_NUMBER = [TypeId::STR, TypeId::NUMBER];
+    ANY_NUMBER = [TypeId::ANY, TypeId::NUMBER];
+    ANY_ANY = [TypeId::ANY, TypeId::ANY];
+    ANY_ANY_ANY = [TypeId::ANY, TypeId::ANY, TypeId::ANY];
+    STR_STR_STR = [TypeId::STR, TypeId::STR, TypeId::STR];
+});
+
+define_static_slices!(new_static_struct_field, STATIC_STRUCT_FIELD_SLICES: StructField, {
+    /// Empty struct field list.
+    STRUCT_EMPTY = [];
+});
 
 // `TypeId` is intentionally NOT defined via `define_type_index!` to let us control the underlying type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -325,6 +361,12 @@ impl Type {
         return_: TypeId::NIL,
     };
 
+    pub const FUNCTION_ANY_ANY_ANY_TO_ANY: Self = Self::Function {
+        params: SliceId::ANY_ANY_ANY,
+        variadic: None,
+        return_: TypeId::ANY,
+    };
+
     pub const FUNCTION_STR_STR_STR_TO_STR: Self = Self::Function {
         params: SliceId::STR_STR_STR,
         variadic: None,
@@ -415,7 +457,7 @@ impl TypeInterner {
         const EMPTY_TYPE_ID_SLICE: &[TypeId] = &[];
         const EMPTY_STRUCT_FIELD_SLICE: &[StructField] = &[];
 
-        Self {
+        let mut interner = Self {
             type_to_id,
             id_to_type,
             counters: TypeId::NEXT_IDS,
@@ -423,41 +465,41 @@ impl TypeInterner {
             dynamic_type_id_slices: Vec::new(),
             static_struct_field_slices: [EMPTY_STRUCT_FIELD_SLICE; SliceId::STATIC_STRUCT_FIELD_COUNT],
             dynamic_struct_field_slices: Vec::new(),
-        }
+        };
+        interner.init_static_slices();
+        interner
     }
+    /// Load the `&'static` payload behind every `SliceId::*` constant.
+    ///
+    /// Called from [`TypeInterner::new`]: until it runs, every static `SliceId`
+    /// resolves to `&[]`, which is a silent wrong answer rather than an error.
+    fn init_static_slices(&mut self) {
+        assert!(STATIC_TYPE_ID_SLICES.len() <= SliceId::STATIC_TYPE_ID_COUNT);
+        assert!(STATIC_STRUCT_FIELD_SLICES.len() <= SliceId::STATIC_STRUCT_FIELD_COUNT);
 
-    /// Register all static slices referenced by the `SliceId::*` constants.
-    /// Must be called after construction and before any interning of types
-    /// that reference those constants.
-    pub fn init_static_slices(&mut self) {
-        self.register_static_type_id_slice(&[], SliceId::EMPTY.index());
-        self.register_static_type_id_slice(&[TypeId::STR], SliceId::STR.index());
-        self.register_static_type_id_slice(&[TypeId::NUMBER], SliceId::NUMBER.index());
-        self.register_static_type_id_slice(&[TypeId::ANY], SliceId::ANY.index());
-        self.register_static_type_id_slice(&[TypeId::BOOL, TypeId::STR], SliceId::BOOL_STR.index());
-        self.register_static_type_id_slice(&[TypeId::STR, TypeId::STR], SliceId::STR_STR.index());
-        self.register_static_type_id_slice(&[TypeId::NUMBER, TypeId::NUMBER], SliceId::NUMBER_NUMBER.index());
-        self.register_static_type_id_slice(&[TypeId::ANY, TypeId::STR], SliceId::ANY_STR.index());
-        self.register_static_type_id_slice(&[TypeId::STR, TypeId::NUMBER], SliceId::STR_NUMBER.index());
-        self.register_static_type_id_slice(&[TypeId::ANY, TypeId::NUMBER], SliceId::ANY_NUMBER.index());
-        self.register_static_type_id_slice(&[TypeId::ANY, TypeId::ANY], SliceId::ANY_ANY.index());
-        self.register_static_type_id_slice(&[TypeId::ANY, TypeId::ANY, TypeId::ANY], SliceId::ANY_ANY_ANY.index());
-        self.register_static_type_id_slice(&[TypeId::STR, TypeId::STR, TypeId::STR], SliceId::STR_STR_STR.index());
+        for (index, slice) in STATIC_TYPE_ID_SLICES.iter().enumerate() {
+            self.static_type_id_slices[index] = slice;
+            // `or_insert` keeps the lowest index when two constants happen to
+            // hold identical payloads, matching declaration order.
+            self.type_id_slice_to_id
+                .entry(slice.to_vec())
+                .or_insert(SliceId::new_static_type_id(index));
+        }
+
+        for (index, slice) in STATIC_STRUCT_FIELD_SLICES.iter().enumerate() {
+            self.static_struct_field_slices[index] = slice;
+            self.struct_field_slice_to_id
+                .entry(slice.to_vec())
+                .or_insert(SliceId::new_static_struct_field(index));
+        }
     }
 
     // -----------------------------------------------------------------------
     // Slice management
     // -----------------------------------------------------------------------
 
-    /// Register a static `&[TypeId]` slice and return its [`SliceId`].
-    pub fn register_static_type_id_slice(&mut self, slice: &'static [TypeId], index: usize) -> SliceId {
-        assert!(index < SliceId::STATIC_TYPE_ID_COUNT);
-        self.static_type_id_slices[index] = slice;
-        SliceId::new_static_type_id(index)
-    }
-
-    /// Intern a dynamically-created `Vec<TypeId>` and return its [`SliceId`].
-    /// Deduplicates: if an identical slice already exists, returns the existing handle.
+    /// Intern a `Vec<TypeId>` and return its [`SliceId`].
+    /// Deduplicates: an identical slice — static or dynamic — reuses its handle.
     pub fn intern_type_id_slice(&mut self, v: Vec<TypeId>) -> SliceId {
         // Check static slices first
         for (i, slice) in self.static_type_id_slices.iter().enumerate() {
@@ -608,9 +650,7 @@ mod tests {
     use super::*;
 
     fn make_ti() -> TypeInterner {
-        let mut ti = TypeInterner::new();
-        ti.init_static_slices();
-        ti
+        TypeInterner::new()
     }
 
     // -----------------------------------------------------------------------
