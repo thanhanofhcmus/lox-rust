@@ -430,6 +430,10 @@ pub struct TypeInterner {
     dynamic_type_id_slices: Vec<Vec<TypeId>>,
     static_struct_field_slices: [&'static [StructField]; SliceId::STATIC_STRUCT_FIELD_COUNT],
     dynamic_struct_field_slices: Vec<Vec<StructField>>,
+
+    // Reverse indices so interning is O(1) rather than a scan of every slice.
+    type_id_slice_to_id: HashMap<Vec<TypeId>, SliceId>,
+    struct_field_slice_to_id: HashMap<Vec<StructField>, SliceId>,
 }
 
 impl TypeInterner {
@@ -465,10 +469,13 @@ impl TypeInterner {
             dynamic_type_id_slices: Vec::new(),
             static_struct_field_slices: [EMPTY_STRUCT_FIELD_SLICE; SliceId::STATIC_STRUCT_FIELD_COUNT],
             dynamic_struct_field_slices: Vec::new(),
+            type_id_slice_to_id: HashMap::new(),
+            struct_field_slice_to_id: HashMap::new(),
         };
         interner.init_static_slices();
         interner
     }
+
     /// Load the `&'static` payload behind every `SliceId::*` constant.
     ///
     /// Called from [`TypeInterner::new`]: until it runs, every static `SliceId`
@@ -501,52 +508,33 @@ impl TypeInterner {
     /// Intern a `Vec<TypeId>` and return its [`SliceId`].
     /// Deduplicates: an identical slice — static or dynamic — reuses its handle.
     pub fn intern_type_id_slice(&mut self, v: Vec<TypeId>) -> SliceId {
-        // Check static slices first
-        for (i, slice) in self.static_type_id_slices.iter().enumerate() {
-            if *slice == v.as_slice() {
-                return SliceId::new_static_type_id(i);
-            }
+        if let Some(id) = self.type_id_slice_to_id.get(&v) {
+            return *id;
         }
-        // Check dynamic slices
-        for (i, slice) in self.dynamic_type_id_slices.iter().enumerate() {
-            if slice.as_slice() == v.as_slice() {
-                return SliceId::new_dynamic_type_id(i);
-            }
-        }
-        let index = self.dynamic_type_id_slices.len();
-        self.dynamic_type_id_slices.push(v);
-        SliceId::new_dynamic_type_id(index)
+        let id = SliceId::new_dynamic_type_id(self.dynamic_type_id_slices.len());
+        self.dynamic_type_id_slices.push(v.clone());
+        self.type_id_slice_to_id.insert(v, id);
+        id
     }
 
-    /// Register a static `&[StructField]` slice and return its [`SliceId`].
-    pub fn register_static_struct_field_slice(&mut self, slice: &'static [StructField], index: usize) -> SliceId {
-        assert!(index < SliceId::STATIC_STRUCT_FIELD_COUNT);
-        self.static_struct_field_slices[index] = slice;
-        SliceId::new_static_struct_field(index)
-    }
-
-    /// Intern a dynamically-created `Vec<StructField>` and return its [`SliceId`].
-    /// Deduplicates: if an identical slice already exists, returns the existing handle.
+    /// Intern a `Vec<StructField>` and return its [`SliceId`].
+    /// Deduplicates: an identical slice — static or dynamic — reuses its handle.
     pub fn intern_struct_field_slice(&mut self, v: Vec<StructField>) -> SliceId {
-        // Check static slices first
-        for (i, slice) in self.static_struct_field_slices.iter().enumerate() {
-            if *slice == v.as_slice() {
-                return SliceId::new_static_struct_field(i);
-            }
+        if let Some(id) = self.struct_field_slice_to_id.get(&v) {
+            return *id;
         }
-        // Check dynamic slices
-        for (i, slice) in self.dynamic_struct_field_slices.iter().enumerate() {
-            if slice.as_slice() == v.as_slice() {
-                return SliceId::new_dynamic_struct_field(i);
-            }
-        }
-        let index = self.dynamic_struct_field_slices.len();
-        self.dynamic_struct_field_slices.push(v);
-        SliceId::new_dynamic_struct_field(index)
+        let id = SliceId::new_dynamic_struct_field(self.dynamic_struct_field_slices.len());
+        self.dynamic_struct_field_slices.push(v.clone());
+        self.struct_field_slice_to_id.insert(v, id);
+        id
     }
 
     /// Look up a type-id slice by its handle.
     pub fn lookup_type_id_slice(&self, id: SliceId) -> &[TypeId] {
+        debug_assert!(
+            id.is_type_id_slice(),
+            "SliceId {id:?} is a struct-field handle, not a type-id handle"
+        );
         if id.is_static_type_id() {
             self.static_type_id_slices[id.index()]
         } else {
@@ -556,6 +544,10 @@ impl TypeInterner {
 
     /// Look up a struct-field slice by its handle.
     pub fn lookup_struct_field_slice(&self, id: SliceId) -> &[StructField] {
+        debug_assert!(
+            id.is_struct_field_slice(),
+            "SliceId {id:?} is a type-id handle, not a struct-field handle"
+        );
         if id.is_static_struct_field() {
             self.static_struct_field_slices[id.index()]
         } else {
@@ -697,6 +689,67 @@ mod tests {
         assert_ne!(SliceId::ANY_NUMBER, SliceId::ANY_ANY);
         assert_ne!(SliceId::ANY_ANY, SliceId::ANY_ANY_ANY);
         assert_ne!(SliceId::ANY_ANY_ANY, SliceId::STR_STR_STR);
+    }
+
+    #[test]
+    fn static_slice_constants_resolve_to_their_declared_payload() {
+        // `define_static_slices!` emits the constants and the table together,
+        // so index and payload cannot drift; this pins the pairing anyway.
+        let ti = make_ti();
+        assert_eq!(ti.lookup_type_id_slice(SliceId::EMPTY), &[] as &[TypeId]);
+        assert_eq!(ti.lookup_type_id_slice(SliceId::STR), &[TypeId::STR]);
+        assert_eq!(ti.lookup_type_id_slice(SliceId::NUMBER), &[TypeId::NUMBER]);
+        assert_eq!(ti.lookup_type_id_slice(SliceId::ANY), &[TypeId::ANY]);
+        assert_eq!(ti.lookup_type_id_slice(SliceId::BOOL_STR), &[TypeId::BOOL, TypeId::STR]);
+        assert_eq!(ti.lookup_type_id_slice(SliceId::STR_STR), &[TypeId::STR, TypeId::STR]);
+        assert_eq!(
+            ti.lookup_type_id_slice(SliceId::NUMBER_NUMBER),
+            &[TypeId::NUMBER, TypeId::NUMBER]
+        );
+        assert_eq!(ti.lookup_type_id_slice(SliceId::ANY_STR), &[TypeId::ANY, TypeId::STR]);
+        assert_eq!(
+            ti.lookup_type_id_slice(SliceId::STR_NUMBER),
+            &[TypeId::STR, TypeId::NUMBER]
+        );
+        assert_eq!(
+            ti.lookup_type_id_slice(SliceId::ANY_NUMBER),
+            &[TypeId::ANY, TypeId::NUMBER]
+        );
+        assert_eq!(ti.lookup_type_id_slice(SliceId::ANY_ANY), &[TypeId::ANY, TypeId::ANY]);
+        assert_eq!(
+            ti.lookup_type_id_slice(SliceId::ANY_ANY_ANY),
+            &[TypeId::ANY, TypeId::ANY, TypeId::ANY]
+        );
+        assert_eq!(
+            ti.lookup_type_id_slice(SliceId::STR_STR_STR),
+            &[TypeId::STR, TypeId::STR, TypeId::STR]
+        );
+        assert_eq!(
+            ti.lookup_struct_field_slice(SliceId::STRUCT_EMPTY),
+            &[] as &[StructField]
+        );
+    }
+
+    #[test]
+    fn new_interner_has_static_slices_loaded() {
+        // A freshly constructed interner must already resolve static handles;
+        // there is no separate init step to forget.
+        let ti = TypeInterner::new();
+        assert_eq!(ti.lookup_type_id_slice(SliceId::STR_STR), &[TypeId::STR, TypeId::STR]);
+    }
+
+    #[test]
+    #[should_panic(expected = "struct-field handle")]
+    fn lookup_type_id_slice_rejects_struct_field_handle() {
+        let ti = make_ti();
+        _ = ti.lookup_type_id_slice(SliceId::STRUCT_EMPTY);
+    }
+
+    #[test]
+    #[should_panic(expected = "type-id handle")]
+    fn lookup_struct_field_slice_rejects_type_id_handle() {
+        let ti = make_ti();
+        _ = ti.lookup_struct_field_slice(SliceId::STR);
     }
 
     #[test]
