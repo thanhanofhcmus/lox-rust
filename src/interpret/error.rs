@@ -51,6 +51,7 @@ pub enum InterpretError {
     TupleIndexOutOfBound(usize, usize),
     CannotDestructureAsTuple(Value),
     TupleDestructureArityMismatch { expected: usize, actual: usize },
+    StringLengthLimitExceeded { requested: usize, limit: usize },
 }
 
 impl InterpretError {
@@ -236,6 +237,9 @@ impl InterpretError {
             }
             Self::TupleDestructureArityMismatch { expected, actual } => {
                 format!("Tuple destructuring expected {expected} member(s) but value has {actual}.")
+            }
+            Self::StringLengthLimitExceeded { requested, limit } => {
+                format!("Resulting string would be {requested} bytes, exceeding the {limit} byte limit.")
             }
         }
     }
