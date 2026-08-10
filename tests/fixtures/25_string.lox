@@ -60,19 +60,32 @@ assert(string::substring("hello", 1, 4) == "ell", "substring range");
 assert(string::substring("hello", 1) == "ello", "substring from");
 assert(string::substring("hello", 10) == "", "substring past end");
 assert(string::substring("héllo", 1, 4) == "éll", "substring unicode");
+# `start` and `end` are clamped independently, so an inverted or wholly
+# out-of-range pair must produce "" rather than an out-of-bounds slice panic.
+assert(string::substring("hello", 3, 1) == "", "substring end before start");
+assert(string::substring("hello", 9, 7) == "", "substring start > end > len");
+assert(string::substring("hello", 2, 2) == "", "substring empty range");
+assert(string::substring("hello", 0, 99) == "hello", "substring end past len");
 
 # ---- is_alpha ----
 assert(string::is_alpha("abc"), "is_alpha true");
 assert(not (string::is_alpha("123")), "is_alpha digit");
 assert(not (string::is_alpha("")), "is_alpha empty");
+# Every char is tested, not just the first.
+assert(not (string::is_alpha("ab1")), "is_alpha trailing digit");
+assert(not (string::is_alpha("a b")), "is_alpha embedded space");
 
 # ---- is_number ----
 assert(string::is_number("123"), "is_number true");
 assert(not (string::is_number("abc")), "is_number letter");
 assert(not (string::is_number("")), "is_number empty");
+assert(not (string::is_number("1abc")), "is_number trailing letters");
+assert(not (string::is_number("12.5")), "is_number decimal point");
 
 # ---- is_alphanumeric ----
 assert(string::is_alphanumeric("abc123"), "is_alphanumeric letter first");
 assert(string::is_alphanumeric("123abc"), "is_alphanumeric digit first");
 assert(not (string::is_alphanumeric("--hello")), "is_alphanumeric symbol");
 assert(not (string::is_alphanumeric("")), "is_alphanumeric empty");
+assert(not (string::is_alphanumeric("abc-123")), "is_alphanumeric embedded symbol");
+assert(not (string::is_alphanumeric("abc ")), "is_alphanumeric trailing space");

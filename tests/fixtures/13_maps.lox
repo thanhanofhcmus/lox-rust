@@ -45,6 +45,15 @@ var old = map::insert(km, "a", 99);
 assert(old == 1, "map::insert returns old value");
 assert(km["a"] == 99, "map::insert updates value");
 
+# The declared type must match the runtime behavior. While `insert` was typed
+# `-> nil` the checker rejected `+` on its result, because `nil` has no
+# arithmetic; the returned value was in fact the previous value all along.
+assert(map::insert(km, "a", 100) + 1 == 100, "map::insert result is usable as a value");
+
+# Absent key yields nil.
+var fresh = %{};
+assert(map::insert(fresh, "zzz", 1) == nil, "map::insert returns nil for a new key");
+
 # std:map module — remove returns the value
 var removed = map::remove(km, "b");
 assert(removed == 2, "map::remove returns removed value");

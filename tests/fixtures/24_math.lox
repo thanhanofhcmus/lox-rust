@@ -1,6 +1,7 @@
 # ---------- std:math module ----------
 
 import "std:math" as math;
+import "std:json" as json;
 
 # ---- constants ----
 assert(math::pi > 3.14 and math::pi < 3.15, "pi constant");
@@ -58,6 +59,13 @@ assert(math::round(3.4) == 3, "round down");
 assert(math::round(3.6) == 4, "round up");
 assert(math::round(-3.4) == -3, "round negative down");
 assert(math::round(-3.6) == -4, "round negative up");
+# Ties round away from zero.
+assert(math::round(2.5) == 3, "round positive tie away from zero");
+assert(math::round(-2.5) == -3, "round negative tie away from zero");
+# The largest f64 below 0.5: `(x + 0.5).trunc()` rounds this up to 1 because
+# the addition itself is inexact. `f64::round` gets it right.
+assert(math::round(0.49999999999999994) == 0, "round below-half boundary");
+assert(math::round(-0.49999999999999994) == 0, "round negative below-half boundary");
 assert(math::trunc(3.9) == 3, "trunc positive");
 assert(math::trunc(-3.9) == -3, "trunc negative");
 
@@ -77,3 +85,20 @@ assert(math::min(3, 7) == 3, "min");
 assert(math::max(3, 7) == 7, "max");
 assert(math::min(-1, -5) == -5, "min negative");
 assert(math::max(-1, -5) == -1, "max negative");
+assert(math::min(1.5, 2) == 1.5, "min mixed");
+assert(math::max(1.5, 2) == 2, "max mixed");
+
+# ---- integer inputs keep integer precision ----
+# Routing these through f64 would round anything above 2^53. `==` compares
+# numerically after widening to f64, so it cannot see the loss — serialize
+# instead, which renders the value in its actual representation.
+assert(json::stringify(math::abs(-9007199254740993)) == "9007199254740993", "abs keeps 2^53+1");
+assert(json::stringify(math::max(9007199254740993, 1)) == "9007199254740993", "max keeps 2^53+1");
+assert(json::stringify(math::min(-9007199254740993, 1)) == "-9007199254740993", "min keeps 2^53+1");
+assert(json::stringify(math::floor(9007199254740993)) == "9007199254740993", "floor keeps 2^53+1");
+assert(json::stringify(math::ceil(9007199254740993)) == "9007199254740993", "ceil keeps 2^53+1");
+assert(json::stringify(math::trunc(9007199254740993)) == "9007199254740993", "trunc keeps 2^53+1");
+assert(json::stringify(math::round(9007199254740993)) == "9007199254740993", "round keeps 2^53+1");
+# Floating inputs still return floating results.
+assert(json::stringify(math::abs(-3.5)) == "3.5", "abs keeps floating");
+assert(json::stringify(math::floor(3.9)) == "3.0", "floor of float is floating");
