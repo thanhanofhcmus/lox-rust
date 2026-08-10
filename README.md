@@ -198,7 +198,7 @@ import "std:map" as map;
 map::length(m);          # number of entries
 map::keys(m);            # array of keys
 map::values(m);          # array of values
-map::insert(m, k, v);    # insert (returns old value if key existed)
+map::insert(m, k, v);    # insert (returns old value if key existed, else nil)
 map::remove(m, k);       # remove and return value (nil if missing)
 ```
 
@@ -306,8 +306,14 @@ print(p.x);                            # 10
 ```
 
 The `self:` prefix denotes the current package.  `std:` provides built-in
-standard library modules (`std:array`, `std:map`).  `thirdparty:` is parsed
-but not yet supported.
+standard library modules (`std:array`, `std:map`, `std:json`, `std:math`,
+`std:string`).  Any other package prefix is rejected with
+"external packages are not yet supported".
+
+Relative paths are resolved against the importing module's directory and then
+normalized, so `./m.lox`, `../dir/m.lox` and `sub/../m.lox` naming the same
+file all resolve to the same module — loaded once, with one copy of its
+top-level state.
 
 A module exports all of its top-level `var` declarations and `struct`
 declarations — there is no explicit `export` keyword.
@@ -345,3 +351,51 @@ print(json::stringify(p));            # {"x":1,"y":2}
 var t = %(1, "hi", true);
 print(json::stringify(t));            # [1,"hi",true]
 ```
+
+`json::stringify` takes an optional second argument — pass `true` for
+pretty-printed output. It is declared variadic (`fn(any, bool ...) -> str`)
+only because optional parameters do not exist yet, so extra trailing
+arguments typecheck and are ignored.
+
+### Math
+
+```
+import "std:math" as math;
+
+math::pi; math::tau; math::e;
+
+# unary: abs sqrt cbrt exp exp2 ln log2 log10
+#        sin cos tan asin acos atan sinh cosh tanh
+#        ceil floor round trunc degrees radians
+# binary: pow atan2 hypot min max
+
+math::round(2.5);                     # 3 — ties round away from zero
+math::sqrt(16);                       # 4.0
+```
+
+`abs`, `ceil`, `floor`, `round`, `trunc`, `min` and `max` return an integer
+when every argument is an integer, so values above 2^53 keep full precision.
+Everything else returns a float.
+
+### Strings
+
+```
+import "std:string" as string;
+
+string::length(s);                    # length in characters, not bytes
+string::starts_with(s, p);  string::ends_with(s, p);  string::contains(s, n);
+string::index_of(s, n);     string::last_index_of(s, n);   # -1 when absent
+string::replace(s, from, to);
+string::split(s, delim);    string::join(arr, delim);
+string::trim(s);            string::trim_start(s);    string::trim_end(s);
+string::to_lower(s);        string::to_upper(s);
+string::repeat(s, n);
+string::substring(s, start);          # to the end
+string::substring(s, start, end);     # half-open [start, end), clamped
+string::is_alpha(s);  string::is_number(s);  string::is_alphanumeric(s);
+```
+
+Indices are character offsets. `substring` clamps both bounds, so an
+out-of-range or inverted range yields `""` rather than an error. The `is_*`
+predicates require *every* character to match and are false for `""`.
+

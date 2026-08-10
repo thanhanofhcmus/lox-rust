@@ -30,7 +30,7 @@
 
 ### Modules
 - **Module resolution only handles flat imports** — `a::b::c` chained access not supported; `ComplexIdentifier` stores at most one `module` level
-- **No external package support** — `std:` has partial support (`std:array`, `std:map`); `thirdparty:` packages are parsed but not implemented; `Self` is the only package with full filesystem support
+- **No external package support** — `std:` covers `std:array`, `std:map`, `std:json`, `std:math`, `std:string`; any package other than `self:`/`std:` is parsed and then rejected with `RunError::UnsupportedPackage`; `self:` is the only package with filesystem support
 
 ---
 
@@ -54,7 +54,7 @@
 - Module member access — `math::sin`. Type-associated calls — `Car::new()`. Both use double-colon infix
 
 ### Modules & Imports & Global
-- External packages — support `std:` and `thirdparty:` package prefixes (currently parsed but not loaded)
+- External packages — support third-party package prefixes (currently parsed, then rejected)
 - Chained module access — `a::b::c` (beyond single `module::name`)
 - File loader interface — abstract over filesystem vs. embedded
 - Parse import only. We only allow putting import in the top (except in REPL mode) so we should be good to parse a file until we meet a first non import statement, 
@@ -69,7 +69,7 @@
 ### Standard Library
 - Map comprehension
 - JSON deserialisation for structs / tuples — needs schema hint e.g. `json::parse("...", Point)`
-- More `std:` modules (math, string, etc.)
+- More `std:` modules (time, fs, regex, etc.)
 
 ### Errors & CLI
 - Better error messages — source info pointing exactly to where the error is
@@ -125,6 +125,8 @@
 - [X] Array std module — `std:array` with `length`, `push`, `pop`, `insert`
 - [X] Map std module — `std:map` with `length`, `keys`, `values`, `insert`, `remove`
 - [X] JSON std module — `std:json` with `parse` and `stringify`
+- [X] Math std module — `std:math` with `pi`/`tau`/`e` plus the usual unary/binary functions
+- [X] String std module — `std:string` with search, split/join, trim, case, `substring`, and the `is_*` predicates
 - [X] Map comprehension — `%{ for %(k, v) in map if k * v == 10 : k => v }`
 
 ### Control Flow & Scoping
@@ -146,9 +148,8 @@
 - [X] Shared interpret heap — single `&'a mut Heap` borrowed by all module environments
 
 ### Modules & Imports
-- [X] Standard library module infrastructure — `std:array`, `std:map`, `std:json` with pre-built typecheck + interpret registries
+- [X] Standard library module infrastructure — `std:array`, `std:map`, `std:json`, `std:math`, `std:string` with pre-built typecheck + interpret registries
 - [X] Basic import system — `import "self:relative/path.lox" as name;` with `package`, `self`, `std`, `thirdparty` parsing
-- [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; BFS transitive discovery
 - [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking
 - [X] Module-qualified variable lookup — `module::name` resolves through typecheck and interpret `ModuleRegistry`
 

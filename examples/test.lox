@@ -1,6 +1,10 @@
 # ==========================================
 # TEST SUITE: Core Language Features
 # ==========================================
+
+# Array and map builtins moved out of the prelude into std modules.
+import "std:array" as array;
+import "std:map" as map;
 # --- 1. Arithmetic & Type Promotion ---
 print("--- Running Arithmetic Tests...");
 
@@ -253,80 +257,80 @@ assert(picked == "yes", "Block-scoped if-else expression return failed");
 
 print();
 
-# --- 12. Array Prelude Functions ---
-print("--- Running Array Prelude Function Tests...");
+# --- 12. std:array Functions ---
+print("--- Running std:array Function Tests...");
 
 var af_arr = [10, 20, 30];
 
-assert(array_length(af_arr) == 3, "array_length failed");
-assert(array_length([]) == 0, "array_length on empty array failed");
+assert(array::length(af_arr) == 3, "array::length failed");
+assert(array::length([]) == 0, "array::length on empty array failed");
 
-# array_push — single and variadic, in-place
-array_push(af_arr, 40);
-assert(array_length(af_arr) == 4, "array_push single: length check failed");
-assert(af_arr[3] == 40, "array_push single: value check failed");
+# array::push — single and variadic, in-place
+array::push(af_arr, 40);
+assert(array::length(af_arr) == 4, "array::push single: length check failed");
+assert(af_arr[3] == 40, "array::push single: value check failed");
 
-array_push(af_arr, 50, 60);
-assert(array_length(af_arr) == 6, "array_push variadic: length check failed");
-assert(af_arr[5] == 60, "array_push variadic: last value check failed");
+array::push(af_arr, 50, 60);
+assert(array::length(af_arr) == 6, "array::push variadic: length check failed");
+assert(af_arr[5] == 60, "array::push variadic: last value check failed");
 
-# array_pop — returns the removed element; Unit on empty (not comparable via ==)
-var popped = array_pop(af_arr);
-assert(popped == 60, "array_pop: return value failed");
-assert(array_length(af_arr) == 5, "array_pop: length check failed");
+# array::pop — returns the removed element; Unit on empty (not comparable via ==)
+var popped = array::pop(af_arr);
+assert(popped == 60, "array::pop: return value failed");
+assert(array::length(af_arr) == 5, "array::pop: length check failed");
 
 var empty_for_pop = [];
-array_pop(empty_for_pop);  # must not crash
-assert(array_length(empty_for_pop) == 0, "array_pop on empty: length unchanged");
+array::pop(empty_for_pop);  # must not crash
+assert(array::length(empty_for_pop) == 0, "array::pop on empty: length unchanged");
 
-# array_insert — single and variadic, in-place
+# array::insert — single and variadic, in-place
 var ins_arr = [1, 2, 4];
-array_insert(ins_arr, 2, 3);
-assert(ins_arr[2] == 3, "array_insert single: value check failed");
-assert(array_length(ins_arr) == 4, "array_insert single: length check failed");
+array::insert(ins_arr, 2, 3);
+assert(ins_arr[2] == 3, "array::insert single: value check failed");
+assert(array::length(ins_arr) == 4, "array::insert single: length check failed");
 
-array_insert(ins_arr, 4, 5, 6);
-assert(array_length(ins_arr) == 6, "array_insert variadic: length check failed");
-assert(ins_arr[4] == 5, "array_insert variadic: first inserted value failed");
-assert(ins_arr[5] == 6, "array_insert variadic: second inserted value failed");
+array::insert(ins_arr, 4, 5, 6);
+assert(array::length(ins_arr) == 6, "array::insert variadic: length check failed");
+assert(ins_arr[4] == 5, "array::insert variadic: first inserted value failed");
+assert(ins_arr[5] == 6, "array::insert variadic: second inserted value failed");
 
 print();
 
-# --- 13. Map Prelude Functions ---
-print("--- Running Map Prelude Function Tests...");
+# --- 13. std:map Functions ---
+print("--- Running std:map Function Tests...");
 
 var mf_map = %{ "a" => 1, "b" => 2, "c" => 3 };
 
-assert(map_length(mf_map) == 3, "map_length failed");
-assert(map_length(%{}) == 0, "map_length on empty map failed");
+assert(map::length(mf_map) == 3, "map::length failed");
+assert(map::length(%{}) == 0, "map::length on empty map failed");
 
-# map_keys / map_values return a new array each call
-var mk = map_keys(mf_map);
-assert(array_length(mk) == 3, "map_keys: length check failed");
-assert(mk == ["b", "a", "c"], "map_keys: content check failed");
+# map::keys / map::values return a new array each call
+var mk = map::keys(mf_map);
+assert(array::length(mk) == 3, "map::keys: length check failed");
+assert(mk == ["b", "a", "c"], "map::keys: content check failed");
 
-var mv = map_values(mf_map);
-assert(array_length(mv) == 3, "map_values: length check failed");
-assert(mv == [2, 1, 3], "map_values: content check failed");
+var mv = map::values(mf_map);
+assert(array::length(mv) == 3, "map::values: length check failed");
+assert(mv == [2, 1, 3], "map::values: content check failed");
 
-# map_insert — returns old value when key already exists
-var old_val = map_insert(mf_map, "a", 99);
-assert(old_val == 1, "map_insert: old value return failed");
-assert(mf_map["a"] == 99, "map_insert: updated value check failed");
+# map::insert — returns old value when key already exists
+var old_val = map::insert(mf_map, "a", 99);
+assert(old_val == 1, "map::insert: old value return failed");
+assert(mf_map["a"] == 99, "map::insert: updated value check failed");
 
-# map_insert — returns Unit when key is new (not comparable via ==)
-map_insert(mf_map, "d", 4);  # must not crash
-assert(mf_map["d"] == 4, "map_insert new key: value check failed");
-assert(map_length(mf_map) == 4, "map_insert new key: length check failed");
+# map::insert — returns Unit when key is new (not comparable via ==)
+map::insert(mf_map, "d", 4);  # must not crash
+assert(mf_map["d"] == 4, "map::insert new key: value check failed");
+assert(map::length(mf_map) == 4, "map::insert new key: length check failed");
 
-# map_remove — returns the removed value when key exists
-var removed = map_remove(mf_map, "d");
-assert(removed == 4, "map_remove: return value failed");
-assert(map_length(mf_map) == 3, "map_remove: length check failed");
+# map::remove — returns the removed value when key exists
+var removed = map::remove(mf_map, "d");
+assert(removed == 4, "map::remove: return value failed");
+assert(map::length(mf_map) == 3, "map::remove: length check failed");
 
-# map_remove — returns Unit when key is absent (not comparable via ==)
-map_remove(mf_map, "nonexistent");  # must not crash
-assert(map_length(mf_map) == 3, "map_remove missing key: length unchanged");
+# map::remove — returns Unit when key is absent (not comparable via ==)
+map::remove(mf_map, "nonexistent");  # must not crash
+assert(map::length(mf_map) == 3, "map::remove missing key: length unchanged");
 
 print();
 

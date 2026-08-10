@@ -25,11 +25,11 @@ Source text → Lex (tokens) → Parse (AST<()>) → Typecheck (AST<TypeId>) →
 ```
 
 1. **Lex** (`src/parse/lex.rs`) — tokenizes source into `Token` stream. Handles raw strings, escapes, number literals.
-2. **Parse** (`src/parse/parser.rs`) — recursive descent parser. Produces `AST<()>` (untyped AST). Also resolves import identities and populates the `ModuleStringInterner`.
+2. **Parse** (`src/parse/parser.rs`) — recursive descent parser. Produces `AST<()>` (untyped AST). Records each import's package + path and populates the `ModuleStringInterner`; import *identities* are resolved later by the runner.
 3. **Typecheck** (`src/typecheck/typechecker.rs`) — gradual type system with `any` as top type. Converts `AST<()>` → `AST<TypeId>`. Checks struct field types, function arity, tuple destructuring, etc.
 4. **Interpret** (`src/interpret/interpreter.rs`) — tree-walking interpreter. Executes the typed AST. All values are garbage-collected via mark-sweep.
 
-The pipeline is orchestrated in `src/runner.rs` (`RunnerContext`), which also handles module DAG resolution (transitive import discovery, cycle detection, leaf-first order).
+The pipeline is orchestrated in `src/runner.rs` (`RunnerContext`), which also handles module DAG resolution: it resolves each import to a `ModuleIdentity` (absolute, normalized path, or a `std:` virtual path), then does transitive import discovery, cycle detection, and leaf-first ordering.
 
 ## Source Layout
 
