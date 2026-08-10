@@ -28,6 +28,10 @@ crate::std_fn! {
     }
 }
 
+// The trailing `bool` is really a single *optional* "pretty" flag. It is typed
+// variadic only because optional parameters do not exist yet, so
+// `json::stringify(v, true, false)` typechecks and the extras are ignored.
+// Retype this as an optional parameter once the checker supports one.
 crate::std_fn! {
     "std:json", "stringify", Type::FUNCTION_ANY_VARIADIC_BOOL_TO_STR,
     fn json_stringify_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {

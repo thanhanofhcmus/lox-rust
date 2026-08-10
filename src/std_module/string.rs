@@ -6,14 +6,20 @@ use crate::{
 
 // ---- std:string helpers -----------------------------------------------
 
-fn first_char_predicate(
+/// Upper bound on the size of a string a std:string function may build.
+/// Keeps `repeat` from aborting the process on an allocation overflow.
+const MAX_STRING_BYTES: usize = 1 << 26; // 64 MiB
+
+/// True when `s` is non-empty and *every* char satisfies `pred`.
+/// The empty string is never a member of these character classes.
+fn all_chars_predicate(
     ctx: &BorrowContext,
     func: BuiltinFn,
     arg: Value,
     pred: fn(char) -> bool,
 ) -> Result<Value, InterpretError> {
     let s = ctx.get_str_value(func, arg)?;
-    let result = s.chars().next().is_some_and(pred);
+    let result = !s.is_empty() && s.chars().all(pred);
     Ok(Value::make_bool(result))
 }
 
@@ -185,6 +191,15 @@ crate::std_fn! {
         check_exact_args(string_repeat_fn, &args, 2)?;
         let s = ctx.get_str_value(string_repeat_fn, args[0])?.to_owned();
         let n = args[1].to_index()?;
+        // `str::repeat` aborts the process on capacity overflow, so reject
+        // oversized results up front.
+        let requested = s.len().saturating_mul(n);
+        if requested > MAX_STRING_BYTES {
+            return Err(InterpretError::StringLengthLimitExceeded {
+                requested,
+                limit: MAX_STRING_BYTES,
+            });
+        }
         Ok(ctx.environment.insert_string_variable(s.repeat(n)))
     }
 }
@@ -201,7 +216,10 @@ crate::std_fn! {
         } else {
             chars.len()
         };
-        if start >= chars.len() {
+        // `start` and `end` are independently clamped against the length, so an
+        // inverted or out-of-range pair must still produce an empty string
+        // rather than an out-of-bounds slice.
+        if start >= chars.len() || end <= start {
             return Ok(ctx.environment.insert_string_variable(String::new()));
         }
         let result: String = chars[start..end].iter().collect();
@@ -213,7 +231,7 @@ crate::std_fn! {
     "std:string", "is_alpha", Type::FUNCTION_STR_TO_BOOL,
     fn string_is_alpha_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
         check_exact_args(string_is_alpha_fn, &args, 1)?;
-        first_char_predicate(ctx, string_is_alpha_fn, args[0], |c| c.is_alphabetic())
+        all_chars_predicate(ctx, string_is_alpha_fn, args[0], |c| c.is_alphabetic())
     }
 }
 
@@ -221,7 +239,7 @@ crate::std_fn! {
     "std:string", "is_number", Type::FUNCTION_STR_TO_BOOL,
     fn string_is_number_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
         check_exact_args(string_is_number_fn, &args, 1)?;
-        first_char_predicate(ctx, string_is_number_fn, args[0], |c| c.is_ascii_digit())
+        all_chars_predicate(ctx, string_is_number_fn, args[0], |c| c.is_ascii_digit())
     }
 }
 
@@ -229,7 +247,7 @@ crate::std_fn! {
     "std:string", "is_alphanumeric", Type::FUNCTION_STR_TO_BOOL,
     fn string_is_alphanumeric_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
         check_exact_args(string_is_alphanumeric_fn, &args, 1)?;
-        first_char_predicate(ctx, string_is_alphanumeric_fn, args[0], |c| c.is_alphanumeric())
+        all_chars_predicate(ctx, string_is_alphanumeric_fn, args[0], |c| c.is_alphanumeric())
     }
 }
 

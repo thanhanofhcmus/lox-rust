@@ -54,7 +54,8 @@ crate::std_fn! {
 }
 
 crate::std_fn! {
-    "std:map", "insert", Type::FUNCTION_ANY_ANY_ANY_TO_NIL,
+    // Returns the previous value for the key, or nil when the key was absent.
+    "std:map", "insert", Type::FUNCTION_ANY_ANY_ANY_TO_ANY,
     fn map_insert_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
         check_exact_args(map_insert_fn, &args, 3)?;
         let handle = get_map_arg(map_insert_fn, args[0])?;
