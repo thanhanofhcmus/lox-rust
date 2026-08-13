@@ -1,0 +1,21 @@
+# Aliasing is arbitrary and decoupled from the module name / its contents.
+# The same underlying module can be imported under unrelated aliases, and the
+# alias is just a local binding used with `::`.
+
+import "self:tests/fixtures/modules/math.lox" as foo;
+import "self:tests/fixtures/modules/math.lox" as bar;
+import "self:tests/fixtures/modules/geometry.lox" as shape;
+
+# An alias with no relation to the module or its symbols works fine.
+assert(foo::add(1, 2) == 3, "alias foo resolves math::add");
+assert(foo::mul(3, 4) == 12, "alias foo resolves math::mul");
+
+# The same module under a second, different alias is an independent binding.
+assert(bar::add(10, 20) == 30, "alias bar resolves math::add");
+
+# Struct + factory function under an unrelated alias.
+var p = shape::Point { x = 3, y = 4 };
+assert(p.x == 3, "struct field under alias shape");
+assert(p.y == 4, "struct field y under alias shape");
+var origin = shape::zero();
+assert(origin.x == 0, "factory fn under alias shape");
