@@ -76,7 +76,6 @@ pub struct RunnerContext {
 impl RunnerContext {
     pub fn new(strict_assert: bool) -> Self {
         let mut type_interner = TypeInterner::new();
-        type_interner.init_static_slices();
         let mut module_string_interner = ModuleStringInterner::default();
 
         let mut typecheck_module_registry = typecheck::ModuleRegistry::default();

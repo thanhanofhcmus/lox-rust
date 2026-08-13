@@ -1826,7 +1826,6 @@ mod tests {
     #[test]
     fn import_and_access_module_struct_field() {
         let mut ti = TypeInterner::new();
-        ti.init_static_slices();
         let fields = ti.intern_struct_field_slice(vec![
             StructField {
                 id: Id::new("x"),
@@ -1948,7 +1947,6 @@ mod tests {
 
     fn typecheck_with_struct_module(input: &str) -> Result<AST<TypeId>, TypecheckError> {
         let mut ti = TypeInterner::new();
-        ti.init_static_slices();
         let fields = ti.intern_struct_field_slice(vec![
             StructField {
                 id: Id::new("x"),
@@ -2003,7 +2001,6 @@ mod tests {
     #[test]
     fn import_struct_construction_has_struct_type() {
         let mut ti = TypeInterner::new();
-        ti.init_static_slices();
         let fields = ti.intern_struct_field_slice(vec![
             StructField {
                 id: Id::new("x"),
@@ -2055,7 +2052,6 @@ mod tests {
     #[test]
     fn import_struct_unknown_type_errors() {
         let mut ti = TypeInterner::new();
-        ti.init_static_slices();
         let fields = ti.intern_struct_field_slice(vec![StructField {
             id: Id::new("x"),
             type_: TypeId::NUMBER,
