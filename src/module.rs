@@ -31,4 +31,8 @@ impl<T, K: Eq + std::hash::Hash> ModuleRegistry<T, K> {
     pub fn get(&self, key: &K) -> Option<&T> {
         self.map.get(key)
     }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
 }

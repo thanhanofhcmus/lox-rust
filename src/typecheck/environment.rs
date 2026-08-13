@@ -11,8 +11,17 @@ pub type ModuleRegistry = GenericModuleRegistry<Module>;
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
-    pub(crate) symbol_scope: TypeScope,
-    pub(crate) struct_scope: TypeScope,
+    pub(super) symbol_scope: TypeScope,
+    pub(super) struct_scope: TypeScope,
+}
+
+impl Module {
+    pub fn new(symbol_scope: TypeScope) -> Self {
+        Self {
+            symbol_scope,
+            struct_scope: TypeScope::new(),
+        }
+    }
 }
 
 /// Scoped symbol table mapping `Id` → `Type` for typechecking.

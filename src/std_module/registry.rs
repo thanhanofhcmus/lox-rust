@@ -83,7 +83,7 @@ macro_rules! collect_std_fns {
             }
         }
 
-        pub(crate) fn typecheck_module(
+        pub(crate) fn create_typecheck_module(
             msi: &mut $crate::module::ModuleStringInterner,
             type_interner: &mut $crate::types::TypeInterner,
         ) -> ($crate::module::ModuleIdentity, $crate::typecheck::Module) {
@@ -102,16 +102,13 @@ macro_rules! collect_std_fns {
                 symbol_scope.associate(__const_id, __type_id);
             )*
 
-            let module = $crate::typecheck::Module {
-                symbol_scope,
-                struct_scope: $crate::types::TypeScope::new(),
-            };
+            let module = $crate::typecheck::Module::new(symbol_scope);
 
             (ident, module)
         }
 
         #[allow(unused_mut)]
-        pub(crate) fn interpret_module(
+        pub(crate) fn create_interpret_module(
             msi: &mut $crate::module::ModuleStringInterner,
         ) -> ($crate::module::ModuleIdentity, $crate::interpret::Module) {
             let ident = identity(msi);
