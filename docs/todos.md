@@ -13,6 +13,7 @@
 
 ### Modules
 - **Re-export / transitive module GC** — `collect_all_variables` only marks directly-imported modules, not transitive dependencies. A module imported by A but not the current module could lose its GC objects.
+- **Functions don't capture their defining module's import context** — `interpret` `Function` stores only `params` + `body` (no environment / `imported_modules`). A function defined in module A that reads `ma::pi` (where `ma` = `std:math`) works when called within A, but when module B imports A and calls `a::get_pi()`, the body resolves `ma::pi` against B's imports (`ma` absent) and fails with `Variable 'pi' is not defined`. Direct value re-export (`var pi = ma::pi;` then `a::pi`) works fine; it is only re-export *through a function* that breaks. See `tests/fixtures/errors/re_export_fn_import.lox`.
 
 ### Collections
 - **`Map = BTreeMap<MapKey, Value>`** — `MapKey::Str` orders by `StrId` (interner insertion order), not string bytes; iteration order non-deterministic across runs. Switch to `IndexMap` or order by actual bytes

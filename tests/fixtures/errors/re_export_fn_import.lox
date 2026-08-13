@@ -1,0 +1,10 @@
+# Negative: re-exporting a value through a function does not carry the
+# defining module's import context. The function body `ma::pi` resolves at
+# runtime against THIS module's imports (where `ma` is undefined), not the
+# defining module's imports.
+#
+# Expected: `Variable 'pi' is not defined in the current scope`.
+
+import "self:tests/fixtures/modules/re_export_pi.lox" as a;
+
+var pi = a::get_pi();

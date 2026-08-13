@@ -85,6 +85,9 @@ error_tests! {
     error_tuple_destructure_non_tuple_runtime: "errors/tuple_destructure_non_tuple_runtime.lox" contains "cannot be destructured as a tuple",
     error_tuple_destructure_arity_runtime:  "errors/tuple_destructure_arity_runtime.lox" contains "destructuring expected",
     error_module_not_found:                 "errors/module_not_found.lox"                contains "module not found",
+    // Functions do not capture their defining module's import context, so a
+    // value re-exported through a function fails at runtime in the caller's scope.
+    error_re_export_fn_import:              "errors/re_export_fn_import.lox"             contains "Variable 'pi' is not defined in the current scope.",
     error_circular_import:                  "errors/circular_main.lox"                    contains "circular import",
     error_import_typecheck:                 "import_type_error.lox"                       contains "type_error.lox:1:5",
 }

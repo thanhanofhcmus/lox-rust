@@ -554,4 +554,39 @@ mod tests {
         // Previous state must still be intact.
         assert!(ctx.run_stmt("print(x);", REPL_LINE).is_ok());
     }
+
+    #[test]
+    fn repl_import_persists_across_lines() {
+        let mut ctx = RunnerContext::new(true);
+
+        // Import a module on one line…
+        ctx.run_stmt("import \"self:tests/fixtures/modules/math.lox\" as math;", REPL_LINE)
+            .unwrap();
+
+        // …and use it on a later line. Before the fix that made `Module`
+        // carry `imported_modules`, this line failed to resolve `math`
+        // because the import information was dropped by `make_module`.
+        ctx.run_stmt(
+            "assert(math::add(1, 2) == 3, \"import works across REPL lines\");",
+            REPL_LINE,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn repl_imported_struct_type_persists_across_lines() {
+        let mut ctx = RunnerContext::new(true);
+
+        // Import a module that exports a struct, then construct the struct on
+        // a later line. This exercises the *typecheck* import-info round-trip
+        // (struct_scope lookups via imported_modules), not just interpretation.
+        ctx.run_stmt("import \"self:tests/fixtures/modules/geometry.lox\" as geo;", REPL_LINE)
+            .unwrap();
+
+        ctx.run_stmt(
+            "var p = geo::Point { x = 3, y = 4 }; assert(p.x == 3, \"imported struct across REPL lines\");",
+            REPL_LINE,
+        )
+        .unwrap();
+    }
 }

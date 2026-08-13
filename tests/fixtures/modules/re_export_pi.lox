@@ -1,0 +1,12 @@
+# Re-exports a value from an imported module *through a function*.
+#
+# `get_pi`'s body references `ma::pi`, where `ma` is `std:math`. This only
+# typechecks because the body is typechecked here (where `ma` = `std:math`).
+# At runtime the function value carries NO capturing environment/import
+# context, so when another module calls this function the body resolves
+# `ma::pi` against the CALLER's imports — where `ma` is absent — and fails.
+# See the "Bugs" section of docs/todos.md.
+
+import "std:math" as ma;
+
+var get_pi = fn() ma::pi;
