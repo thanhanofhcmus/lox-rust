@@ -160,21 +160,13 @@ impl RunnerContext {
         Ok(ast)
     }
 
-    fn create_typecheck_env(&mut self) -> typecheck::Environment<'_> {
-        typecheck::Environment::new(&mut self.type_interner, &self.typecheck_module_registry)
-    }
-
-    fn create_repl_typecheck_env(&mut self) -> typecheck::Environment<'_> {
-        let repl_module = self.repl_typecheck_module.clone();
-        typecheck::Environment::from_module(repl_module, &mut self.type_interner, &self.typecheck_module_registry)
-    }
-
     fn type_check(&mut self, ast: AST<()>, source: &InputSource) -> Result<(AST<TypeId>, typecheck::Module), RunError> {
         debug!("type checking start");
         let typecheck_env = if matches!(source, InputSource::Repl(_)) {
-            self.create_repl_typecheck_env()
+            let repl_module = self.repl_typecheck_module.clone();
+            typecheck::Environment::from_module(repl_module, &mut self.type_interner, &self.typecheck_module_registry)
         } else {
-            self.create_typecheck_env()
+            typecheck::Environment::new(&mut self.type_interner, &self.typecheck_module_registry)
         };
         let mut typechecker = typecheck::TypeChecker::new(typecheck_env);
 

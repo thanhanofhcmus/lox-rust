@@ -1755,10 +1755,7 @@ mod tests {
         for (name, type_id) in symbols {
             symbol_scope.associate(Id::new(name), *type_id);
         }
-        Module {
-            symbol_scope,
-            struct_scope: TypeScope::new(),
-        }
+        Module::new(symbol_scope)
     }
 
     /// Typecheck `input` with a pre-registered module.

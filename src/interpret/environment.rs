@@ -96,12 +96,16 @@ impl ScopeStack {
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
-    pub variables: HashMap<Id, Value>,
+    pub(super) variables: HashMap<Id, Value>,
+    imported_modules: HashMap<Id, ModuleIdentity>,
 }
 
 impl Module {
     pub fn new(variables: HashMap<Id, Value>) -> Self {
-        Self { variables }
+        Self {
+            variables,
+            imported_modules: HashMap::new(),
+        }
     }
 }
 
@@ -159,10 +163,18 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn from_module(Module { variables }: Module, heap: &'a mut Heap, module_registry: &'a ModuleRegistry) -> Self {
+    pub fn from_module(
+        Module {
+            variables,
+            imported_modules,
+        }: Module,
+        heap: &'a mut Heap,
+        module_registry: &'a ModuleRegistry,
+    ) -> Self {
         let mut env = Self::new(heap, module_registry);
         assert!(env.scope_stack.len() == 1, "env should only have the global scope here");
         env.scope_stack.get_current_mut().insert_multiple_variables(variables);
+        env.imported_modules = imported_modules;
         env
     }
 
@@ -200,8 +212,12 @@ impl<'a> Environment<'a> {
         // i.e. The global scope
         let last_scope = std::mem::replace(self.scope_stack.get_current_mut(), Scope::make_global());
         let variables = last_scope.variables;
+        let imported_modules = std::mem::take(&mut self.imported_modules);
 
-        Module { variables }
+        Module {
+            variables,
+            imported_modules,
+        }
     }
 
     // Scope functions

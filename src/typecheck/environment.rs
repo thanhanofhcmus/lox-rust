@@ -13,6 +13,7 @@ pub type ModuleRegistry = GenericModuleRegistry<Module>;
 pub struct Module {
     pub(super) symbol_scope: TypeScope,
     pub(super) struct_scope: TypeScope,
+    imported_modules: HashMap<Id, ModuleIdentity>,
 }
 
 impl Module {
@@ -20,6 +21,7 @@ impl Module {
         Self {
             symbol_scope,
             struct_scope: TypeScope::new(),
+            imported_modules: HashMap::new(),
         }
     }
 }
@@ -65,10 +67,12 @@ impl<'a> Environment<'a> {
         let Module {
             symbol_scope,
             struct_scope,
+            imported_modules,
         } = module;
         let mut env = Self::new(type_interner, module_registry);
 
         env.local_struct_scope = struct_scope;
+        env.imported_modules = imported_modules;
         _ = std::mem::replace(env.scopes.get_mut(0).unwrap(), symbol_scope);
 
         env
@@ -81,9 +85,11 @@ impl<'a> Environment<'a> {
     pub fn make_module(&mut self) -> Module {
         let symbol_scope = std::mem::take(self.scopes.get_mut(0).unwrap());
         let struct_scope = std::mem::replace(&mut self.local_struct_scope, TypeScope::new());
+        let imported_modules = std::mem::take(&mut self.imported_modules);
         Module {
             symbol_scope,
             struct_scope,
+            imported_modules,
         }
     }
 
