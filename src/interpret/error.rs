@@ -212,7 +212,6 @@ impl InterpretError {
                 )
             }
             Self::StringNotFoundOnHeap(id) => {
-                // TODO: call to the interner to get the actual string back
                 format!("Internal error: string with id `{id:?}` does not exist in the string interner.")
             }
             Self::ScopeOverflow(limit) => {

@@ -34,22 +34,24 @@ fn dbg_state_fn(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, Interpr
 fn dbg_print_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
     let mut print_writer = ctx.print_writer.borrow_mut();
 
-    // TODO: handle write! error
     for value in args {
-        write!(print_writer, "{:?}", value).unwrap();
+        write!(print_writer, "{:?}", value).map_err(|e| InterpretError::WriteValueFailed(value, e))?;
         match value {
             Value::Str(str_id) => {
                 let s = ctx.environment.get_string(str_id)?;
-                write!(print_writer, ": {}", s.escape_debug()).unwrap();
+                write!(print_writer, ": {}", s.escape_debug())
+                    .map_err(|e| InterpretError::WriteValueFailed(value, e))?;
             }
             Value::Function(handle) => match ctx.environment.heap.get_object(handle) {
-                Some(obj) => write!(print_writer, ": {:?}", obj).unwrap(),
-                None => write!(print_writer, ": No Object").unwrap(),
+                Some(obj) => {
+                    write!(print_writer, ": {:?}", obj).map_err(|e| InterpretError::WriteValueFailed(value, e))?
+                }
+                None => write!(print_writer, ": No Object").map_err(|e| InterpretError::WriteValueFailed(value, e))?,
             },
             _ => {}
         }
     }
-    writeln!(print_writer).unwrap();
+    writeln!(print_writer).map_err(|e| InterpretError::WriteValueFailed(Value::make_nil(), e))?;
 
     Ok(Value::make_nil())
 }
@@ -80,16 +82,15 @@ fn dbg_gc_mark_sweep(ctx: &mut BorrowContext, _: Vec<Value>) -> Result<Value, In
 fn print_fn(ctx: &mut BorrowContext, args: Vec<Value>) -> Result<Value, InterpretError> {
     let mut print_writer = ctx.print_writer.borrow_mut();
 
-    // TODO: handle write! error
     for value in args {
         if let Value::Str(str_id) = value {
             let s = ctx.environment.get_string(str_id)?;
-            write!(print_writer, "{}", s).unwrap();
+            write!(print_writer, "{}", s).map_err(|e| InterpretError::WriteValueFailed(value, e))?;
         } else {
             value.write_display(ctx.environment, ctx.identifier_registry, &mut *print_writer)?;
         }
     }
-    writeln!(print_writer).unwrap();
+    writeln!(print_writer).map_err(|e| InterpretError::WriteValueFailed(Value::make_nil(), e))?;
 
     Ok(Value::make_nil())
 }
