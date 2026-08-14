@@ -10,21 +10,6 @@ pub(crate) struct StdFnEntry {
     pub fn_ptr: BuiltinFn,
 }
 
-/// Emit a function definition and a const `StdFnEntry` for that function.
-///
-/// Usage:
-/// ```ignore
-/// std_fn! {
-///     "string", "length", Type::FUNCTION_STR_TO_NUMBER,
-///     fn string_length_fn(
-///         ctx: &mut BorrowContext,
-///         args: Vec<Value>,
-///     ) -> Result<Value, InterpretError> {
-///         // body
-///     }
-/// }
-/// ```
-///
 /// This expands to:
 /// 1. The `fn` item as written
 /// 2. A `const` named `__std_fn_entry_<name>` (where `<name>` is the function ident)
@@ -50,17 +35,6 @@ macro_rules! std_fn {
 // ---------------------------------------------------------------------------
 // collect_std_fns! — gather per-module entries and emit builder functions
 // ---------------------------------------------------------------------------
-
-/// Collect function entries for one std module and emit the identity,
-/// typecheck-module, and interpret-module builder functions.
-///
-/// Usage:
-/// ```ignore
-/// collect_std_fns!("std:string",
-///     functions: [string_length_fn, string_trim_fn, ...],
-///     constants: []  // (Name, Type|TypeId, Value) for non-function items
-/// );
-/// ```
 #[macro_export]
 macro_rules! collect_std_fns {
     (
