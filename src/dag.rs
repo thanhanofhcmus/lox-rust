@@ -2,6 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::type_index::Index;
 
+/// Error returned by [`DAG::add_edge`] when an edge references a missing node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DagError {
+    NodeNotFound,
+}
+
 #[derive(Debug, Clone)]
 pub struct Node<T, I: Index> {
     pub data: T,
@@ -52,15 +58,15 @@ impl<T: Clone + Eq + std::hash::Hash, I: Index> DAG<T, I> {
         id
     }
 
-    /// Set a node as the parent of an another node
-    // TODO: return error if we encounter an invalid setup, including circle
-    pub fn add_edge(&mut self, parent: I, child: I) {
+    /// Set a node as the parent of another node.
+    pub fn add_edge(&mut self, parent: I, child: I) -> Result<(), DagError> {
         let len = self.nodes.len();
         if parent.to_value() >= len || child.to_value() >= len {
-            // TODO: return error
+            return Err(DagError::NodeNotFound);
         }
         let parent_node = self.nodes.get_mut(parent.to_value()).unwrap();
         parent_node.neighbors.insert(child);
+        Ok(())
     }
 
     /// Detects if the current graph has cycle, i.e. not DAG.
@@ -134,7 +140,7 @@ impl<T: Clone + Eq + std::hash::Hash, I: Index> DAG<T, I> {
                     // Say we have a graph A -> B, B -> C, and A -> C.
                     // We are checking current = A, from = B, to = C,
                     // there is a path B -> C => we remove the path A -> C (insert C to the redundant set)
-                    if self.has_path(from, to) {
+                    if self.has_path(from, to).expect("has_path on valid neighbors") {
                         redundant.insert(to);
                         // Do not `break` early here
                     }
@@ -145,21 +151,24 @@ impl<T: Clone + Eq + std::hash::Hash, I: Index> DAG<T, I> {
         }
     }
 
-    fn has_path(&self, from: I, to: I) -> bool {
+    fn has_path(&self, from: I, to: I) -> Result<bool, DagError> {
+        let from_idx = from.to_value();
+        let to_idx = to.to_value();
+        if from_idx >= self.nodes.len() || to_idx >= self.nodes.len() {
+            return Err(DagError::NodeNotFound);
+        }
+
         let mut visited = vec![false; self.nodes.len()];
-        let mut to_visit = self
-            .nodes
-            .get(from.to_value())
-            .unwrap()
-            .neighbors
-            .iter()
-            .collect::<Vec<_>>();
+        let mut to_visit = self.nodes[from_idx].neighbors.iter().collect::<Vec<_>>();
 
         while let Some(&current_node) = to_visit.pop() {
             if current_node == to {
-                return true;
+                return Ok(true);
             }
             let idx = current_node.to_value();
+            if idx >= self.nodes.len() {
+                return Err(DagError::NodeNotFound);
+            }
             if visited[idx] {
                 continue;
             }
@@ -167,7 +176,7 @@ impl<T: Clone + Eq + std::hash::Hash, I: Index> DAG<T, I> {
             to_visit.extend(self.nodes[idx].neighbors.iter());
         }
 
-        false
+        Ok(false)
     }
 }
 
@@ -184,7 +193,7 @@ mod tests {
         let a = dag.add_node("A");
         let b = dag.add_node("B");
 
-        dag.add_edge(a, b);
+        dag.add_edge(a, b).unwrap();
 
         assert_eq!(dag.nodes.len(), 2);
         assert!(dag.get_node(a).unwrap().neighbors.contains(&b));
@@ -197,9 +206,9 @@ mod tests {
         let b = dag.add_node("B");
         let c = dag.add_node("C");
 
-        dag.add_edge(a, b);
-        dag.add_edge(b, c);
-        dag.add_edge(c, a); // Creates a cycle: A -> B -> C -> A
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(b, c).unwrap();
+        dag.add_edge(c, a).unwrap(); // Creates a cycle: A -> B -> C -> A
 
         assert!(dag.has_cycle(), "Should detect a cycle in A->B->C->A");
     }
@@ -211,9 +220,9 @@ mod tests {
         let b = dag.add_node("B");
         let c = dag.add_node("C");
 
-        dag.add_edge(a, b);
-        dag.add_edge(a, c);
-        dag.add_edge(b, c); // A points to both B and C, B points to C. Valid TDAG.
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(a, c).unwrap();
+        dag.add_edge(b, c).unwrap(); // A points to both B and C, B points to C. Valid TDAG.
 
         assert!(!dag.has_cycle(), "A diamond shape is not a cycle");
     }
@@ -225,8 +234,8 @@ mod tests {
         let b = dag.add_node("Middle");
         let c = dag.add_node("Leaf");
 
-        dag.add_edge(a, b);
-        dag.add_edge(b, c);
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(b, c).unwrap();
 
         let order = dag.get_leaf_first_order();
 
@@ -247,9 +256,9 @@ mod tests {
         let c = dag.add_node("C");
 
         // Structure: A -> B, B -> C, and a redundant A -> C
-        dag.add_edge(a, b);
-        dag.add_edge(b, c);
-        dag.add_edge(a, c);
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(b, c).unwrap();
+        dag.add_edge(a, c).unwrap();
 
         assert_eq!(
             dag.get_node(a).unwrap().neighbors.len(),
@@ -283,15 +292,15 @@ mod tests {
         let d = dag.add_node("D");
         let e = dag.add_node("E");
 
-        dag.add_edge(a, b);
-        dag.add_edge(b, c);
-        dag.add_edge(c, d);
-        dag.add_edge(d, e);
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(b, c).unwrap();
+        dag.add_edge(c, d).unwrap();
+        dag.add_edge(d, e).unwrap();
 
         // Redundant shortcuts
-        dag.add_edge(a, c);
-        dag.add_edge(a, e);
-        dag.add_edge(b, e);
+        dag.add_edge(a, c).unwrap();
+        dag.add_edge(a, e).unwrap();
+        dag.add_edge(b, e).unwrap();
 
         dag.transitive_reduce();
 
@@ -323,15 +332,15 @@ mod tests {
         let d = dag.add_node("D");
         let e = dag.add_node("E");
 
-        dag.add_edge(a, b);
-        dag.add_edge(a, c);
-        dag.add_edge(b, d);
-        dag.add_edge(c, d);
-        dag.add_edge(c, e);
-        dag.add_edge(d, e);
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(a, c).unwrap();
+        dag.add_edge(b, d).unwrap();
+        dag.add_edge(c, d).unwrap();
+        dag.add_edge(c, e).unwrap();
+        dag.add_edge(d, e).unwrap();
 
         // Shortcut that should be removed
-        dag.add_edge(a, d);
+        dag.add_edge(a, d).unwrap();
 
         dag.transitive_reduce();
 
@@ -359,10 +368,10 @@ mod tests {
         let c = dag.add_node("C");
         let d = dag.add_node("D");
 
-        dag.add_edge(a, b);
-        dag.add_edge(a, c);
-        dag.add_edge(b, c);
-        dag.add_edge(b, d);
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(a, c).unwrap();
+        dag.add_edge(b, c).unwrap();
+        dag.add_edge(b, d).unwrap();
 
         dag.transitive_reduce();
 
@@ -384,9 +393,9 @@ mod tests {
         let b = dag.add_node("B");
         let c = dag.add_node("C");
 
-        dag.add_edge(a, b);
-        dag.add_edge(b, c);
-        dag.add_edge(a, c);
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(b, c).unwrap();
+        dag.add_edge(a, c).unwrap();
 
         dag.transitive_reduce();
         let first_pass = dag.get_node(a).unwrap().neighbors.clone();
@@ -408,11 +417,11 @@ mod tests {
         let c = dag.add_node("C");
         let d = dag.add_node("D");
 
-        dag.add_edge(a, b);
-        dag.add_edge(b, c);
+        dag.add_edge(a, b).unwrap();
+        dag.add_edge(b, c).unwrap();
 
-        assert!(dag.has_path(a, c), "Path exists from A to C via B");
-        assert!(!dag.has_path(a, d), "No path should exist from A to D");
-        assert!(!dag.has_path(c, a), "No path should exist backwards in a TDAG");
+        assert!(dag.has_path(a, c).unwrap(), "Path exists from A to C via B");
+        assert!(!dag.has_path(a, d).unwrap(), "No path should exist from A to D");
+        assert!(!dag.has_path(c, a).unwrap(), "No path should exist backwards in a TDAG");
     }
 }

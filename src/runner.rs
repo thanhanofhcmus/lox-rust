@@ -48,6 +48,8 @@ pub enum RunError {
     UnsupportedPackage(String),
     #[error("failed to read module: {0}")]
     ModuleReadError(#[from] std::io::Error),
+    #[error("internal error: invalid module graph edge")]
+    ModuleGraphEdge,
 }
 
 pub type RunResult = Result<(), RunError>;
@@ -295,7 +297,9 @@ impl RunnerContext {
             imp.identity = Some(identity);
             let imported_node_id = module_dag.add_node(identity);
 
-            module_dag.add_edge(module_node_id, imported_node_id);
+            module_dag
+                .add_edge(module_node_id, imported_node_id)
+                .map_err(|_| RunError::ModuleGraphEdge)?;
             if !self.is_compiled(&identity) {
                 import_queue.push(imported_node_id);
             }
