@@ -90,5 +90,8 @@ error_tests! {
     // value re-exported through a function fails at runtime in the caller's scope.
     error_re_export_fn_import:              "errors/re_export_fn_import.lox"             contains "Variable 'pi' is not defined in the current scope.",
     error_circular_import:                  "errors/circular_main.lox"                    contains "circular import",
+    // Anything other than `self:` / `std:` must be rejected outright rather
+    // than falling through to relative-path resolution.
+    error_unsupported_package:              "errors/unsupported_package.lox"              contains "external packages are not yet supported",
     error_import_typecheck:                 "import_type_error.lox"                       contains "type_error.lox:1:5",
 }

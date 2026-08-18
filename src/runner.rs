@@ -44,6 +44,8 @@ pub enum RunError {
     CircularImport,
     #[error("module not found: {0}")]
     ModuleNotFound(String),
+    #[error("external packages are not yet supported: {0}")]
+    UnsupportedPackage(String),
     #[error("failed to read module: {0}")]
     ModuleReadError(#[from] std::io::Error),
 }
@@ -299,6 +301,7 @@ impl RunnerContext {
                 imp.metadata.path,
                 importer_dir,
                 &mut self.module_string_interner,
+                &self.global_identifier_registry,
             )?;
             imp.identity = Some(identity.clone());
             let md_node_id = module_dag.add_node(identity);
@@ -355,6 +358,7 @@ impl RunnerContext {
                     imp.metadata.path,
                     importer_dir,
                     &mut self.module_string_interner,
+                    &self.global_identifier_registry,
                 )?;
                 imp.identity = Some(identity.clone());
                 let next_node_id = module_dag.add_node(identity);
@@ -477,21 +481,31 @@ fn resolve_import_identity(
     path: crate::module::ModuleStrId,
     importer_dir: &Path,
     msi: &mut ModuleStringInterner,
+    ir: &IdentifierRegistry,
 ) -> Result<ModuleIdentity, RunError> {
+    let rel_path = msi.get(path).expect("path should be interned");
+
     if package == crate::id::Id::STD {
-        let rel_path = msi.get(path).expect("path should be interned");
-        Ok(ModuleIdentity {
+        return Ok(ModuleIdentity {
             resolved_path: msi.intern(&format!("std:{}", rel_path)),
             is_std: true,
-        })
-    } else {
-        let rel_path = msi.get(path).expect("path should be interned");
-        let resolved = resolve_relative_path(importer_dir, rel_path);
-        Ok(ModuleIdentity {
-            resolved_path: msi.intern(&resolved),
-            is_std: false,
-        })
+        });
     }
+
+    // Only `self:` and `std:` exist today. Without this check any other
+    // package silently falls through to relative-path resolution and either
+    // reports a bare "module not found" or loads an unrelated local file.
+    if package != crate::id::Id::SELF {
+        let spelling = format!("{}:{}", ir.get_or_unknown(package), rel_path);
+        error!("External packages are not yet supported: {}", spelling);
+        return Err(RunError::UnsupportedPackage(spelling));
+    }
+
+    let resolved = resolve_relative_path(importer_dir, rel_path);
+    Ok(ModuleIdentity {
+        resolved_path: msi.intern(&resolved),
+        is_std: false,
+    })
 }
 
 pub fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
