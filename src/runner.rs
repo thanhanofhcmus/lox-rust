@@ -339,6 +339,7 @@ impl RunnerContext {
             // TODO: move file loader to an interface
             let file_path = Path::new(&path);
             if !file_path.exists() || !file_path.is_file() {
+                error!("Module not found: {}", path);
                 return Err(RunError::ModuleNotFound(path));
             }
 
