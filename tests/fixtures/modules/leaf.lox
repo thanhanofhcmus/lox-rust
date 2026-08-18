@@ -1,0 +1,6 @@
+# A dependency-free module used by the runner's module-cache tests.
+# Its top level allocates one heap object, which is how a test can tell whether
+# the module was run more than once.
+
+var leaf_items = [1, 2, 3];
+var leaf_value = 7;

@@ -27,6 +27,10 @@ impl InputSource {
         }
     }
 
+    pub fn is_persistent(&self) -> bool {
+        matches!(&self, InputSource::File(_))
+    }
+
     /// Returns the path this source was read from, if it is a file.
     pub fn path(&self) -> Option<&Path> {
         match self {

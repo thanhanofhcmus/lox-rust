@@ -12,7 +12,7 @@ pub struct ModuleMetadata {
 
 /// Globally unique resolved module identity.
 /// Used as the key for all module-level caches and registries.
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
 pub struct ModuleIdentity {
     pub resolved_path: ModuleStrId,
     pub is_std: bool,

@@ -114,7 +114,6 @@ where
                 import.iden.id,
                 import
                     .identity
-                    .clone()
                     .expect("import identity must be resolved before interpret"),
             );
         }

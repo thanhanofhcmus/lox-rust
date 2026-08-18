@@ -37,7 +37,7 @@ The pipeline is orchestrated in `src/runner.rs` (`RunnerContext`), which also ha
 |------|---------|
 | `src/main.rs` | CLI entry point, parses args via `cli.rs` |
 | `src/cli.rs` | Argument parsing (REPL, prompt, file modes) |
-| `src/runner.rs` | Orchestrates the full pipeline per input source; manages module DAG, caches, registries |
+| `src/runner.rs` | Orchestrates the full pipeline per input source; module DAG discovery, per-run `PendingModule` state, and the module cache (the two `ModuleRegistry`s) |
 | `src/token.rs` | `Token` enum — all language tokens |
 | `src/span.rs` | `Span` — byte-offset range into source, with display helpers |
 | `src/ast.rs` | `AST`, `Statement`, `Expression`, `ClauseNode` and related node types |

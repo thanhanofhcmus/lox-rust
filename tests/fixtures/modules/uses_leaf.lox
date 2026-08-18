@@ -1,0 +1,6 @@
+# Imports another *local* module (not std), so the module-cache tests can check
+# that a module keeps its dependency edges across runs.
+
+import "self:./leaf.lox" as leaf;
+
+var doubled = leaf::leaf_value * 2;

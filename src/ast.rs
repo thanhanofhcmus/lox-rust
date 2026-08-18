@@ -15,6 +15,7 @@ pub struct AST<T> {
 #[derive(Debug, Clone)]
 pub struct ImportNode {
     pub metadata: ModuleMetadata,
+    // TODO: Option here is a poor design, use concrete type instead, like AST or PendingModule
     pub identity: Option<ModuleIdentity>,
     pub iden: Identifier,
 }

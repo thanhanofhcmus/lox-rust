@@ -154,4 +154,5 @@
 - [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; depth-first transitive discovery
 - [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking; import paths are normalized first so a `..`-spelled cycle is caught too
 - [X] Module-qualified variable lookup — `module::name` resolves through typecheck and interpret `ModuleRegistry`
+- [X] Compile each module once per session — the two `ModuleRegistry`s *are* the module cache; presence in the interpret registry means "parsed, typechecked and run", so an import of that module anywhere reuses it instead of re-running its top level. Parse/typecheck/source state is run-scoped (`PendingModule`), so a failed run caches nothing and cannot mask a cycle or lose a module's import edges. REPL lines and `-p` prompts are never cached.
 

@@ -15,7 +15,7 @@ use crate::{
     identifier_registry::IdentifierRegistry,
     input_source::{InputSource, normalize_path, resolve_relative_path},
     interpret::{self, Heap, InterpretError},
-    module::{ModuleIdentity, ModuleStringInterner},
+    module::{ModuleIdentity, ModuleMetadata, ModuleStringInterner},
     parse::{self, ParseError},
     typecheck::{self, TypecheckError},
     types::{TypeId, TypeInterner},
@@ -53,6 +53,20 @@ pub enum RunError {
 pub type RunResult = Result<(), RunError>;
 pub type DynResult = Result<(), Box<dyn std::error::Error>>;
 
+struct PendingModule<Ty> {
+    /// Kept for diagnostics only;
+    /// the typecheck and interpret stages render their errors against it.
+    source: InputSource,
+    is_persistent: bool,
+    ast: AST<Ty>,
+}
+
+/// Everything this run has to build, leaf-first: a module always comes after
+/// every module it imports. Cache hits — std modules and modules an earlier run
+/// already compiled — are not in here at all; they are filtered out once, when
+/// the tree is flattened out of the DAG.
+type ModuleTree<Ty> = Vec<(ModuleIdentity, PendingModule<Ty>)>;
+
 /// Encapsulates the runtime environment to avoid duplicating setup across modes.
 pub struct RunnerContext {
     global_identifier_registry: IdentifierRegistry,
@@ -64,11 +78,7 @@ pub struct RunnerContext {
     module_string_interner: ModuleStringInterner,
     interpret_heap: interpret::Heap,
 
-    // caches keyed by resolved ModuleIdentity
-    parse_cache: HashMap<ModuleIdentity, AST<()>>,
-    source_cache: HashMap<ModuleIdentity, InputSource>,
-    typecheck_cache: HashMap<ModuleIdentity, AST<TypeId>>,
-
+    // The REPL / prompt working modules. Not part of the module cache
     repl_typecheck_module: typecheck::Module,
     repl_interpreter_module: interpret::Module,
 
@@ -105,15 +115,15 @@ impl RunnerContext {
             type_interner,
             interpret_heap: Heap::new(),
 
-            parse_cache: HashMap::new(),
-            source_cache: HashMap::new(),
-            typecheck_cache: HashMap::new(),
-
             repl_typecheck_module: typecheck::Module::default(),
             repl_interpreter_module: interpret::Module::default(),
 
             strict_assert,
         }
+    }
+
+    fn is_compiled(&self, identity: &ModuleIdentity) -> bool {
+        identity.is_std || self.interpret_module_registry.get(identity).is_some()
     }
 
     fn lex_and_parse(&mut self, source: &InputSource) -> Result<AST<()>, RunError> {
@@ -157,7 +167,7 @@ impl RunnerContext {
         })?;
 
         debug!("Parsing done");
-        trace!("{:?}", &ast);
+        trace!("{:?}", ast);
 
         Ok(ast)
     }
@@ -242,24 +252,21 @@ impl RunnerContext {
             InputSource::File(normalize_path(&abs))
         };
 
-        let mut module_dag = self.parse_module_tree(source_name, &root_source)?;
+        let tree = self.discover_module_tree(source_name, &root_source)?;
 
-        if module_dag.has_cycle() {
-            error!("Circular import detected");
-            return Err(RunError::CircularImport);
-        }
-        module_dag.transitive_reduce();
-
-        let order = module_dag.get_leaf_first_order();
-
-        if let Err(e) = self.typecheck_module_tree(&module_dag, &order) {
-            if is_in_repl {
-                self.repl_typecheck_module = saved_tc;
+        // Typecheck the whole tree before running any of it, so a type error in
+        // one module is never reported after another module's top level has already had side effects.
+        let tree = match self.typecheck_module_tree(tree) {
+            Ok(tree) => tree,
+            Err(e) => {
+                if is_in_repl {
+                    self.repl_typecheck_module = saved_tc;
+                }
+                return Err(e);
             }
-            return Err(e);
-        }
+        };
 
-        match self.interpret_module_tree(&module_dag, &order) {
+        match self.interpret_module_tree(tree) {
             Ok(()) => Ok(()),
             Err(e) => {
                 if is_in_repl {
@@ -283,32 +290,32 @@ impl RunnerContext {
         import_queue: &mut Vec<ModuleDagId>,
     ) -> RunResult {
         for imp in &mut ast.imports {
-            let identity = resolve_import_identity(
-                imp.metadata.package,
-                imp.metadata.path,
-                importer_dir,
-                &mut self.module_string_interner,
-                &self.global_identifier_registry,
-            )?;
-            let is_std = identity.is_std;
-            imp.identity = Some(identity.clone());
+            let identity = self.resolve_import_identity(&imp.metadata, importer_dir)?;
+
+            imp.identity = Some(identity);
             let imported_node_id = module_dag.add_node(identity);
+
             module_dag.add_edge(module_node_id, imported_node_id);
-            if !is_std {
+            if !self.is_compiled(&identity) {
                 import_queue.push(imported_node_id);
             }
         }
         Ok(())
     }
 
-    /// Parse the root module and discover + parse all imported modules.
-    /// Returns the module DAG.
-    fn parse_module_tree(
+    /// Parse the root module, discover + parse every module it imports that is
+    /// not already compiled, reject cycles, and return the leaf-first work list.
+    ///
+    /// The DAG is local to this function: once the tree is ordered and
+    /// flattened, nothing downstream needs the graph.
+    fn discover_module_tree(
         &mut self,
         source_name: &str,
         root_source: &InputSource,
-    ) -> Result<DAG<ModuleIdentity, ModuleDagId>, RunError> {
+    ) -> Result<ModuleTree<()>, RunError> {
         let mut module_dag = DAG::new();
+        // Doubles as the visited set while the graph is being walked.
+        let mut discovered: HashMap<ModuleIdentity, PendingModule<()>> = HashMap::new();
         let mut import_queue: Vec<ModuleDagId> = vec![];
 
         let mut ast = self.lex_and_parse(root_source)?;
@@ -327,7 +334,7 @@ impl RunnerContext {
             is_std: false,
         };
 
-        let root_identity_node_id = module_dag.add_node(root_identity.clone());
+        let root_identity_node_id = module_dag.add_node(root_identity);
 
         // Resolve each import relative to the importing module's directory.
         let importer_dir = Path::new(&root_path).parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -340,23 +347,23 @@ impl RunnerContext {
             &mut import_queue,
         )?;
 
-        self.parse_cache.insert(root_identity.clone(), ast);
-        self.source_cache.insert(root_identity.clone(), root_source.clone());
+        discovered.insert(
+            root_identity,
+            PendingModule {
+                source: root_source.clone(), // TODO: remove clone
+                is_persistent: root_source.is_persistent(),
+                ast,
+            },
+        );
 
-        // Discover and parse all imported modules (depth-first: the queue is
-        // drained from the back).
+        // Discover and parse all imported modules (depth-first)
         while let Some(current_node_id) = import_queue.pop() {
             let current_identity = module_dag
                 .get_node(current_node_id)
                 .expect("import queue should only contain valid DAG node ids")
-                .data
-                .clone();
-            if self.parse_cache.contains_key(&current_identity) {
-                continue;
-            }
+                .data;
 
-            // Std modules are pre-populated in the registries — nothing to parse.
-            if current_identity.is_std {
+            if discovered.contains_key(&current_identity) {
                 continue;
             }
 
@@ -387,128 +394,141 @@ impl RunnerContext {
                 &mut import_queue,
             )?;
 
-            self.parse_cache.insert(current_identity.clone(), untyped_ast);
-            self.source_cache.insert(current_identity, file_source);
+            discovered.insert(
+                current_identity,
+                PendingModule {
+                    source: file_source,
+                    is_persistent: true,
+                    ast: untyped_ast,
+                },
+            );
         }
 
-        Ok(module_dag)
+        if module_dag.has_cycle() {
+            error!("Circular import detected");
+            // Nothing was cached: `discovered` dies with this run and no module
+            // reached the registries. A later import of the same module walks
+            // the graph again and reports the cycle again, instead of finding a
+            // cached-but-edgeless module and silently accepting it.
+            return Err(RunError::CircularImport);
+        }
+        module_dag.transitive_reduce();
+
+        // Flatten the graph into the work list. `remove_entry` yields nothing
+        // for a node that was never queued — a std module, or one an earlier run
+        // already compiled — so the cache-hit filter is applied once, here,
+        // rather than being re-derived by every later stage.
+        let tree = module_dag
+            .get_leaf_first_order()
+            .into_iter()
+            .filter_map(|node_id| {
+                let identity = &module_dag
+                    .get_node(node_id)
+                    .expect("leaf-first order should only contain valid DAG node ids")
+                    .data;
+                discovered.remove_entry(identity)
+            })
+            .collect();
+
+        Ok(tree)
     }
 
-    /// Typecheck every module in leaf-first order.
-    fn typecheck_module_tree(
-        &mut self,
-        module_dag: &DAG<ModuleIdentity, ModuleDagId>,
-        order: &[ModuleDagId],
-    ) -> RunResult {
-        for &current_node_id in order {
-            let node_identity = module_dag
-                .get_node(current_node_id)
-                .expect("leaf-first order should only contain valid DAG node ids")
-                .data
-                .clone();
+    /// Typecheck the whole tree, leaf-first, so a module's imports are in the
+    /// typecheck registry by the time it is checked.
+    fn typecheck_module_tree(&mut self, tree: ModuleTree<()>) -> Result<ModuleTree<TypeId>, RunError> {
+        let mut typed_tree = Vec::with_capacity(tree.len());
 
-            // Std modules are pre-populated in the typecheck registry — skip.
-            if node_identity.is_std {
-                continue;
-            }
+        for (
+            identity,
+            PendingModule {
+                source,
+                is_persistent,
+                ast,
+            },
+        ) in tree
+        {
+            let (typed_ast, module) = self.type_check(ast, &source)?;
 
-            let untyped_ast = self
-                .parse_cache
-                .get(&node_identity)
-                .expect("parse_cache should be populated for every module before typecheck")
-                .clone();
-
-            let module_source = self
-                .source_cache
-                .get(&node_identity)
-                .expect("source_cache should be populated for every module before typecheck")
-                .clone(); // TODO: remove clone
-
-            let (typed_ast, module) = self.type_check(untyped_ast, &module_source)?;
-            self.typecheck_cache.insert(node_identity.clone(), typed_ast);
-            if matches!(module_source, InputSource::Repl(_)) {
+            if is_persistent {
+                self.typecheck_module_registry.insert(identity, module);
+            } else {
                 self.repl_typecheck_module = module;
-            } else {
-                self.typecheck_module_registry.insert(node_identity, module);
             }
+
+            typed_tree.push((
+                identity,
+                PendingModule {
+                    source,
+                    is_persistent,
+                    ast: typed_ast,
+                },
+            ));
         }
 
-        Ok(())
+        Ok(typed_tree)
     }
 
-    /// Interpret every module in leaf-first order.
-    fn interpret_module_tree(
-        &mut self,
-        module_dag: &DAG<ModuleIdentity, ModuleDagId>,
-        order: &[ModuleDagId],
-    ) -> RunResult {
-        for &current_node_id in order {
-            let node_identity = module_dag
-                .get_node(current_node_id)
-                .expect("leaf-first order should only contain valid DAG node ids")
-                .data
-                .clone();
+    /// Run the whole tree, leaf-first, so a module's imports have run before it
+    /// does. Only reachable with a `ModuleTree<TypeId>`, i.e. after typechecking.
+    fn interpret_module_tree(&mut self, tree: ModuleTree<TypeId>) -> RunResult {
+        for (
+            identity,
+            PendingModule {
+                source,
+                is_persistent,
+                ast,
+            },
+        ) in tree
+        {
+            let module = self.interpret(ast, &source)?;
 
-            // Std modules are pre-populated in the interpret registry — skip.
-            if node_identity.is_std {
-                continue;
-            }
-
-            let typed_ast = self
-                .typecheck_cache
-                .get(&node_identity)
-                .expect("typecheck_cache should be populated for every module before interpret")
-                .clone();
-
-            let module_source = self
-                .source_cache
-                .get(&node_identity)
-                .expect("source_cache should be populated for every module before interpret")
-                .clone();
-
-            let module = self.interpret(typed_ast, &module_source)?;
-            if matches!(module_source, InputSource::Repl(_)) {
+            if is_persistent {
+                self.interpret_module_registry.insert(identity, module);
+            } else {
                 self.repl_interpreter_module = module;
-            } else {
-                self.interpret_module_registry.insert(node_identity, module);
             }
         }
 
         Ok(())
     }
-}
 
-/// Resolve the identity of an imported module, handling std virtual modules.
-fn resolve_import_identity(
-    package: crate::id::Id,
-    path: crate::module::ModuleStrId,
-    importer_dir: &Path,
-    msi: &mut ModuleStringInterner,
-    ir: &IdentifierRegistry,
-) -> Result<ModuleIdentity, RunError> {
-    let rel_path = msi.get(path).expect("path should be interned");
+    /// Resolve the identity of an imported module, handling std virtual modules.
+    fn resolve_import_identity(
+        &mut self,
+        metadata: &ModuleMetadata,
+        importer_dir: &Path,
+    ) -> Result<ModuleIdentity, RunError> {
+        let rel_path = self
+            .module_string_interner
+            .get(metadata.path)
+            .expect("path should be interned");
 
-    if package == crate::id::Id::STD {
-        return Ok(ModuleIdentity {
-            resolved_path: msi.intern(&format!("std:{}", rel_path)),
-            is_std: true,
-        });
+        if metadata.package == crate::id::Id::STD {
+            return Ok(ModuleIdentity {
+                resolved_path: self.module_string_interner.intern(&format!("std:{}", rel_path)),
+                is_std: true,
+            });
+        }
+
+        // Only `self:` and `std:` exist today. Without this check any other
+        // package silently falls through to relative-path resolution and either
+        // reports a bare "module not found" or loads an unrelated local file.
+        if metadata.package != crate::id::Id::SELF {
+            let spelling = format!(
+                "{}:{}",
+                self.global_identifier_registry.get_or_unknown(metadata.package),
+                rel_path
+            );
+            error!("External packages are not yet supported: {}", spelling);
+            return Err(RunError::UnsupportedPackage(spelling));
+        }
+
+        let resolved = resolve_relative_path(importer_dir, rel_path);
+        Ok(ModuleIdentity {
+            resolved_path: self.module_string_interner.intern(&resolved),
+            is_std: false,
+        })
     }
-
-    // Only `self:` and `std:` exist today. Without this check any other
-    // package silently falls through to relative-path resolution and either
-    // reports a bare "module not found" or loads an unrelated local file.
-    if package != crate::id::Id::SELF {
-        let spelling = format!("{}:{}", ir.get_or_unknown(package), rel_path);
-        error!("External packages are not yet supported: {}", spelling);
-        return Err(RunError::UnsupportedPackage(spelling));
-    }
-
-    let resolved = resolve_relative_path(importer_dir, rel_path);
-    Ok(ModuleIdentity {
-        resolved_path: msi.intern(&resolved),
-        is_std: false,
-    })
 }
 
 pub fn run_prompt(ctx: &mut RunnerContext, line: &str) -> DynResult {
@@ -605,5 +625,124 @@ mod tests {
             REPL_LINE,
         )
         .unwrap();
+    }
+
+    /// The identity a `self:`-import of `rel_path` resolves to.
+    fn identity_of(ctx: &mut RunnerContext, rel_path: &str) -> ModuleIdentity {
+        let abs = std::path::absolute(Path::new(rel_path)).expect("cwd should be readable");
+        ModuleIdentity {
+            resolved_path: ctx
+                .module_string_interner
+                .intern(&normalize_path(&abs).to_string_lossy()),
+            is_std: false,
+        }
+    }
+
+    fn heap_objects(ctx: &RunnerContext) -> usize {
+        ctx.interpret_heap.get_stats().number_of_total_objects
+    }
+
+    #[test]
+    fn module_is_compiled_once_and_reused_by_later_imports() {
+        let mut ctx = RunnerContext::new(true);
+
+        ctx.run_stmt("import \"self:tests/fixtures/modules/leaf.lox\" as leaf;", REPL_LINE)
+            .unwrap();
+
+        let identity = identity_of(&mut ctx, "tests/fixtures/modules/leaf.lox");
+        assert!(ctx.is_compiled(&identity), "leaf.lox should be cached after one import");
+
+        let after_first_import = heap_objects(&ctx);
+        assert!(
+            after_first_import > 0,
+            "leaf.lox must allocate, otherwise the check below proves nothing"
+        );
+
+        // A second import is a cache hit: the module must not be re-interpreted,
+        // which would run its top level again and allocate a second array.
+        ctx.run_stmt("import \"self:tests/fixtures/modules/leaf.lox\" as leaf2;", REPL_LINE)
+            .unwrap();
+        assert_eq!(
+            heap_objects(&ctx),
+            after_first_import,
+            "re-importing a compiled module re-ran its top level"
+        );
+
+        // Both aliases still resolve, and to the same module.
+        ctx.run_stmt(
+            "assert(leaf::leaf_value == leaf2::leaf_value, \"both aliases name one module\");",
+            REPL_LINE,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn repl_and_prompt_are_never_cached_as_modules() {
+        let mut ctx = RunnerContext::new(true);
+
+        ctx.run_stmt("var x: number = 1;", REPL_LINE).unwrap();
+        ctx.run_stmt("var y: number = 2;", PROMPT_LINE).unwrap();
+
+        for name in [REPL_LINE, PROMPT_LINE] {
+            let identity = ModuleIdentity {
+                resolved_path: ctx.module_string_interner.intern(name),
+                is_std: false,
+            };
+            assert!(!ctx.is_compiled(&identity), "{name} must not be cached");
+            assert!(
+                ctx.typecheck_module_registry.get(&identity).is_none(),
+                "{name} must not be registered as a module"
+            );
+        }
+    }
+
+    #[test]
+    fn failed_run_does_not_poison_later_imports() {
+        let mut ctx = RunnerContext::new(true);
+
+        // The import queue is drained from the back, so `uses_leaf.lox` and its
+        // own import are parsed *before* the missing module aborts the run —
+        // which is exactly the state that used to be cached and poison the
+        // session: `uses_leaf.lox` stayed cached as "parsed" but lost its edge to
+        // `leaf.lox`, so every later import of it failed on `leaf::leaf_value`.
+        let err = ctx
+            .run_stmt(
+                "import \"self:tests/fixtures/modules/does_not_exist.lox\" as gone; \
+                 import \"self:tests/fixtures/modules/uses_leaf.lox\" as u;",
+                REPL_LINE,
+            )
+            .unwrap_err();
+        assert!(matches!(err, RunError::ModuleNotFound(_)), "unexpected error: {err:?}");
+
+        let identity = identity_of(&mut ctx, "tests/fixtures/modules/uses_leaf.lox");
+        assert!(
+            !ctx.is_compiled(&identity),
+            "a module from a failed run must not count as compiled"
+        );
+
+        ctx.run_stmt(
+            "import \"self:tests/fixtures/modules/uses_leaf.lox\" as u; \
+             assert(u::doubled == 14, \"module rebuilt cleanly after a failed run\");",
+            REPL_LINE,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn circular_import_is_detected_on_every_attempt() {
+        let mut ctx = RunnerContext::new(true);
+
+        // A cyclic module never reaches the cache, so the cycle must be
+        // rediscovered every time rather than masked by a cached parse whose
+        // import edges were dropped.
+        for attempt in 1..=2 {
+            let err = ctx
+                .run_stmt("import \"self:tests/fixtures/errors/circular_a.lox\" as a;", REPL_LINE)
+                .unwrap_err();
+            assert!(
+                matches!(err, RunError::CircularImport),
+                "attempt {attempt}: unexpected error: {err:?}"
+            );
+        }
     }
 }
