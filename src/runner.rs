@@ -6,7 +6,7 @@ use std::{
 };
 
 use log::{debug, error, info, trace};
-use rustyline::{DefaultEditor, error::ReadlineError};
+use rustyline::error::ReadlineError;
 use thiserror::Error;
 
 use crate::{
@@ -17,6 +17,7 @@ use crate::{
     interpret::{self, Heap, InterpretError},
     module::{ModuleIdentity, ModuleMetadata, ModuleStringInterner},
     parse::{self, ParseError},
+    rustyline_editor,
     typecheck::{self, TypecheckError},
     types::{TypeId, TypeInterner},
 };
@@ -551,9 +552,7 @@ pub fn run_file(ctx: &mut RunnerContext, file_path: &str) -> DynResult {
 pub fn run_repl(ctx: &mut RunnerContext, initial_line: Option<String>) -> DynResult {
     info!("Running in REPL mode");
 
-    let mut rl = DefaultEditor::new()?;
-    rl.add_history_entry("_dbg_heap_stats();")?;
-    rl.add_history_entry("_dbg_state();")?;
+    let mut rl = rustyline_editor::new()?;
 
     if let Some(line) = initial_line {
         rl.add_history_entry(&line)?;

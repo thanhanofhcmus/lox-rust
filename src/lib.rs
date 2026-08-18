@@ -8,6 +8,7 @@ mod interpret;
 mod module;
 mod parse;
 pub mod runner;
+mod rustyline_editor;
 mod span;
 mod std_module;
 mod string_interner;
