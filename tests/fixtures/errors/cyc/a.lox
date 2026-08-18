@@ -1,0 +1,4 @@
+# Spelled with `..` so the resolved path only matches b.lox after
+# normalization. Without it each hop mints a fresh module identity.
+import "self:../cyc/b.lox" as b;
+var a_func = fn() { return 1; };

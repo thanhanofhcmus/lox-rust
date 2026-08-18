@@ -1,0 +1,5 @@
+import "std:string" as string;
+
+# `str::repeat` aborts the process on capacity overflow; the interpreter must
+# turn an oversized request into a normal runtime error instead.
+print(string::repeat("ab", 999999999));

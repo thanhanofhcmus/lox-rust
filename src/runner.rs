@@ -13,7 +13,7 @@ use crate::{
     ast::AST,
     dag::DAG,
     identifier_registry::IdentifierRegistry,
-    input_source::InputSource,
+    input_source::{InputSource, normalize_path, resolve_relative_path},
     interpret::{self, Heap, InterpretError},
     module::{ModuleIdentity, ModuleStringInterner},
     parse::{self, ParseError},
@@ -236,12 +236,13 @@ impl RunnerContext {
         } else if source_name == PROMPT_LINE {
             InputSource::Prompt(input.to_string())
         } else {
-            // Absolute path for file mode
+            // Absolute, normalized path for file mode, so the root module's
+            // identity matches the one an import of the same file resolves to.
             let abs = std::path::absolute(Path::new(source_name)).unwrap_or_else(|_| PathBuf::from(source_name));
-            InputSource::File(abs)
+            InputSource::File(normalize_path(&abs))
         };
 
-        let mut module_dag = self.parse_module_tree(input, source_name, &root_source)?;
+        let mut module_dag = self.parse_module_tree(source_name, &root_source)?;
 
         if module_dag.has_cycle() {
             error!("Circular import detected");
@@ -270,31 +271,17 @@ impl RunnerContext {
         }
     }
 
-    /// Parse the root module and discover + parse all imported modules.
-    /// Returns the module DAG and the root module's ModuleIdentity.
-    fn parse_module_tree(
+    /// Resolve the imports of an already-parsed module: stamp each
+    /// `ImportNode` with its identity, add the DAG edge, and queue any
+    /// non-std module for parsing.
+    fn resolve_module_imports(
         &mut self,
-        _input: &str,
-        source_name: &str,
-        root_source: &InputSource,
-    ) -> Result<DAG<ModuleIdentity, ModuleDagId>, RunError> {
-        let mut module_dag = DAG::new();
-        let mut import_queue: Vec<ModuleDagId> = vec![];
-
-        let mut ast = self.lex_and_parse(root_source)?;
-
-        let root_identity = ModuleIdentity {
-            resolved_path: self.module_string_interner.intern(source_name),
-            is_std: false,
-        };
-
-        let root_identity_node_id = module_dag.add_node(root_identity.clone());
-
-        // Resolve each import relative to the importing module's directory.
-        let importer_dir = Path::new(source_name).parent().unwrap_or(Path::new("."));
-
-        // Resolve and set identities on the root module's ImportNodes,
-        // and add DAG edges in one pass.
+        ast: &mut AST<()>,
+        importer_dir: &Path,
+        module_node_id: ModuleDagId,
+        module_dag: &mut DAG<ModuleIdentity, ModuleDagId>,
+        import_queue: &mut Vec<ModuleDagId>,
+    ) -> RunResult {
         for imp in &mut ast.imports {
             let identity = resolve_import_identity(
                 imp.metadata.package,
@@ -303,18 +290,61 @@ impl RunnerContext {
                 &mut self.module_string_interner,
                 &self.global_identifier_registry,
             )?;
+            let is_std = identity.is_std;
             imp.identity = Some(identity.clone());
-            let md_node_id = module_dag.add_node(identity);
-            module_dag.add_edge(root_identity_node_id, md_node_id);
-            if !imp.identity.as_ref().is_some_and(|id| id.is_std) {
-                import_queue.push(md_node_id);
+            let imported_node_id = module_dag.add_node(identity);
+            module_dag.add_edge(module_node_id, imported_node_id);
+            if !is_std {
+                import_queue.push(imported_node_id);
             }
         }
+        Ok(())
+    }
+
+    /// Parse the root module and discover + parse all imported modules.
+    /// Returns the module DAG.
+    fn parse_module_tree(
+        &mut self,
+        source_name: &str,
+        root_source: &InputSource,
+    ) -> Result<DAG<ModuleIdentity, ModuleDagId>, RunError> {
+        let mut module_dag = DAG::new();
+        let mut import_queue: Vec<ModuleDagId> = vec![];
+
+        let mut ast = self.lex_and_parse(root_source)?;
+
+        // For a file, the root's identity is its absolute normalized path —
+        // the same spelling `resolve_import_identity` produces — so the root
+        // and an import of that same file are one module, not two.
+        // REPL/prompt sources have no path and keep their synthetic name.
+        let root_path = match root_source.path() {
+            Some(path) => path.to_string_lossy().into_owned(),
+            None => source_name.to_string(),
+        };
+
+        let root_identity = ModuleIdentity {
+            resolved_path: self.module_string_interner.intern(&root_path),
+            is_std: false,
+        };
+
+        let root_identity_node_id = module_dag.add_node(root_identity.clone());
+
+        // Resolve each import relative to the importing module's directory.
+        let importer_dir = Path::new(&root_path).parent().unwrap_or(Path::new(".")).to_path_buf();
+
+        self.resolve_module_imports(
+            &mut ast,
+            &importer_dir,
+            root_identity_node_id,
+            &mut module_dag,
+            &mut import_queue,
+        )?;
 
         self.parse_cache.insert(root_identity.clone(), ast);
         self.source_cache.insert(root_identity.clone(), root_source.clone());
 
-        // discover and parse all imported modules (BFS)
+        // Discover and parse all imported modules (depth-first: the queue is
+        // drained from the back).
         while let Some(current_node_id) = import_queue.pop() {
             let current_identity = module_dag
                 .get_node(current_node_id)
@@ -337,37 +367,25 @@ impl RunnerContext {
                 .to_string();
 
             // TODO: move file loader to an interface
-            let file_path = Path::new(&path);
-            if !file_path.exists() || !file_path.is_file() {
+            // `resolve_import_identity` already made this absolute and normalized.
+            let file_path = PathBuf::from(&path);
+            if !file_path.is_file() {
                 error!("Module not found: {}", path);
                 return Err(RunError::ModuleNotFound(path));
             }
 
-            // Canonicalize so spans work correctly with absolute paths
-            let abs_path = std::path::absolute(file_path).unwrap_or_else(|_| file_path.to_path_buf());
-            let file_source = InputSource::File(abs_path);
+            let importer_dir = file_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            let file_source = InputSource::File(file_path);
 
             let mut untyped_ast = self.lex_and_parse(&file_source)?;
 
-            // Resolve this module's own imports relative to its directory,
-            // set identities on ImportNodes, and add DAG edges in one pass.
-            let importer_dir = file_path.parent().unwrap_or(Path::new("."));
-
-            for imp in &mut untyped_ast.imports {
-                let identity = resolve_import_identity(
-                    imp.metadata.package,
-                    imp.metadata.path,
-                    importer_dir,
-                    &mut self.module_string_interner,
-                    &self.global_identifier_registry,
-                )?;
-                imp.identity = Some(identity.clone());
-                let next_node_id = module_dag.add_node(identity);
-                module_dag.add_edge(current_node_id, next_node_id);
-                if !imp.identity.as_ref().is_some_and(|id| id.is_std) {
-                    import_queue.push(next_node_id);
-                }
-            }
+            self.resolve_module_imports(
+                &mut untyped_ast,
+                &importer_dir,
+                current_node_id,
+                &mut module_dag,
+                &mut import_queue,
+            )?;
 
             self.parse_cache.insert(current_identity.clone(), untyped_ast);
             self.source_cache.insert(current_identity, file_source);
@@ -408,7 +426,7 @@ impl RunnerContext {
 
             let (typed_ast, module) = self.type_check(untyped_ast, &module_source)?;
             self.typecheck_cache.insert(node_identity.clone(), typed_ast);
-            if matches!(&module_source, InputSource::Repl(_)) {
+            if matches!(module_source, InputSource::Repl(_)) {
                 self.repl_typecheck_module = module;
             } else {
                 self.typecheck_module_registry.insert(node_identity, module);
@@ -449,7 +467,7 @@ impl RunnerContext {
                 .clone();
 
             let module = self.interpret(typed_ast, &module_source)?;
-            if matches!(&module_source, InputSource::Repl(_)) {
+            if matches!(module_source, InputSource::Repl(_)) {
                 self.repl_interpreter_module = module;
             } else {
                 self.interpret_module_registry.insert(node_identity, module);
@@ -457,22 +475,6 @@ impl RunnerContext {
         }
 
         Ok(())
-    }
-}
-
-/// Resolve a relative import path against the importing module's directory.
-fn resolve_relative_path(importer_dir: &Path, rel_path: &str) -> String {
-    // Only resolve paths that are explicitly relative (./ or ../).
-    // Other paths are treated as CWD-relative (legacy behavior).
-    if rel_path.starts_with("./") || rel_path.starts_with("../") {
-        importer_dir
-            .join(rel_path)
-            .components()
-            .collect::<PathBuf>()
-            .to_string_lossy()
-            .into_owned()
-    } else {
-        rel_path.to_string()
     }
 }
 

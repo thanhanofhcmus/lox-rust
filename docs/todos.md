@@ -151,6 +151,7 @@
 ### Modules & Imports
 - [X] Standard library module infrastructure — `std:array`, `std:map`, `std:json`, `std:math`, `std:string` with pre-built typecheck + interpret registries
 - [X] Basic import system — `import "self:relative/path.lox" as name;` with `package`, `self`, `std`, `thirdparty` parsing
-- [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking
+- [X] Module resolution via DAG — leaf-first parse → typecheck → interpret; depth-first transitive discovery
+- [X] Circular import detection — `Dag::has_cycle` catches `a → b → a` before typechecking; import paths are normalized first so a `..`-spelled cycle is caught too
 - [X] Module-qualified variable lookup — `module::name` resolves through typecheck and interpret `ModuleRegistry`
 

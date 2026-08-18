@@ -90,8 +90,14 @@ error_tests! {
     // value re-exported through a function fails at runtime in the caller's scope.
     error_re_export_fn_import:              "errors/re_export_fn_import.lox"             contains "Variable 'pi' is not defined in the current scope.",
     error_circular_import:                  "errors/circular_main.lox"                    contains "circular import",
+    // Import paths spelled with `..`: without path normalization each hop mints
+    // a fresh module identity, so the cycle is never detected.
+    error_circular_import_dotdot:           "errors/circular_dotdot_main.lox"             contains "circular import",
     // Anything other than `self:` / `std:` must be rejected outright rather
     // than falling through to relative-path resolution.
     error_unsupported_package:              "errors/unsupported_package.lox"              contains "external packages are not yet supported",
+    // `repeat` must reject an oversized result instead of aborting the process
+    // on allocation overflow.
+    error_string_repeat_too_large:          "errors/string_repeat_too_large.lox"          contains "exceeding the",
     error_import_typecheck:                 "import_type_error.lox"                       contains "type_error.lox:1:5",
 }
